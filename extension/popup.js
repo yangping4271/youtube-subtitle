@@ -1835,8 +1835,8 @@ class PopupController {
     initApiSettingsUI() {
         // 填充目标语言下拉框
         const targetLangSelect = document.getElementById('targetLanguage');
-        if (targetLangSelect && typeof SUPPORTED_LANGUAGES !== 'undefined') {
-            targetLangSelect.innerHTML = SUPPORTED_LANGUAGES.map(l =>
+        if (targetLangSelect && window.SubtitleConfig?.SUPPORTED_LANGUAGES) {
+            targetLangSelect.innerHTML = window.SubtitleConfig.SUPPORTED_LANGUAGES.map(l =>
                 `<option value="${l.value}">${l.text}</option>`
             ).join('');
         }
