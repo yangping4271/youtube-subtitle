@@ -11,6 +11,23 @@ import type { SummaryResult, TranslatorConfig } from '../types/index.js';
 const logger = setupLogger('summarizer');
 
 /**
+ * 默认总结结果 - 用于错误回退和填充缺失字段
+ */
+const DEFAULT_SUMMARY: SummaryResult = {
+  context: {
+    type: 'unknown',
+    topic: 'Unknown topic',
+    formality: 'neutral',
+  },
+  corrections: {},
+  style_guide: {
+    audience: 'general',
+    technical_level: 'intermediate',
+    tone: 'neutral',
+  },
+};
+
+/**
  * OpenAI API 客户端接口
  */
 interface OpenAIClient {
@@ -105,24 +122,13 @@ export class Summarizer {
     // 替换 prompt 中的日期占位符
     const promptWithDate = SUMMARIZER_PROMPT.replace('{current_date}', currentDate);
 
-    // 构建系统提示
-    const systemPrompt = `You are a precise subtitle summarizer. When processing proper nouns and product names:
-1. Use BOTH the folder path AND filename as authoritative references for product names
-2. Folder names often contain the correct product/topic names
-3. Only correct terms that appear to be ASR errors based on:
-   - Similar pronunciation
-   - Context indicating they refer to the same thing
-   - Mismatch with folder/filename context
-4. Do not modify other technical terms or module names that are clearly different
-${promptWithDate}`;
-
     // 构建用户提示
     const userPrompt = contextInfo
       ? `${contextInfo}\n\nContent:\n${subtitleContent}`
       : `Content:\n${subtitleContent}`;
 
     try {
-      const response = await this.client.callChat(systemPrompt, userPrompt, {
+      const response = await this.client.callChat(promptWithDate, userPrompt, {
         temperature: 0.7,
         timeout: 80000,
       });
@@ -139,19 +145,9 @@ ${promptWithDate}`;
 
       // 验证并填充缺失字段
       const summary: SummaryResult = {
-        context: result.context || {
-          type: 'unknown',
-          topic: 'Unknown topic',
-          formality: 'neutral',
-        },
+        context: result.context || DEFAULT_SUMMARY.context,
         corrections: result.corrections || {},
-        canonical_terms: result.canonical_terms || [],
-        do_not_translate: result.do_not_translate || [],
-        style_guide: result.style_guide || {
-          audience: 'general',
-          technical_level: 'intermediate',
-          tone: 'neutral',
-        },
+        style_guide: result.style_guide || DEFAULT_SUMMARY.style_guide,
       };
 
       // 输出完整的总结内容（与 Python 版本一致）
@@ -161,23 +157,7 @@ ${promptWithDate}`;
 
     } catch (error) {
       logger.error(`内容分析失败: ${error}`);
-
-      // 返回默认值
-      return {
-        context: {
-          type: 'unknown',
-          topic: 'Unknown',
-          formality: 'neutral',
-        },
-        corrections: {},
-        canonical_terms: [],
-        do_not_translate: [],
-        style_guide: {
-          audience: 'general',
-          technical_level: 'intermediate',
-          tone: 'neutral',
-        },
-      };
+      return DEFAULT_SUMMARY;
     }
   }
 }

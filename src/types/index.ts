@@ -54,8 +54,6 @@ export interface SummaryResult {
     formality: string;
   };
   corrections: Record<string, string>;
-  canonical_terms: string[];
-  do_not_translate: string[];
   style_guide: {
     audience: string;
     technical_level: string;

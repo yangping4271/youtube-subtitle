@@ -26,7 +26,9 @@ interface OpenAIClient {
  */
 function isSentenceComplete(text: string): boolean {
   const sentenceEndMarkers = ['.', '!', '?', '。', '！', '？', '…'];
-  const badEndWords = ['and', 'or', 'but', 'so', 'yet', 'for', 'nor', 'in', 'on', 'at', 'to', 'with', 'by', 'as'];
+  const badEndWords = new Set([
+    'and', 'or', 'but', 'so', 'yet', 'for', 'nor', 'in', 'on', 'at', 'to', 'with', 'by', 'as'
+  ]);
 
   text = text.trim();
   if (!text) return true;
@@ -37,16 +39,8 @@ function isSentenceComplete(text: string): boolean {
   }
 
   // 检查是否以不好的词结尾
-  const lowerText = text.toLowerCase();
-  for (const word of badEndWords) {
-    if (lowerText.endsWith(' ' + word) || lowerText === word) {
-      return false;
-    }
-  }
-
-  // 如果句子太短，可能不完整
-  const words = text.split(/\s+/);
-  if (words.length < 3) {
+  const words = text.toLowerCase().split(/\s+/);
+  if (words.length < 3 || badEndWords.has(words[words.length - 1])) {
     return false;
   }
 
@@ -59,28 +53,18 @@ function isSentenceComplete(text: string): boolean {
 function buildReferenceInfo(summary: SummaryResult): string {
   const parts: string[] = [];
 
-  // 添加上下文信息
   if (summary.context) {
     parts.push(`Context: ${summary.context.type} - ${summary.context.topic}`);
   }
 
-  // 添加纠错映射
-  if (summary.corrections && Object.keys(summary.corrections).length > 0) {
-    parts.push(`Apply corrections: ${JSON.stringify(summary.corrections)}`);
+  const corrections = summary.corrections;
+  if (corrections && Object.keys(corrections).length > 0) {
+    parts.push(`Apply corrections: ${JSON.stringify(corrections)}`);
   }
 
-  // 添加不翻译列表
-  if (summary.do_not_translate && summary.do_not_translate.length > 0) {
-    parts.push(`Keep in original: ${summary.do_not_translate.join(', ')}`);
-  }
-
-  // 添加规范术语
-  if (summary.canonical_terms && summary.canonical_terms.length > 0) {
-    const terms = summary.canonical_terms.slice(0, 10); // 限制显示前10个
-    parts.push(`Use canonical forms: ${terms.join(', ')}`);
-  }
-
-  return parts.length > 0 ? '\n\n<reference>\n' + parts.join('\n') + '\n</reference>' : '';
+  return parts.length > 0
+    ? `\n\n<reference>\n${parts.join('\n')}\n</reference>`
+    : '';
 }
 
 /**
@@ -389,31 +373,31 @@ export class Translator {
 
     logger.info('📊 字幕优化结果汇总');
 
+    const normalizeText = (text: string): string =>
+      text.toLowerCase().replace(/[^\w\s]/g, '');
+
     let formatChanges = 0;
     let contentChanges = 0;
 
     for (const log of this.batchLogs) {
-      if (log.type === 'content_optimization') {
-        logger.info(`🔧 字幕ID ${log.id} - 内容优化:`);
-        logger.info(`   原文: ${log.original}`);
-        logger.info(`   优化: ${log.optimized}`);
+      if (log.type !== 'content_optimization') continue;
 
-        // 简单判断是否只有格式变化
-        const normalizedOriginal = log.original.toLowerCase().replace(/[^\w\s]/g, '');
-        const normalizedOptimized = log.optimized.toLowerCase().replace(/[^\w\s]/g, '');
+      logger.info(`🔧 字幕ID ${log.id} - 内容优化:`);
+      logger.info(`   原文: ${log.original}`);
+      logger.info(`   优化: ${log.optimized}`);
 
-        if (normalizedOriginal === normalizedOptimized) {
-          formatChanges++;
-        } else {
-          contentChanges++;
-        }
+      if (normalizeText(log.original) === normalizeText(log.optimized)) {
+        formatChanges++;
+      } else {
+        contentChanges++;
       }
     }
 
+    const total = formatChanges + contentChanges;
     logger.info('📈 优化统计:');
     logger.info(`   格式优化: ${formatChanges} 项`);
     logger.info(`   内容修改: ${contentChanges} 项`);
-    logger.info(`   总计修改: ${formatChanges + contentChanges} 项`);
+    logger.info(`   总计修改: ${total} 项`);
     logger.info('✅ 字幕优化汇总完成');
   }
 }
