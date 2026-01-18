@@ -68,6 +68,15 @@ interface ChromeMessage {
     llmModel?: string;
     targetLanguage?: string;
   };
+  videoInfo?: {
+    ytTitle: string;
+    channelName: string;
+    uploadDate: string;
+    videoURL: string;
+    videoId: string;
+    description?: string;
+    aiSummary?: string | null;
+  };
   englishSubtitles?: SimpleSubtitleEntry[];
   chineseSubtitles?: SimpleSubtitleEntry[];
   englishFileName?: string;
@@ -478,10 +487,16 @@ class SubtitleExtensionBackground {
     sendResponse({ success: true, message: '翻译已在后台启动' });
 
     try {
+      // 提取视频元数据
+      const videoDescription = request.videoInfo?.description;
+      const aiSummary = request.videoInfo?.aiSummary;
+
       const result = await translatorService.translateFull(
         subtitles,
         targetLanguage || 'zh',
-        null
+        null,
+        videoDescription,
+        aiSummary
       );
 
       if (videoId) {

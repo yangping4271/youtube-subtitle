@@ -369,7 +369,8 @@ export class Translator {
    * 打印批次日志汇总
    */
   private printBatchLogs(): void {
-    if (this.batchLogs.length === 0) return;
+    const optimizationLogs = this.batchLogs.filter(log => log.type === 'content_optimization');
+    if (optimizationLogs.length === 0) return;
 
     logger.info('📊 字幕优化结果汇总');
 
@@ -377,27 +378,22 @@ export class Translator {
       text.toLowerCase().replace(/[^\w\s]/g, '');
 
     let formatChanges = 0;
-    let contentChanges = 0;
 
-    for (const log of this.batchLogs) {
-      if (log.type !== 'content_optimization') continue;
-
+    for (const log of optimizationLogs) {
       logger.info(`🔧 字幕ID ${log.id} - 内容优化:`);
       logger.info(`   原文: ${log.original}`);
       logger.info(`   优化: ${log.optimized}`);
 
       if (normalizeText(log.original) === normalizeText(log.optimized)) {
         formatChanges++;
-      } else {
-        contentChanges++;
       }
     }
 
-    const total = formatChanges + contentChanges;
+    const contentChanges = optimizationLogs.length - formatChanges;
     logger.info('📈 优化统计:');
     logger.info(`   格式优化: ${formatChanges} 项`);
     logger.info(`   内容修改: ${contentChanges} 项`);
-    logger.info(`   总计修改: ${total} 项`);
+    logger.info(`   总计修改: ${optimizationLogs.length} 项`);
     logger.info('✅ 字幕优化汇总完成');
   }
 }

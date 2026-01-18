@@ -92,11 +92,15 @@ class TranslatorServiceWrapper {
    * @param subtitles 原始字幕数组（时间戳单位：秒）
    * @param targetLang 目标语言代码
    * @param onProgress 进度回调
+   * @param videoDescription 视频说明
+   * @param aiSummary AI 生成的摘要
    */
   async translateFull(
     subtitles: Array<{ startTime: number; endTime: number; text: string }>,
     targetLang = 'zh',
-    onProgress: ((step: string, current: number, total: number) => void) | null = null
+    onProgress: ((step: string, current: number, total: number) => void) | null = null,
+    videoDescription?: string,
+    aiSummary?: string | null
   ): Promise<BilingualSubtitles> {
     if (this.isTranslating) {
       throw new Error('翻译正在进行中');
@@ -141,6 +145,8 @@ class TranslatorServiceWrapper {
 
       // 执行翻译
       const result = await this.service!.translateFull(entries, {
+        videoDescription,
+        aiSummary,
         onProgress: async (step, current, total) => {
           await saveProgress(step, current, total);
         },

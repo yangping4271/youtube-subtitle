@@ -6,12 +6,13 @@
 
 import { getDefaultEnglishSettings, getDefaultChineseSettings, getDefaultConfig } from './config';
 import { SubtitleParser } from './subtitle-parser';
+import { getVideoInfo } from './transcript-core';
 import type { SimpleSubtitleEntry, SubtitleStyleSettings, VideoSubtitleData, ASSParseResult } from '../types';
 
 // Chrome API 类型声明
 declare const chrome: {
   runtime: {
-    sendMessage: (message: unknown) => Promise<{ success: boolean; [key: string]: unknown }>;
+    sendMessage: (message: unknown) => Promise<{ success: boolean;[key: string]: unknown }>;
     onMessage: {
       addListener: (
         callback: (
@@ -114,6 +115,10 @@ class YouTubeSubtitleOverlay {
       }
 
       const videoId = this.getVideoId();
+
+      // 获取完整的视频信息（包括说明和 AI 摘要）
+      const videoInfo = getVideoInfo();
+
       const result = await chrome.storage.local.get(['apiConfig']);
       const apiConfig = (result.apiConfig as Record<string, string>) || {};
 
@@ -123,6 +128,7 @@ class YouTubeSubtitleOverlay {
         targetLanguage: apiConfig.targetLanguage || 'zh',
         videoId,
         apiConfig,
+        videoInfo,  // 传递完整的视频信息
       });
     } catch (error) {
       console.error('启动翻译失败:', error);

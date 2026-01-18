@@ -127,7 +127,12 @@ export class TranslatorService {
       };
 
       // 启动总结任务
-      const executeSummarization = async (content: string, file?: string): Promise<SummaryResult> => {
+      const executeSummarization = async (
+        content: string,
+        file?: string,
+        description?: string,
+        aiSummary?: string | null
+      ): Promise<SummaryResult> => {
         const summaryClient = createOpenAIClient(this.config, 'summary');
         const summarizer = createSummarizer(summaryClient, this.config);
 
@@ -135,7 +140,12 @@ export class TranslatorService {
 
         // 使用前20句进行总结（与原始内容而非断句后的内容）
         const sampleText = content.split(/[.!?]+/).slice(0, 20).join('. ');
-        const summary = await summarizer.summarize(sampleText, { inputFile: file, videoTitle });
+        const summary = await summarizer.summarize(sampleText, {
+          inputFile: file,
+          videoTitle,
+          videoDescription: description,
+          aiSummary
+        });
 
         return summary;
       };
@@ -143,7 +153,7 @@ export class TranslatorService {
       // 并行执行断句和总结任务
       const [splitResult, summaryResult] = await Promise.all([
         executeSplitting(subtitleData),
-        executeSummarization(originalSubtitleContent, inputFile),
+        executeSummarization(originalSubtitleContent, inputFile, options.videoDescription, options.aiSummary),
       ]);
 
       logger.info('⚡ 并行预处理阶段 完成\n');

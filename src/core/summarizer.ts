@@ -64,7 +64,12 @@ export function extractFileContext(inputFile: string): {
 /**
  * 构建上下文信息字符串
  */
-function buildContextInfo(inputFile?: string, videoTitle?: string): string {
+function buildContextInfo(
+  inputFile?: string,
+  videoTitle?: string,
+  videoDescription?: string,
+  aiSummary?: string | null
+): string {
   const contextParts: string[] = [];
 
   if (inputFile) {
@@ -77,6 +82,15 @@ function buildContextInfo(inputFile?: string, videoTitle?: string): string {
 
   if (videoTitle) {
     contextParts.push(`Video title: ${videoTitle}`);
+  }
+
+  // 新增：使用 YouTube 官方数据作为上下文
+  if (videoDescription) {
+    contextParts.push(`Video description: ${videoDescription}`);
+  }
+
+  if (aiSummary) {
+    contextParts.push(`AI-generated summary: ${aiSummary}`);
   }
 
   return contextParts.join('\n');
@@ -101,12 +115,17 @@ export class Summarizer {
    */
   async summarize(
     subtitleContent: string,
-    options: { inputFile?: string; videoTitle?: string } = {}
+    options: {
+      inputFile?: string;
+      videoTitle?: string;
+      videoDescription?: string;
+      aiSummary?: string | null;
+    } = {}
   ): Promise<SummaryResult> {
-    const { inputFile, videoTitle } = options;
+    const { inputFile, videoTitle, videoDescription, aiSummary } = options;
 
     // 提取文件上下文信息
-    const contextInfo = buildContextInfo(inputFile, videoTitle);
+    const contextInfo = buildContextInfo(inputFile, videoTitle, videoDescription, aiSummary);
 
     if (inputFile) {
       const { readableName, folderPath } = extractFileContext(inputFile);

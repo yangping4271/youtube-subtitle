@@ -97,6 +97,8 @@ export type ProgressCallback = (
 export interface TranslateOptions {
   inputFile?: string;
   videoTitle?: string;
+  videoDescription?: string;      // 视频说明
+  aiSummary?: string | null;      // AI 生成的摘要
   debug?: boolean;
   onProgress?: ProgressCallback;
 }
@@ -190,6 +192,8 @@ export interface VideoInfo {
   uploadDate: string;
   videoURL: string;
   videoId: string;
+  description?: string;      // YouTube 视频说明
+  aiSummary?: string | null; // YouTube AI 生成的摘要（可能不存在）
 }
 
 /** 视频字幕缓存数据 */
