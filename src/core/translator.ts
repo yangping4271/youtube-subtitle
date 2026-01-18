@@ -135,27 +135,24 @@ export class Translator {
 
     logger.info(`📋 翻译任务规划: ${batches.length}个批次，每批次约${batchSize}条字幕`);
 
-    // 并发翻译所有批次（与 Python 版本一致）
-    const tasks = batches.map((batch, i) =>
-      this.translateBatch(
-        batch,
-        targetLanguage,
-        i + 1,
-        batches.length,
-        context
-      ).catch(error => {
-        logger.error(`❌ 批次 ${i + 1} 翻译失败: ${error}`);
-        // 使用单条翻译降级处理（不带上下文，避免干扰）
-        return this.translateSingle(batch, targetLanguage);
-      })
-    );
+    // 并发控制
+    const { threadNum } = this.config;
+    logger.info(`⚡ 并发线程: ${Math.min(batches.length, threadNum)}个`);
 
-    // 等待所有批次完成，并发执行
-    logger.info(`⚡ 启动并发翻译: ${batches.length} 个批次同时处理`);
-    const batchResults = await Promise.all(tasks);
-
-    // 合并结果
-    const results: TranslatedEntry[] = batchResults.flat();
+    // 分批并发执行
+    const results: TranslatedEntry[] = [];
+    for (let i = 0; i < batches.length; i += threadNum) {
+      const chunkResults = await Promise.all(
+        batches.slice(i, i + threadNum).map((batch, j) =>
+          this.translateBatch(batch, targetLanguage, i + j + 1, batches.length, context)
+            .catch(error => {
+              logger.error(`❌ 批次 ${i + j + 1} 翻译失败: ${error}`);
+              return this.translateSingle(batch, targetLanguage);
+            })
+        )
+      );
+      results.push(...chunkResults.flat());
+    }
 
     // 打印批次日志汇总
     this.printBatchLogs();
