@@ -8,6 +8,16 @@ import { loadConfig } from '../utils/config.js';
 import { getLanguageName, LANGUAGE_MAPPING } from '../utils/language.js';
 import type { TranslatorConfig, SubtitleEntry, BilingualSubtitles } from '../types/index.js';
 
+/** 秒转毫秒 */
+function secondsToMs(seconds: number): number {
+  return Math.round(seconds * 1000);
+}
+
+/** 毫秒转秒 */
+function msToSeconds(ms: number): number {
+  return ms / 1000;
+}
+
 /**
  * 翻译服务包装器 - 保持与现有接口兼容
  */
@@ -135,11 +145,10 @@ class TranslatorServiceWrapper {
       this.service = createTranslatorService(this.config!);
 
       // 转换字幕格式，同时将秒转换为毫秒（与 CLI 版本和核心服务保持一致）
-      // 扩展从 YouTube 获取的字幕时间是秒，但核心翻译服务期望毫秒
       const entries: SubtitleEntry[] = subtitles.map((sub, idx) => ({
         index: idx + 1,
-        startTime: Math.round(sub.startTime * 1000),  // 秒 -> 毫秒
-        endTime: Math.round(sub.endTime * 1000),      // 秒 -> 毫秒
+        startTime: secondsToMs(sub.startTime),
+        endTime: secondsToMs(sub.endTime),
         text: sub.text,
       }));
 
@@ -152,19 +161,19 @@ class TranslatorServiceWrapper {
         },
       });
 
-      await saveProgress('complete', 3, 3);
+      await saveProgress('complete', 2, 2);
 
       // 将翻译结果的时间戳从毫秒转换回秒（用于与视频 currentTime 比较）
       const convertedResult: BilingualSubtitles = {
         english: result.english.map(entry => ({
           ...entry,
-          startTime: entry.startTime / 1000,  // 毫秒 -> 秒
-          endTime: entry.endTime / 1000,      // 毫秒 -> 秒
+          startTime: msToSeconds(entry.startTime),
+          endTime: msToSeconds(entry.endTime),
         })),
         chinese: result.chinese.map(entry => ({
           ...entry,
-          startTime: entry.startTime / 1000,  // 毫秒 -> 秒
-          endTime: entry.endTime / 1000,      // 毫秒 -> 秒
+          startTime: msToSeconds(entry.startTime),
+          endTime: msToSeconds(entry.endTime),
         })),
       };
 

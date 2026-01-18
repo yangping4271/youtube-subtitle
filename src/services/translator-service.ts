@@ -1,6 +1,6 @@
 /**
  * 翻译服务 - 整合所有模块
- * 提供完整的翻译流程：断句 → 总结 → 翻译
+ * 提供完整的翻译流程：断句 → 翻译
  * 与 Python 版本 (service.py) 保持完全一致的逻辑
  */
 
@@ -8,7 +8,6 @@ import { setupLogger } from '../utils/logger.js';
 import { createOpenAIClient } from './openai-client.js';
 import { mergeSegmentsBatch, countWords } from '../core/splitter.js';
 import { SubtitleData } from '../core/subtitle-data.js';
-import { createSummarizer } from '../core/summarizer.js';
 import { createTranslator } from '../core/translator.js';
 import type {
   TranslatorConfig,
@@ -17,7 +16,6 @@ import type {
   BilingualSubtitles,
   ProgressCallback,
   TranslateOptions,
-  SummaryResult,
 } from '../types/index.js';
 
 const logger = setupLogger('translator-service');
@@ -40,7 +38,7 @@ export class TranslatorService {
    * 流程：
    * 1. 检测字幕类型（单词级 vs 片段级）
    * 2. 如果是片段级，转换为单词级（音素理论）
-   * 3. 并行预处理：断句 + 内容总结
+   * 3. 断句优化
    * 4. 翻译
    * 5. 对齐时间戳
    *
@@ -69,97 +67,45 @@ export class TranslatorService {
         throw new Error('SRT文件为空，无法进行翻译');
       }
 
-      // 并行预处理阶段（与 Python 版本一致）
-      logger.info('\n⚡ 并行预处理阶段 开始');
+      // 断句处理阶段
+      logger.info('\n✂️ 字幕断句处理 开始');
 
-      // 准备原始字幕内容用于总结
-      const originalSubtitleContent = subtitleData.toText();
+      // 打印原始数据信息
+      const originalSegments = subtitleData.getSegments();
+      logger.info(`🔍 原始数据: ${originalSegments.length} 条字幕`);
+      if (originalSegments.length > 0) {
+        logger.info(`🔍 原始时间戳: ${originalSegments[0].startTime}s - ${originalSegments[originalSegments.length - 1].endTime}s`);
+        logger.info(`🔍 第一条: "${originalSegments[0].text}"`);
+        logger.info(`🔍 第一条时长: ${originalSegments[0].endTime - originalSegments[0].startTime}s`);
+      }
 
-      // 启动断句任务
-      const executeSplitting = async (data: SubtitleData): Promise<SubtitleData> => {
-        logger.info('\n✂️ 字幕断句处理 开始');
+      // 检查字幕类型并统一转换为单词级别
+      let processData = subtitleData;
+      if (subtitleData.isWordTimestamp()) {
+        logger.info('检测到单词级别时间戳，执行合并断句');
+      } else {
+        logger.info('检测到片段级别时间戳，先转换为单词级别');
+        processData = subtitleData.splitToWordSegments();
+        logger.info(`转换完成，生成 ${processData.length()} 个单词级别片段`);
 
-        // 保存原始字幕数据（用于后续时间戳匹配）
-        const originalData = data;
-
-        // 🔍 调试：打印原始数据信息
-        const originalSegments = originalData.getSegments();
-        logger.info(`🔍 原始数据: ${originalSegments.length} 条字幕`);
-        if (originalSegments.length > 0) {
-          logger.info(`🔍 原始时间戳: ${originalSegments[0].startTime}s - ${originalSegments[originalSegments.length - 1].endTime}s`);
-          logger.info(`🔍 第一条: "${originalSegments[0].text}"`);
-          logger.info(`🔍 第一条时长: ${originalSegments[0].endTime - originalSegments[0].startTime}s`);
+        const processSegments = processData.getSegments();
+        if (processSegments.length > 0) {
+          logger.info(`🔍 转换后时间戳: ${processSegments[0].startTime}s - ${processSegments[processSegments.length - 1].endTime}s`);
+          logger.info(`🔍 转换后第一条: "${processSegments[0].text}"`);
+          logger.info(`🔍 转换后第一条时长: ${processSegments[0].endTime - processSegments[0].startTime}s`);
         }
+      }
 
-        // 检查字幕类型并统一转换为单词级别（核心创新功能）
-        let processData = data;
+      // 执行断句处理
+      logger.info(`🤖 使用模型: ${this.config.splitModel}`);
+      logger.info(`📏 句子长度限制: ${this.config.maxWordCountEnglish} 字`);
 
-        if (data.isWordTimestamp()) {
-          logger.info('检测到单词级别时间戳，执行合并断句');
-        } else {
-          logger.info('检测到片段级别时间戳，先转换为单词级别');
-          // 统一转换为单词级别字幕
-          // 使用音素级时间戳分配，支持多语言处理
-          processData = data.splitToWordSegments();
-          logger.info(`转换完成，生成 ${processData.length()} 个单词级别片段`);
+      const splitClient = createOpenAIClient(this.config, 'split');
+      const splitResult = await mergeSegmentsBatch(processData, subtitleData, splitClient, this.config, 3);
 
-          // 🔍 调试：打印转换后的数据信息
-          const processSegments = processData.getSegments();
-          if (processSegments.length > 0) {
-            logger.info(`🔍 转换后时间戳: ${processSegments[0].startTime}s - ${processSegments[processSegments.length - 1].endTime}s`);
-            logger.info(`🔍 转换后第一条: "${processSegments[0].text}"`);
-            logger.info(`🔍 转换后第一条时长: ${processSegments[0].endTime - processSegments[0].startTime}s`);
-          }
-        }
+      logger.info(`✅ 断句完成 (优化为 ${splitResult.length()} 句)\n`);
 
-        // 执行统一的断句处理流程
-        logger.info(`🤖 使用模型: ${this.config.splitModel}`);
-        logger.info(`📏 句子长度限制: ${this.config.maxWordCountEnglish} 字`);
-
-        const splitClient = createOpenAIClient(this.config, 'split');
-        // 传入原始数据和处理数据
-        const result = await mergeSegmentsBatch(processData, originalData, splitClient, this.config, 3);
-
-        logger.info(`✅ 字幕断句处理 完成\n`);
-        logger.info(`✅ 断句完成 (优化为 ${result.length()} 句)`);
-
-        return result;
-      };
-
-      // 启动总结任务
-      const executeSummarization = async (
-        content: string,
-        file?: string,
-        description?: string,
-        aiSummary?: string | null
-      ): Promise<SummaryResult> => {
-        const summaryClient = createOpenAIClient(this.config, 'summary');
-        const summarizer = createSummarizer(summaryClient, this.config);
-
-        logger.info(`🤖 使用模型: ${this.config.summaryModel}`);
-
-        // 使用前20句进行总结（与原始内容而非断句后的内容）
-        const sampleText = content.split(/[.!?]+/).slice(0, 20).join('. ');
-        const summary = await summarizer.summarize(sampleText, {
-          inputFile: file,
-          videoTitle,
-          videoDescription: description,
-          aiSummary
-        });
-
-        return summary;
-      };
-
-      // 并行执行断句和总结任务
-      const [splitResult, summaryResult] = await Promise.all([
-        executeSplitting(subtitleData),
-        executeSummarization(originalSubtitleContent, inputFile, options.videoDescription, options.aiSummary),
-      ]);
-
-      logger.info('⚡ 并行预处理阶段 完成\n');
-
-      if (onProgress) onProgress('split', 1, 3);
-      if (onProgress) onProgress('summary', 2, 3);
+      if (onProgress) onProgress('split', 1, 2);
 
       // 构建优化后的字幕索引
       const optimizedSubtitles: Record<string, string> = {};
@@ -169,25 +115,28 @@ export class TranslatorService {
         optimizedSubtitles[String(idx + 1)] = seg.text;
       });
 
-      // 步骤3：翻译
-      logger.info('🌐 步骤3: 翻译字幕...');
-      if (onProgress) onProgress('translate', 2, 3);
+      // 步骤2：翻译
+      logger.info('🌐 步骤2: 翻译字幕...');
+      if (onProgress) onProgress('translate', 1, 2);
 
       const translationClient = createOpenAIClient(this.config, 'translation');
       const translator = createTranslator(translationClient, this.config);
 
       const translatedEntries = await translator.translate(
         optimizedSubtitles,
-        summaryResult,
+        {
+          videoDescription: options.videoDescription,
+          aiSummary: options.aiSummary,
+        },
         (current, total) => {
           if (onProgress) {
-            const progress = 2 + (current / total);
-            onProgress('translate', progress, 3);
+            const progress = 1 + (current / total);
+            onProgress('translate', progress, 2);
           }
         }
       );
 
-      if (onProgress) onProgress('complete', 3, 3);
+      if (onProgress) onProgress('complete', 2, 2);
 
       // 构建双语字幕结果
       const result = this.buildBilingualResult(splitSegments, translatedEntries);

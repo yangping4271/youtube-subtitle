@@ -21,7 +21,7 @@ export class OpenAIClient {
   private apiKey: string;
   private model: string;
 
-  constructor(config: TranslatorConfig, modelType: 'split' | 'summary' | 'translation' = 'translation') {
+  constructor(config: TranslatorConfig, modelType: 'split' | 'translation' = 'translation') {
     this.baseUrl = config.openaiBaseUrl;
     this.apiKey = config.openaiApiKey;
 
@@ -29,9 +29,6 @@ export class OpenAIClient {
     switch (modelType) {
       case 'split':
         this.model = config.splitModel;
-        break;
-      case 'summary':
-        this.model = config.summaryModel;
         break;
       case 'translation':
       default:
@@ -144,7 +141,7 @@ export class OpenAIClient {
  */
 export function createOpenAIClient(
   config: TranslatorConfig,
-  modelType: 'split' | 'summary' | 'translation' = 'translation'
+  modelType: 'split' | 'translation' = 'translation'
 ): OpenAIClient {
   return new OpenAIClient(config, modelType);
 }

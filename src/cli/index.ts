@@ -221,7 +221,6 @@ program
         onProgress: (step, current, total) => {
           const stepNames: Record<string, string> = {
             split: '断句优化',
-            summary: '内容总结',
             translate: '翻译字幕',
             complete: '完成',
           };

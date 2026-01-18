@@ -46,21 +46,6 @@ export interface SplitStats {
   rejected: number;    // > max
 }
 
-/** 总结结果 */
-export interface SummaryResult {
-  context: {
-    type: string;
-    topic: string;
-    formality: string;
-  };
-  corrections: Record<string, string>;
-  style_guide: {
-    audience: string;
-    technical_level: string;
-    tone: string;
-  };
-}
-
 /** API 配置 */
 export interface ApiConfig {
   openaiBaseUrl: string;
@@ -74,7 +59,6 @@ export interface TranslatorConfig {
   openaiBaseUrl: string;
   openaiApiKey: string;
   splitModel: string;
-  summaryModel: string;
   translationModel: string;
   targetLanguage: string;
   maxWordCountEnglish: number;
@@ -88,7 +72,7 @@ export interface TranslatorConfig {
 
 /** 翻译进度回调 */
 export type ProgressCallback = (
-  step: 'split' | 'summary' | 'translate' | 'complete',
+  step: 'split' | 'translate' | 'complete',
   current: number,
   total: number
 ) => void;
@@ -97,8 +81,8 @@ export type ProgressCallback = (
 export interface TranslateOptions {
   inputFile?: string;
   videoTitle?: string;
-  videoDescription?: string;      // 视频说明
-  aiSummary?: string | null;      // AI 生成的摘要
+  videoDescription?: string;      // 视频说明（直接使用，不通过 Summarizer）
+  aiSummary?: string | null;      // AI 生成的摘要（直接使用，不通过 Summarizer）
   debug?: boolean;
   onProgress?: ProgressCallback;
 }

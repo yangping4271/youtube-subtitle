@@ -12,7 +12,6 @@ const DEFAULT_CONFIG: TranslatorConfig = {
   openaiBaseUrl: 'https://api.openai.com/v1',
   openaiApiKey: '',
   splitModel: 'gpt-4o-mini',
-  summaryModel: 'gpt-4o-mini',
   translationModel: 'gpt-4o',
   targetLanguage: 'zh',
   maxWordCountEnglish: 19,
@@ -40,7 +39,6 @@ async function loadConfigFromEnv(): Promise<TranslatorConfig> {
     openaiBaseUrl: process.env.OPENAI_BASE_URL || DEFAULT_CONFIG.openaiBaseUrl,
     openaiApiKey: process.env.OPENAI_API_KEY || '',
     splitModel: process.env.SPLIT_MODEL || DEFAULT_CONFIG.splitModel,
-    summaryModel: process.env.SUMMARY_MODEL || DEFAULT_CONFIG.summaryModel,
     translationModel: process.env.TRANSLATION_MODEL || DEFAULT_CONFIG.translationModel,
     targetLanguage: process.env.TARGET_LANGUAGE || DEFAULT_CONFIG.targetLanguage,
     maxWordCountEnglish: parseInt(process.env.MAX_WORD_COUNT || '19', 10),
@@ -65,7 +63,6 @@ async function loadConfigFromStorage(): Promise<TranslatorConfig> {
           openaiBaseUrl: apiConfig.openaiBaseUrl || DEFAULT_CONFIG.openaiBaseUrl,
           openaiApiKey: apiConfig.openaiApiKey || '',
           splitModel: apiConfig.llmModel || DEFAULT_CONFIG.splitModel,
-          summaryModel: apiConfig.llmModel || DEFAULT_CONFIG.summaryModel,
           translationModel: apiConfig.llmModel || DEFAULT_CONFIG.translationModel,
           targetLanguage: apiConfig.targetLanguage || DEFAULT_CONFIG.targetLanguage,
         });
