@@ -77,43 +77,30 @@ const cliConfig = {
 
 // 复制静态文件到 extension 目录
 function copyStaticFiles() {
-  // 只复制真正的静态文件（非 TS 编译的）
-  const staticFiles = [
-    'manifest.json',
-    'popup.html',
-    'popup.js',     // 暂时保留 popup.js（待迁移到 TS）
-    'popup.css',
-    'subtitle-overlay.css',
-    'transcript-styles.css',
-  ];
-
   // 确保 extension 目录存在
   if (!fs.existsSync('extension')) {
     fs.mkdirSync('extension', { recursive: true });
   }
 
-  // 复制文件
-  staticFiles.forEach(file => {
-    if (fs.existsSync(file)) {
-      fs.copyFileSync(file, path.join('extension', file));
-    }
-  });
+  // 静态文件已经在 extension/ 目录中
+  // 但为了支持 CI 或清理后重建，确保这些文件存在的提示
+  const requiredFiles = [
+    'manifest.json',
+    'popup.html',
+    'popup.js',
+    'popup.css',
+    'subtitle-overlay.css',
+  ];
 
-  // 复制 icons 目录
-  if (fs.existsSync('icons')) {
-    const iconsDir = path.join('extension', 'icons');
-    if (!fs.existsSync(iconsDir)) {
-      fs.mkdirSync(iconsDir, { recursive: true });
-    }
-    fs.readdirSync('icons').forEach(file => {
-      fs.copyFileSync(
-        path.join('icons', file),
-        path.join(iconsDir, file)
-      );
-    });
+  const missingFiles = requiredFiles.filter(file => !fs.existsSync(path.join('extension', file)));
+
+  if (missingFiles.length > 0) {
+    console.warn('⚠️  警告：以下静态文件缺失：');
+    missingFiles.forEach(file => console.warn(`   - extension/${file}`));
+    console.warn('   请确保这些文件存在于 extension/ 目录中');
   }
 
-  console.log('📁 Static files copied to extension/');
+  console.log('📁 Extension directory ready');
 }
 
 async function build() {

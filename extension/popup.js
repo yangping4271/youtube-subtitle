@@ -1282,7 +1282,7 @@ class PopupController {
     // ========================================
 
     isValidSubtitleFile(file) {
-        const validExtensions = ['srt', 'vtt', 'ass'];
+        const validExtensions = ['srt', 'ass'];
         const extension = file.name.split('.').pop().toLowerCase();
         return validExtensions.includes(extension);
     }
@@ -1302,8 +1302,6 @@ class PopupController {
         try {
             if (extension === 'srt') {
                 return SubtitleParser.parseSRT(content);
-            } else if (extension === 'vtt') {
-                return SubtitleParser.parseVTT(content);
             } else if (extension === 'ass') {
                 return SubtitleParser.parseASS(content);
             } else {

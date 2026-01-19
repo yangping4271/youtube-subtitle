@@ -2,7 +2,7 @@
  * YouTube SubtitlePlus - 字幕解析器
  * ============================================
  * 提供统一的字幕文件解析功能
- * 支持格式：SRT、VTT、ASS
+ * 支持格式：SRT、ASS
  */
 
 import type { SimpleSubtitleEntry, ASSParseResult } from '../types';
@@ -43,45 +43,6 @@ export class SubtitleParser {
         }
       }
     });
-
-    return subtitles;
-  }
-
-  /**
-   * 解析 VTT 格式字幕
-   */
-  static parseVTT(content: string): SimpleSubtitleEntry[] {
-    const subtitles: SimpleSubtitleEntry[] = [];
-    const lines = content.split('\n');
-    let currentSubtitle: SimpleSubtitleEntry | null = null;
-
-    lines.forEach((line) => {
-      line = line.trim();
-
-      if (line === 'WEBVTT' || line === '') return;
-
-      const timeMatch = line.match(
-        /(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})/
-      );
-      if (timeMatch) {
-        if (currentSubtitle) {
-          subtitles.push(currentSubtitle);
-        }
-
-        currentSubtitle = {
-          startTime: this.parseTime(timeMatch[1], timeMatch[2], timeMatch[3], timeMatch[4]),
-          endTime: this.parseTime(timeMatch[5], timeMatch[6], timeMatch[7], timeMatch[8]),
-          text: '',
-        };
-      } else if (currentSubtitle && line) {
-        currentSubtitle.text +=
-          (currentSubtitle.text ? '\n' : '') + line.replace(/<[^>]*>/g, '');
-      }
-    });
-
-    if (currentSubtitle) {
-      subtitles.push(currentSubtitle);
-    }
 
     return subtitles;
   }

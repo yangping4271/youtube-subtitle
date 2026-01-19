@@ -4,6 +4,15 @@
 
 import type { TranslatorConfig, ApiConfig } from '../types/index.js';
 
+// Chrome API 类型声明
+declare const chrome: {
+  storage?: {
+    local: {
+      get: (keys: string[], callback: (result: Record<string, unknown>) => void) => void;
+    };
+  };
+};
+
 // 检测运行环境
 const isNode = typeof process !== 'undefined' && process.versions?.node;
 
@@ -56,8 +65,8 @@ async function loadConfigFromEnv(): Promise<TranslatorConfig> {
 async function loadConfigFromStorage(): Promise<TranslatorConfig> {
   return new Promise((resolve) => {
     if (typeof chrome !== 'undefined' && chrome.storage) {
-      chrome.storage.local.get(['apiConfig'], (result) => {
-        const apiConfig: ApiConfig = result.apiConfig || {};
+      chrome.storage.local.get(['apiConfig'], (result: Record<string, unknown>) => {
+        const apiConfig: ApiConfig = (result.apiConfig as ApiConfig) || {};
         resolve({
           ...DEFAULT_CONFIG,
           openaiBaseUrl: apiConfig.openaiBaseUrl || DEFAULT_CONFIG.openaiBaseUrl,

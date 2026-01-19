@@ -226,11 +226,14 @@ class SubtitleExtensionBackground {
           break;
 
         case 'startTranslation':
-          this.startBackgroundTranslation(request, sendResponse);
+          void this.startBackgroundTranslation(request, sendResponse).catch((error) => {
+            console.error('后台翻译启动失败:', error);
+            sendResponse({ success: false, error: (error as Error).message });
+          });
           break;
 
         case 'cancelTranslation':
-          this.cancelBackgroundTranslation(sendResponse);
+          await this.cancelBackgroundTranslation(sendResponse);
           break;
 
         case 'getTranslationStatus': {

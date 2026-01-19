@@ -12,6 +12,7 @@ import type { SimpleSubtitleEntry, SubtitleStyleSettings, VideoSubtitleData, ASS
 // Chrome API 类型声明
 declare const chrome: {
   runtime: {
+    id?: string;
     sendMessage: (message: unknown) => Promise<{ success: boolean;[key: string]: unknown }>;
     onMessage: {
       addListener: (
@@ -66,6 +67,7 @@ class YouTubeSubtitleOverlay {
   private fullscreenListener: (() => void) | null = null;
   private resizeWindowListener: (() => void) | null = null;
   private youtubeStateObserver: MutationObserver | null = null;
+  private urlChangeObserver: MutationObserver | null = null;
 
   constructor() {
     this.englishSettings = getDefaultEnglishSettings();
@@ -73,15 +75,15 @@ class YouTubeSubtitleOverlay {
 
     const config = getDefaultConfig();
     this.enableDPRCompensation = config.dpr.enabled;
-    this.dprCompensationFactor = this.calculateDPRCompensation();
+    this.dprCompensationFactor = this.calculateDPRCompensation(config.dpr.compensationFactor);
 
     this.init();
   }
 
-  private calculateDPRCompensation(): number {
+  private calculateDPRCompensation(compensationFactor: number): number {
     const dpr = window.devicePixelRatio || 1;
     if (dpr <= 1) return 1.0;
-    return 1 + (dpr - 1) * 0.4;
+    return 1 + (dpr - 1) * compensationFactor;
   }
 
   private init(): void {
@@ -422,14 +424,20 @@ class YouTubeSubtitleOverlay {
 
   private observeVideoChanges(): void {
     let currentUrl = location.href;
-    const observer = new MutationObserver(() => {
+
+    // 如果已存在 observer，先断开
+    if (this.urlChangeObserver) {
+      this.urlChangeObserver.disconnect();
+    }
+
+    this.urlChangeObserver = new MutationObserver(() => {
       if (location.href !== currentUrl) {
         currentUrl = location.href;
         setTimeout(() => this.onVideoChange(), 1000);
       }
     });
 
-    observer.observe(document.body, { childList: true, subtree: true });
+    this.urlChangeObserver.observe(document.body, { childList: true, subtree: true });
     setTimeout(() => this.onVideoChange(), 1000);
   }
 
@@ -508,18 +516,18 @@ class YouTubeSubtitleOverlay {
       window.removeEventListener('resize', this.resizeWindowListener);
     }
 
-    const throttleReposition = this.throttle(() => {
+    const debounceReposition = this.debounce(() => {
       if (this.overlayElement && this.isEnabled) {
         this.repositionSubtitle();
       }
     }, 100);
 
     this.resizeObserver = new ResizeObserver(() => {
-      throttleReposition();
+      debounceReposition();
     });
 
     this.scrollListener = () => {
-      throttleReposition();
+      debounceReposition();
     };
 
     this.fullscreenListener = () => {
@@ -531,7 +539,7 @@ class YouTubeSubtitleOverlay {
     };
 
     this.resizeWindowListener = () => {
-      throttleReposition();
+      debounceReposition();
     };
 
     this.setupYouTubeStateListener();
@@ -544,7 +552,7 @@ class YouTubeSubtitleOverlay {
     window.addEventListener('resize', this.resizeWindowListener, { passive: true });
   }
 
-  private throttle<T extends (...args: unknown[]) => void>(func: T, wait: number): T {
+  private debounce<T extends (...args: unknown[]) => void>(func: T, wait: number): T {
     let timeout: ReturnType<typeof setTimeout> | null = null;
     return ((...args: unknown[]) => {
       const later = () => {
@@ -1056,11 +1064,8 @@ class YouTubeSubtitleOverlay {
             chineseFileName: info.filename + ' (中文)',
           });
         }
-      } else if (format === '.srt' || format === '.vtt') {
-        const subtitleData =
-          format === '.srt'
-            ? SubtitleParser.parseSRT(content)
-            : SubtitleParser.parseVTT(content);
+      } else if (format === '.srt') {
+        const subtitleData = SubtitleParser.parseSRT(content);
 
         if (subtitleData.length > 0) {
           this.subtitleData = subtitleData;

@@ -770,8 +770,8 @@ export async function mergeSegmentsBatch(
   // 并行处理每个批次
   const allSegments: SubtitleEntry[] = [];
 
-  // 创建处理任务
-  const tasks = batches.map(async (batch, index) => {
+  // 创建惰性任务函数（不立即执行）
+  const taskFunctions = batches.map((batch, index) => async () => {
     const batchIndex = index + 1;
     const batchText = batch.toText();
     const wordCount = countWords(batchText);
@@ -792,11 +792,12 @@ export async function mergeSegmentsBatch(
     return resultSegments;
   });
 
-  // 控制并发数
+  // 控制并发数：每次只启动 numThreads 个任务
   const results: SubtitleEntry[][] = [];
-  for (let i = 0; i < tasks.length; i += numThreads) {
-    const chunk = tasks.slice(i, i + numThreads);
-    const chunkResults = await Promise.all(chunk);
+  for (let i = 0; i < taskFunctions.length; i += numThreads) {
+    const chunk = taskFunctions.slice(i, i + numThreads);
+    // 执行这批任务函数
+    const chunkResults = await Promise.all(chunk.map(fn => fn()));
     results.push(...chunkResults);
   }
 

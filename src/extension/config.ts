@@ -109,7 +109,8 @@ export function validateSettings(
   if (settings) {
     for (const key of Object.keys(defaults) as Array<keyof SubtitleStyleSettings>) {
       if (settings[key] !== undefined) {
-        (validated as Record<string, unknown>)[key] = settings[key];
+        // 使用类型安全的赋值
+        validated[key] = settings[key] as never;
       }
     }
   }

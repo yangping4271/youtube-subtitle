@@ -8,6 +8,16 @@ import { loadConfig } from '../utils/config.js';
 import { getLanguageName, LANGUAGE_MAPPING } from '../utils/language.js';
 import type { TranslatorConfig, SubtitleEntry, BilingualSubtitles } from '../types/index.js';
 
+// Chrome API 类型声明
+declare const chrome: {
+  storage?: {
+    local: {
+      set: (items: Record<string, unknown>) => Promise<void>;
+      remove: (keys: string | string[]) => void;
+    };
+  };
+};
+
 /** 秒转毫秒 */
 function secondsToMs(seconds: number): number {
   return Math.round(seconds * 1000);
