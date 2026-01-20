@@ -7,6 +7,7 @@ import { setupLogger } from '../utils/logger.js';
 import { buildTranslatePrompt, buildSingleTranslatePrompt } from './prompts.js';
 import { parseLlmResponse } from '../utils/json-repair.js';
 import { getLanguageName } from '../utils/language.js';
+import { normalizeEnglishPunctuation, normalizeChinesePunctuation, isChinese } from '../utils/punctuation.js';
 import type { TranslatorConfig, TranslatedEntry } from '../types/index.js';
 
 const logger = setupLogger('translator');
@@ -198,6 +199,16 @@ export class Translator {
       }
     }
     // ============ 二次失败检查和重试结束 ============
+
+    // 标点符号规范化处理（Netflix 标准）
+    for (const entry of results) {
+      // 英文原文：删除 . , ; :
+      entry.optimized = normalizeEnglishPunctuation(entry.optimized);
+      // 中文翻译：删除 ，。、；：
+      if (isChinese(this.config.targetLanguage)) {
+        entry.translation = normalizeChinesePunctuation(entry.translation);
+      }
+    }
 
     return results;
   }
