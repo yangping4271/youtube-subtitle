@@ -16,37 +16,6 @@ interface LogEntry {
 const isNode = typeof process !== 'undefined' && process.versions?.node;
 const isBrowser = typeof window !== 'undefined';
 
-// 日志文件支持（仅 CLI 模式）
-let fileLoggingEnabled = false;
-let logFilePath: string | null = null;
-
-/**
- * 初始化文件日志（仅 CLI 调用）
- */
-export async function initFileLogging(logDir: string, filename = 'cli.log'): Promise<void> {
-  if (!isNode) return;
-
-  try {
-    const fs = await import('fs');
-    const path = await import('path');
-
-    // 确保 log 目录存在
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
-    }
-
-    logFilePath = path.join(logDir, filename);
-
-    // 清空旧日志文件（每次运行覆盖）
-    fs.writeFileSync(logFilePath, '', 'utf-8');
-
-    fileLoggingEnabled = true;
-    console.log(`📝 日志文件: ${logFilePath}`);
-  } catch (error) {
-    console.error('❌ 无法创建日志文件:', error);
-  }
-}
-
 // 日志格式化（与 Python 版本一致）
 function formatLog(entry: LogEntry): string {
   const time = entry.timestamp.split('T')[1].split('.')[0]; // HH:MM:SS
@@ -97,21 +66,6 @@ export class Logger {
         console.log(`${color}${formatted}${colors.reset}`, data);
       } else {
         console.log(`${color}${formatted}${colors.reset}`);
-      }
-
-      // 同时写入日志文件（仅在 CLI 模式启用）
-      if (fileLoggingEnabled && logFilePath) {
-        (async () => {
-          try {
-            const fs = await import('fs');
-            const fileLog = data !== undefined
-              ? `${formatted} ${JSON.stringify(data)}\n`
-              : `${formatted}\n`;
-            fs.appendFileSync(logFilePath!, fileLog, 'utf-8');
-          } catch (error) {
-            // 静默失败，不影响程序运行
-          }
-        })();
       }
     } else if (isBrowser) {
       // 浏览器环境：只输出到控制台

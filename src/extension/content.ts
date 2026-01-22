@@ -174,10 +174,14 @@ class YouTubeSubtitleOverlay {
           const videoId = this.getVideoId();
           const subtitleLoaded =
             this.englishSubtitles.length > 0 || this.chineseSubtitles.length > 0;
+          const videoInfo = getVideoInfo();
           sendResponse({
             videoId,
             subtitleLoaded,
             autoLoadEnabled: this.autoLoadEnabled,
+            title: videoInfo.ytTitle,
+            description: videoInfo.description,
+            aiSummary: videoInfo.aiSummary,
           });
           break;
         }

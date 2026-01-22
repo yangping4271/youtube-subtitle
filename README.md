@@ -6,7 +6,6 @@
 
 - 自动提取 YouTube 视频字幕
 - 字幕翻译功能
-- 支持命令行工具
 
 ## 技术栈
 
@@ -19,13 +18,11 @@
 ```
 ├── src/                    # 源代码
 │   ├── extension/         # 扩展源码
-│   ├── cli/              # CLI 工具
 │   ├── core/             # 核心功能（翻译、断句）
 │   ├── services/         # 服务层
 │   ├── types/            # 类型定义
 │   └── utils/            # 工具函数
 ├── extension/             # 扩展构建输出
-├── dist/                 # CLI 构建输出
 └── esbuild.config.js     # 构建配置
 ```
 
@@ -60,15 +57,7 @@ npm run watch
 
 ## 使用
 
-### Chrome 扩展
-
 在 YouTube 视频页面使用扩展功能进行字幕翻译和摘要。
-
-### 命令行工具
-
-```bash
-npm run cli
-```
 
 ## 环境配置
 

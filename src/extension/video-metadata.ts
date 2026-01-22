@@ -18,9 +18,14 @@ export function getVideoDescription(): string {
         const selectors = [
             // 展开后的描述
             '#description yt-attributed-string',
+            '#description yt-attributed-string span',
             // 未expand的描述
             '#description-inline-expander yt-attributed-string',
+            '#description-inline-expander yt-attributed-string span',
             'ytd-text-inline-expander #description-inline-expander yt-attributed-string',
+            // 新版 YouTube 结构
+            'ytd-watch-metadata #description yt-attributed-string',
+            'ytd-watch-metadata #description-inline-expander yt-attributed-string',
         ];
 
         for (const selector of selectors) {
@@ -29,13 +34,6 @@ export function getVideoDescription(): string {
                 const description = element.textContent.trim();
                 return description;
             }
-        }
-
-        // 回退：尝试直接获取容器的文本
-        const container = document.querySelector('#description-inline-expander');
-        if (container?.textContent?.trim()) {
-            const description = container.textContent.trim();
-            return description;
         }
 
         logger.warn('⚠️ 未找到视频说明');
@@ -102,18 +100,15 @@ export function getAISummary(): string | null {
  * 获取所有视频元数据并输出到控制台（用于调试）
  */
 export function debugVideoMetadata(): void {
-    console.group('🎬 YouTube 视频元数据');
-
     const description = getVideoDescription();
     const aiSummary = getAISummary();
 
+    console.group('🎬 YouTube 视频元数据');
     console.log('📄 视频说明:');
     console.log(description || '(无)');
     console.log('');
-
     console.log('🤖 AI 摘要:');
     console.log(aiSummary || '(无)');
-
     console.groupEnd();
 }
 

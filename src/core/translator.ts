@@ -75,12 +75,26 @@ function sanitizeContext(text: string, maxWords = 500): string {
 /**
  * 构建上下文信息字符串
  */
-function buildContextInfo(context?: { videoDescription?: string; aiSummary?: string | null }): string {
-  if (!context?.videoDescription && !context?.aiSummary) {
+function buildContextInfo(context?: {
+  videoTitle?: string;
+  videoDescription?: string;
+  aiSummary?: string | null;
+}): string {
+  if (!context?.videoTitle && !context?.videoDescription && !context?.aiSummary) {
     return '';
   }
 
   const parts: string[] = [];
+
+  // 添加当前时间戳
+  const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  parts.push(`Current date: ${currentDate}`);
+
+  // 添加视频标题
+  if (context.videoTitle) {
+    const cleanedTitle = sanitizeContext(context.videoTitle, 100);
+    parts.push(`Video title: ${cleanedTitle}`);
+  }
 
   // 清洗和截断视频说明（最多500个英文单词）
   const cleanedDescription = context.videoDescription ? sanitizeContext(context.videoDescription, 500) : '';
@@ -117,12 +131,12 @@ export class Translator {
   /**
    * 批量翻译字幕
    * @param subtitles 字幕数据 {index: text}
-   * @param context 上下文信息（视频说明、AI 摘要等）
+   * @param context 上下文信息（视频标题、说明、AI 摘要等）
    * @param onProgress 进度回调
    */
   async translate(
     subtitles: Record<string, string>,
-    context?: { videoDescription?: string; aiSummary?: string | null },
+    context?: { videoTitle?: string; videoDescription?: string; aiSummary?: string | null },
     onProgress?: (current: number, total: number) => void
   ): Promise<TranslatedEntry[]> {
     this.batchLogs = [];
@@ -263,7 +277,7 @@ export class Translator {
     targetLanguage: string,
     batchNum: number,
     totalBatches: number,
-    context?: { videoDescription?: string; aiSummary?: string | null }
+    context?: { videoTitle?: string; videoDescription?: string; aiSummary?: string | null }
   ): Promise<TranslatedEntry[]> {
     const batchInfo = `[批次${batchNum}/${totalBatches}]`;
     logger.info(`🌍 ${batchInfo} 翻译 ${batch.length} 条字幕`);
@@ -293,6 +307,20 @@ export class Translator {
 
     // 解析响应
     const responseContent = this.normalizeResponse(parseLlmResponse(response), batchInfo);
+
+    // 仅保存第一个批次的完整调试信息（一次性保存）
+    if (batchNum === 1) {
+      const debugKey = `debugContext_batch1_${Date.now()}`;
+      await this.saveDebugContext(debugKey, {
+        batchNum,
+        systemPrompt,
+        userPrompt,
+        context,
+        subtitles: inputObj,
+        parsedResponse: responseContent,
+        timestamp: new Date().toISOString()
+      });
+    }
 
     // 构建结果
     return batch.map(([key, originalText]) => {
@@ -436,6 +464,34 @@ export class Translator {
     logger.info(`   内容修改: ${contentChanges} 项`);
     logger.info(`   总计修改: ${optimizationLogs.length} 项`);
     logger.info('✅ 字幕优化汇总完成');
+  }
+
+  /**
+   * 保存调试上下文到 storage（用于排查翻译质量问题）
+   */
+  private async saveDebugContext(key: string, debugInfo: {
+    batchNum: number;
+    systemPrompt: string;
+    userPrompt: string;
+    context?: { videoDescription?: string; aiSummary?: string | null; videoTitle?: string };
+    subtitles: Record<string, string>;
+    parsedResponse: Record<string, { optimized_subtitle?: string; translation?: string }>;
+    timestamp: string;
+  }): Promise<void> {
+    try {
+      // 在浏览器环境中保存到 chrome.storage
+      if (typeof chrome !== 'undefined' && chrome.storage) {
+        await chrome.storage.local.set({ [key]: debugInfo });
+        logger.info(`💾 已保存调试上下文: ${key}`);
+      } else {
+        // 在 Node 环境中输出到控制台
+        logger.info(`🔍 调试上下文 [批次${debugInfo.batchNum}]:`);
+        logger.info(`System Prompt:\n${debugInfo.systemPrompt}`);
+        logger.info(`User Prompt:\n${debugInfo.userPrompt}`);
+      }
+    } catch (error) {
+      logger.warn(`⚠️ 保存调试上下文失败: ${error}`);
+    }
   }
 }
 

@@ -1,9 +1,6 @@
 # Dependencies
 node_modules/
 
-# Build outputs
-dist/
-
 # Extension 构建产物（保留静态文件）
 extension/*.js
 extension/*.js.map

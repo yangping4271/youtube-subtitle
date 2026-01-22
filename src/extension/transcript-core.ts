@@ -89,15 +89,6 @@ export function getVideoInfo(): VideoInfo {
   const description = getVideoDescription();
   const aiSummary = getAISummary();
 
-  // 调试输出：在控制台中显示获取到的元数据
-  console.group('🎬 YouTube 视频信息');
-  console.log('标题:', ytTitle);
-  console.log('频道:', channelName);
-  console.log('视频 ID:', videoId);
-  console.log('📄 视频说明:', description ? `${description.substring(0, 100)}...` : '(无)');
-  console.log('🤖 AI 摘要:', aiSummary || '(无)');
-  console.groupEnd();
-
   return { ytTitle, channelName, uploadDate, videoURL, videoId, description, aiSummary };
 }
 

@@ -477,20 +477,32 @@ class SubtitleExtensionBackground {
       await chrome.storage.local.set({ apiConfig });
     }
 
-    // 清空所有旧的翻译缓存，只保留新翻译的结果
+    // 保存发起翻译的标签页 ID
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const sourceTabId = tabs[0]?.id;
+
+    // 清空所有旧的翻译缓存和调试上下文，只保留新翻译的结果
     const allData = await chrome.storage.local.get(null);
     const videoSubtitleKeys = Object.keys(allData).filter((key) =>
       key.startsWith('videoSubtitles_')
     );
+    const debugContextKeys = Object.keys(allData).filter((key) =>
+      key.startsWith('debugContext_')
+    );
+
     if (videoSubtitleKeys.length > 0) {
       await chrome.storage.local.remove(videoSubtitleKeys);
-      console.log(`🗑️ 已清除 ${videoSubtitleKeys.length} 条旧翻译缓存`);
+    }
+
+    if (debugContextKeys.length > 0) {
+      await chrome.storage.local.remove(debugContextKeys);
     }
 
     sendResponse({ success: true, message: '翻译已在后台启动' });
 
     try {
       // 提取视频元数据
+      const videoTitle = request.videoInfo?.title;
       const videoDescription = request.videoInfo?.description;
       const aiSummary = request.videoInfo?.aiSummary;
 
@@ -499,7 +511,8 @@ class SubtitleExtensionBackground {
         targetLanguage || 'zh',
         null,
         videoDescription,
-        aiSummary
+        aiSummary,
+        videoTitle
       );
 
       if (videoId) {
@@ -512,6 +525,19 @@ class SubtitleExtensionBackground {
           'AI翻译 (中文)',
           undefined
         );
+
+        // 直接向源标签页发送消息
+        if (sourceTabId) {
+          try {
+            await chrome.tabs.sendMessage(sourceTabId, {
+              action: 'loadBilingualSubtitles',
+              englishSubtitles: result.english,
+              chineseSubtitles: result.chinese,
+            });
+          } catch (error) {
+            console.error('向源标签页发送消息失败:', error);
+          }
+        }
       }
     } catch (error) {
       console.error('❌ 后台翻译失败:', error);

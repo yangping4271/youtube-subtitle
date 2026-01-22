@@ -436,22 +436,6 @@ class PopupController {
             });
         }
 
-        // 清除所有字幕
-        const clearButton = document.getElementById('clearButton');
-        if (clearButton) {
-            clearButton.addEventListener('click', () => {
-                this.clearSubtitle();
-            });
-        }
-
-        // 强制重置按钮事件
-        const forceResetButton = document.getElementById('forceResetButton');
-        if (forceResetButton) {
-            forceResetButton.addEventListener('click', () => {
-                this.handleForceReset(forceResetButton);
-            });
-        }
-
         // 设置控件事件
         this.bindSettingsEvents();
 
@@ -1268,10 +1252,6 @@ class PopupController {
     }
 
     updateSubtitleInfo() {
-        const englishCountEl = document.getElementById('englishCount');
-        const chineseCountEl = document.getElementById('chineseCount');
-        if (englishCountEl) englishCountEl.textContent = `${this.englishSubtitles.length}条`;
-        if (chineseCountEl) chineseCountEl.textContent = `${this.chineseSubtitles.length}条`;
         // 同步文件卡片状态
         this.updateFileCardState('english', !!this.englishFileName);
         this.updateFileCardState('chinese', !!this.chineseFileName);
@@ -1310,102 +1290,6 @@ class PopupController {
         } catch (error) {
             console.error('解析字幕失败:', error);
             return [];
-        }
-    }
-
-    async clearSubtitle() {
-        try {
-            const currentVideoId = await this.getCurrentVideoId();
-
-            if (currentVideoId) {
-                // 清除当前视频的字幕数据
-                await chrome.storage.local.remove(`videoSubtitles_${currentVideoId}`);
-            }
-
-            // 同时清除旧的全局存储作为后备
-            const response = await chrome.runtime.sendMessage({ action: 'clearSubtitleData' });
-            if (response.success) {
-                this.subtitleData = [];
-                this.englishSubtitles = [];
-                this.chineseSubtitles = [];
-                this.currentFileName = '';
-                this.englishFileName = '';
-                this.chineseFileName = '';
-                this.updateSubtitleInfoWithRetry();
-
-                // 更新自动加载状态显示
-                this.getCurrentVideoInfo();
-
-                // 注意：不再自动关闭字幕开关，让用户手动控制
-
-                Toast.success('字幕数据已清除');
-            }
-        } catch (error) {
-            console.error('清除字幕失败:', error);
-            Toast.error('清除失败: ' + error.message);
-        }
-    }
-
-    // 强制重置处理（双击确认机制）
-    async handleForceReset(button) {
-        if (!button.classList.contains('confirm')) {
-            // 第一次点击：进入确认状态
-            button.classList.add('confirm');
-            button.title = '再次点击确认重置 (3秒后取消)';
-            Toast.warning('⚠️ 再次点击确认重置所有数据');
-
-            // 3秒后自动取消确认状态
-            setTimeout(() => {
-                if (button.classList.contains('confirm')) {
-                    button.classList.remove('confirm');
-                    button.title = '强制重置所有扩展数据（包括设置）';
-                }
-            }, 3000);
-
-            return;
-        }
-
-        // 第二次点击：执行重置
-        try {
-            button.classList.remove('confirm');
-            button.disabled = true;
-
-            Toast.show('🔄 正在执行强制重置...', 'info');
-
-            // 调用background服务的强制重置方法
-            const response = await chrome.runtime.sendMessage({ action: 'forceReset' });
-
-            if (response.success) {
-                // 重置本地状态
-                this.subtitleData = [];
-                this.englishSubtitles = [];
-                this.chineseSubtitles = [];
-                this.currentFileName = '';
-                this.englishFileName = '';
-                this.chineseFileName = '';
-
-                // 重置设置为默认值（从统一配置中心加载）
-                this.englishSettings = getDefaultEnglishSettings();
-                this.chineseSettings = getDefaultChineseSettings();
-
-                this.autoLoadEnabled = false;
-                this.serverUrl = 'http://127.0.0.1:8888';
-
-                // 强制刷新界面
-                await this.loadCurrentState();
-                this.updateSubtitleInfo();
-                this.updateSettingsDisplay();
-
-                Toast.success('🎉 强制重置完成！所有数据已重置为默认状态');
-            } else {
-                throw new Error(response.error || '重置失败');
-            }
-        } catch (error) {
-            console.error('强制重置失败:', error);
-            Toast.error('重置失败: ' + error.message);
-        } finally {
-            button.disabled = false;
-            button.title = '强制重置所有扩展数据（包括设置）';
         }
     }
 
@@ -2152,12 +2036,18 @@ class PopupController {
 
     bindTranslateEvents() {
         const translateBtn = document.getElementById('translateBtn');
+        const retranslateBtn = document.getElementById('retranslateBtn');
+
         if (translateBtn) {
-            translateBtn.addEventListener('click', () => this.startTranslation());
+            translateBtn.addEventListener('click', () => this.startTranslation(false));
+        }
+
+        if (retranslateBtn) {
+            retranslateBtn.addEventListener('click', () => this.startTranslation(true));
         }
     }
 
-    async startTranslation() {
+    async startTranslation(forceRetranslate = false) {
         if (this.isTranslating) {
             Toast.warning('翻译正在进行中');
             return;
@@ -2170,9 +2060,9 @@ class PopupController {
             return;
         }
 
-        // 检查是否已有翻译缓存
+        // 检查是否已有翻译缓存（除非强制重新翻译）
         const currentVideoId = await this.getCurrentVideoId();
-        if (currentVideoId) {
+        if (!forceRetranslate && currentVideoId) {
             const cacheKey = `videoSubtitles_${currentVideoId}`;
             const result = await chrome.storage.local.get([cacheKey]);
             const cached = result[cacheKey];
@@ -2231,13 +2121,45 @@ class PopupController {
 
             if (autoLoadStatus) autoLoadStatus.textContent = `获取到 ${subtitles.length} 条字幕，准备翻译...`;
 
+            // 获取视频信息（标题、描述等）
+            const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+            let videoInfo = {};
+            if (tabs.length > 0) {
+                try {
+                    const response = await new Promise((resolve, reject) => {
+                        chrome.tabs.sendMessage(tabs[0].id, { action: 'getVideoInfo' }, (response) => {
+                            if (chrome.runtime.lastError) {
+                                console.warn('获取视频信息失败:', chrome.runtime.lastError);
+                                resolve(null);
+                            } else {
+                                resolve(response);
+                            }
+                        });
+                    });
+
+                    console.log('📹 获取到的视频信息:', response);
+
+                    if (response) {
+                        videoInfo = {
+                            title: response.title,
+                            description: response.description,
+                            aiSummary: response.aiSummary
+                        };
+                        console.log('📦 准备传递的视频信息:', videoInfo);
+                    }
+                } catch (error) {
+                    console.warn('获取视频信息异常:', error);
+                }
+            }
+
             // 2. 发送消息到后台启动翻译（popup关闭后仍可继续）
             const response = await chrome.runtime.sendMessage({
                 action: 'startTranslation',
                 subtitles: subtitles,
                 targetLanguage: this.apiConfig.targetLanguage,
                 videoId: currentVideoId,
-                apiConfig: this.apiConfig
+                apiConfig: this.apiConfig,
+                videoInfo: videoInfo
             });
 
             if (!response || !response.success) {

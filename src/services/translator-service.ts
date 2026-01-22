@@ -125,6 +125,7 @@ export class TranslatorService {
       const translatedEntries = await translator.translate(
         optimizedSubtitles,
         {
+          videoTitle: options.videoTitle,
           videoDescription: options.videoDescription,
           aiSummary: options.aiSummary,
         },

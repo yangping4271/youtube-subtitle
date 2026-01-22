@@ -44,33 +44,6 @@
         <div class="main-content">
             <!-- 文件管理标签页 -->
             <div class="tab-content active" id="filesTab">
-                <!-- 字幕统计区域 -->
-                <div class="subtitle-stats">
-                    <div class="status-card">
-                        <div class="status-content">
-                            <div class="status-info">
-                                <span class="status-flag">🇺🇸</span>
-                                <span class="status-label">英文</span>
-                                <span class="status-count" id="englishCount">0条</span>
-                            </div>
-                            <div class="status-divider"></div>
-                            <div class="status-info">
-                                <span class="status-flag">🇨🇳</span>
-                                <span class="status-label">中文</span>
-                                <span class="status-count" id="chineseCount">0条</span>
-                            </div>
-                        </div>
-                        <div class="action-buttons">
-                            <button class="action-btn clear-btn" id="clearButton" title="清除所有字幕">
-                                <span>🗑️</span>
-                            </button>
-                            <button class="action-btn reset-btn" id="forceResetButton" title="重置扩展">
-                                <span>🔄</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
                 <!-- 字幕来源选择 -->
                 <div class="subtitle-source-section">
                     <div class="source-header">
@@ -125,11 +98,16 @@
                         </div>
                     </div>
 
-                    <!-- 翻译按钮 -->
-                    <button class="translate-main-btn" id="translateBtn">
-                        <span class="btn-icon">🚀</span>
-                        <span class="btn-text">开始翻译</span>
-                    </button>
+                    <!-- 翻译按钮组 -->
+                    <div class="translate-btn-group">
+                        <button class="translate-main-btn" id="translateBtn">
+                            <span class="btn-icon">🚀</span>
+                            <span class="btn-text">开始翻译</span>
+                        </button>
+                        <button class="retranslate-btn" id="retranslateBtn" title="强制重新翻译（忽略缓存）">
+                            <span>🔄</span>
+                        </button>
+                    </div>
                 </div>
             </div>
 

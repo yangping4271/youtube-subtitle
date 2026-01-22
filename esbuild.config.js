@@ -56,25 +56,6 @@ const extensionEntries = [
   },
 ];
 
-// CLI 构建配置
-const cliConfig = {
-  entryPoints: ['src/cli/index.ts'],
-  bundle: true,
-  outfile: 'dist/cli.js',
-  platform: 'node',
-  target: 'node18',
-  format: 'esm',
-  minify: false,
-  sourcemap: true,
-  define: {
-    '__PLATFORM__': '"node"',
-  },
-  banner: {
-    js: '#!/usr/bin/env node',
-  },
-  external: ['commander', 'dotenv'],
-};
-
 // 复制静态文件到 extension 目录
 function copyStaticFiles() {
   // 确保 extension 目录存在
@@ -109,9 +90,6 @@ async function build() {
     if (!fs.existsSync('extension')) {
       fs.mkdirSync('extension', { recursive: true });
     }
-    if (!fs.existsSync('dist')) {
-      fs.mkdirSync('dist', { recursive: true });
-    }
 
     // 复制静态文件
     copyStaticFiles();
@@ -124,10 +102,9 @@ async function build() {
 
     if (isWatch) {
       // 开发模式：监听文件变化
-      const contexts = await Promise.all([
-        ...extensionConfigs.map(config => esbuild.context(config)),
-        esbuild.context(cliConfig),
-      ]);
+      const contexts = await Promise.all(
+        extensionConfigs.map(config => esbuild.context(config))
+      );
 
       await Promise.all(contexts.map(ctx => ctx.watch()));
       console.log('👀 Watching for changes...');
@@ -135,17 +112,15 @@ async function build() {
       // 一次性构建
       console.log('🔨 Building...');
 
-      await Promise.all([
-        ...extensionConfigs.map(config => esbuild.build(config)),
-        esbuild.build(cliConfig),
-      ]);
+      await Promise.all(
+        extensionConfigs.map(config => esbuild.build(config))
+      );
 
       console.log('✅ Build complete');
       console.log('   📦 Extension files:');
       extensionEntries.forEach(entry => {
         console.log(`      - ${entry.outfile}`);
       });
-      console.log('   📦 dist/cli.js (CLI tool)');
     }
   } catch (error) {
     console.error('❌ Build failed:', error);

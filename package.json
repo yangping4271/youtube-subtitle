@@ -7,7 +7,6 @@
     "build": "node esbuild.config.js",
     "build:prod": "NODE_ENV=production node esbuild.config.js",
     "watch": "node esbuild.config.js --watch",
-    "cli": "node --loader ts-node/esm src/cli/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
@@ -17,7 +16,6 @@
     "typescript": "^5.3.2"
   },
   "dependencies": {
-    "commander": "^11.1.0",
     "dotenv": "^16.3.1"
   }
 }

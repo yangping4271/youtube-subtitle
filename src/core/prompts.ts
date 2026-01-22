@@ -96,10 +96,8 @@ export const TRANSLATE_PROMPT = `
 You are an expert specializing in subtitle proofreading and translation. Your role is to process subtitles generated through speech recognition and translate them into [TargetLanguage].
 
 ## Reference Materials
-If provided, use the following reference data:
-- Context: Information on the video's type and main topic to guide translation style.
-- Corrections: Specified pairs mapping incorrect to correct terms. Apply these corrections precisely.
-- Style guide: Target audience and appropriate tone for the translation.
+If provided, use the following reference data to guide your translation:
+- Video context: Information about the video (title, description, etc.) to understand the topic and terminology
 
 ## Processing Workflow
 
@@ -107,9 +105,10 @@ If provided, use the following reference data:
 - Ensure subtitle numbering fully matches the input; do not combine, remove, or split subtitles.
 - All optimizations must be performed in the source language (from the original subtitles).
 - Do NOT translate or paraphrase to [TargetLanguage] when preparing the "optimized_subtitle" field; this field must remain in the source language. Translation is exclusively in the "translation" field.
-- Apply corrections precisely as provided (e.g., replace every instance of "WinSurf" with "Windsurf"). Do not improvise new spellings or formats.
-- Correct spelling and grammar errors, ensure terminology is consistent, and remove repeated words or phrases.
-- Eliminate filler words (e.g., "um," "uh," "like"), non-speech sound tags (e.g., [Music], [Applause]), reaction markers (e.g., (laugh), (cough)), and musical symbols (e.g., ♪). If nothing remains after cleaning, set "optimized_subtitle" to an empty string.
+- Only correct OBVIOUS speech recognition errors (clear typos, garbled words, incomplete words).
+- CRITICAL: Do NOT "correct" technical terms, product names, or version numbers, even if they seem factually incorrect. Only fix them if they are clearly garbled (e.g., "Gem1ni" → "Gemini"). Preserve the original text exactly as spoken, including version numbers like "Gemini 3", "GPT-5", etc. When in doubt, always keep the original.
+- Remove filler words (e.g., "um," "uh," "like"), non-speech sound tags (e.g., [Music], [Applause]), reaction markers (e.g., (laugh), (cough)), and musical symbols (e.g., ♪). If nothing remains after cleaning, set "optimized_subtitle" to an empty string.
+- Remove repeated words or phrases only if they are clearly unintentional stutters.
 
 ### 2. Translation Procedures
 - Using the cleaned and corrected original text, translate each subtitle into [TargetLanguage].

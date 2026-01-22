@@ -332,134 +332,6 @@ body {
    📁 文件管理标签页样式
    ======================================== */
 
-/* 💾 字幕统计区域 */
-.subtitle-stats {
-    margin-top: var(--spacing-lg);
-    margin-bottom: var(--spacing-xl);
-}
-
-/* 📊 快捷操作区 */
-.quick-actions {
-    margin-bottom: var(--spacing-xl);
-}
-
-.status-card {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: linear-gradient(135deg, var(--bg-secondary), var(--bg-tertiary));
-    border: 2px solid var(--bg-tertiary);
-    border-radius: var(--radius-xl);
-    padding: var(--spacing-lg) var(--spacing-xl);
-    min-height: 60px;
-    box-shadow: var(--shadow-sm);
-    transition: all var(--transition-normal);
-}
-
-.status-content {
-    display: flex;
-    align-items: center;
-    flex: 1;
-    gap: var(--spacing-2xl);
-}
-
-.status-card:hover {
-    border-color: var(--primary-color);
-    box-shadow: var(--shadow-md);
-    transform: translateY(-2px);
-}
-
-.status-info {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    gap: var(--spacing-sm);
-}
-
-.status-flag {
-    font-size: 20px;
-    margin-bottom: var(--spacing-xs);
-}
-
-.status-label {
-    font-size: 13px;
-    color: var(--text-secondary);
-    font-weight: 500;
-    letter-spacing: 0.5px;
-}
-
-.status-count {
-    font-size: 22px;
-    font-weight: 700;
-    color: var(--primary-color);
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
-}
-
-.status-divider {
-    width: 1px;
-    height: 40px;
-    background: linear-gradient(to bottom,
-            transparent,
-            var(--text-light) 20%,
-            var(--text-light) 80%,
-            transparent);
-    opacity: 0.3;
-}
-
-/* 动作按钮组 */
-.action-buttons {
-    display: flex;
-    gap: var(--spacing-sm);
-    align-items: center;
-    margin-left: var(--spacing-xl);
-}
-
-.action-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: var(--radius-md);
-    border: 1px solid transparent;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    font-size: 14px;
-    position: relative;
-}
-
-.clear-btn {
-    background: var(--error-bg);
-    color: var(--error-color);
-}
-
-.clear-btn:hover {
-    background: var(--error-color);
-    color: var(--text-white);
-    transform: scale(1.1);
-    box-shadow: var(--shadow-sm);
-}
-
-.reset-btn {
-    background: var(--warning-bg);
-    color: var(--warning-color);
-}
-
-.reset-btn:hover {
-    background: var(--warning-color);
-    color: var(--text-white);
-    transform: scale(1.1) rotate(180deg);
-    box-shadow: var(--shadow-sm);
-}
-
-.reset-btn.confirm {
-    background: var(--error-color);
-    color: var(--text-white);
-    animation: pulse 0.6s ease-in-out infinite alternate;
-}
-
 /* 📂 字幕上传模式选择 */
 .upload-mode-tabs {
     margin-bottom: var(--spacing-2xl);
@@ -2435,8 +2307,14 @@ body {
     font-weight: 600;
 }
 
-.translate-main-btn {
+.translate-btn-group {
+    display: flex;
+    gap: var(--spacing-sm);
     width: 100%;
+}
+
+.translate-main-btn {
+    flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2474,4 +2352,25 @@ body {
 .translate-main-btn.cancel {
     background: rgba(239, 68, 68, 0.3);
     border-color: rgba(239, 68, 68, 0.5);
+}
+
+.retranslate-btn {
+    min-width: 48px;
+    padding: var(--spacing-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.15);
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-radius: var(--radius-md);
+    color: var(--text-white);
+    font-size: 18px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.retranslate-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.4);
+    transform: translateY(-2px) rotate(180deg);
 }
