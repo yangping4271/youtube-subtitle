@@ -468,11 +468,17 @@ export async function splitByLLM(
   const systemPrompt = buildSplitPrompt({ maxWordCountEnglish });
   const userPrompt = `Please use multiple <br> tags to separate the following sentence. Make sure to preserve all spaces and punctuation exactly as they appear in the original text:\n${text}`;
 
+  // 记录开始时间
+  const startTime = Date.now();
+
   // 调用 API
   const response = await client.callChat(systemPrompt, userPrompt, {
     temperature: 0.2,
     timeout: 80000,
   });
+
+  // 记录耗时
+  const duration = Date.now() - startTime;
 
   if (!response) {
     throw new Error('API 返回为空');
@@ -594,7 +600,7 @@ export async function splitByLLM(
   }
 
   const batchPrefix = batchIndex ? `[批次${batchIndex}]` : '';
-  logger.info(`✅ ${batchPrefix} 断句完成: ${sentences.length} 个句子`);
+  logger.info(`✅ ${batchPrefix} 断句完成: ${sentences.length} 个句子，耗时 ${(duration / 1000).toFixed(1)}s`);
 
   return sentences;
 }
@@ -749,6 +755,9 @@ export async function mergeSegmentsBatch(
 ): Promise<SubtitleData> {
   const logger = setupLogger('断句合并');
 
+  // 记录总开始时间
+  const totalStartTime = Date.now();
+
   // 按单词数分批（用于生成文本和匹配）
   const wordThreshold = 500;  // 与 Python 版本一致
   const batches = splitByWordCount(subtitleData, wordThreshold);
@@ -769,6 +778,7 @@ export async function mergeSegmentsBatch(
 
   // 并行处理每个批次
   const allSegments: SubtitleEntry[] = [];
+  const batchTimes: Array<{ batch: number; duration: number }> = [];
 
   // 创建惰性任务函数（不立即执行）
   const taskFunctions = batches.map((batch, index) => async () => {
@@ -778,8 +788,16 @@ export async function mergeSegmentsBatch(
 
     logger.info(`📝 [批次${batchIndex}] 处理 ${wordCount} 个单词`);
 
+    // 记录批次开始时间
+    const batchStartTime = Date.now();
+
     // 调用 LLM 处理
     const sentences = await splitByLLM(batchText, client, config, batchIndex);
+
+    // 记录批次耗时
+    const batchDuration = Date.now() - batchStartTime;
+    batchTimes.push({ batch: batchIndex, duration: batchDuration });
+    logger.info(`✂️  [批次${batchIndex}] 断句完成，耗时 ${(batchDuration / 1000).toFixed(1)}s`);
 
     // 🔍 调试：打印原始数据信息
     const batchSegments = batch.getSegments();
@@ -816,6 +834,18 @@ export async function mergeSegmentsBatch(
   allSegments.forEach((seg, idx) => {
     seg.index = idx + 1;
   });
+
+  // 输出断句耗时汇总
+  const totalTime = Date.now() - totalStartTime;
+  logger.info('⏱️  断句耗时统计:');
+
+  // 输出每个批次的耗时
+  for (const { batch, duration } of batchTimes) {
+    const percentage = ((duration / totalTime) * 100).toFixed(0);
+    logger.info(`   批次${batch}: ${(duration / 1000).toFixed(1)}s (${percentage}%)`);
+  }
+
+  logger.info(`   总计: ${(totalTime / 1000).toFixed(1)}s`);
 
   return new SubtitleData(allSegments);
 }

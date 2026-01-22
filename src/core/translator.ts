@@ -122,6 +122,8 @@ export class Translator {
   private client: OpenAIClient;
   private config: TranslatorConfig;
   private batchLogs: Array<{ type: string; id: number; original: string; optimized: string }> = [];
+  private batchTimes: Array<{ batch: number; duration: number }> = [];
+  private translateStartTime: number = 0;
 
   constructor(client: OpenAIClient, config: TranslatorConfig) {
     this.client = client;
@@ -140,6 +142,8 @@ export class Translator {
     onProgress?: (current: number, total: number) => void
   ): Promise<TranslatedEntry[]> {
     this.batchLogs = [];
+    this.batchTimes = [];
+    this.translateStartTime = Date.now();
 
     const targetLanguage = getLanguageName(this.config.targetLanguage);
     const batchSize = this.config.batchSize;
@@ -224,6 +228,9 @@ export class Translator {
       }
     }
 
+    // 输出翻译耗时汇总
+    this.printTimeStats();
+
     return results;
   }
 
@@ -282,6 +289,9 @@ export class Translator {
     const batchInfo = `[批次${batchNum}/${totalBatches}]`;
     logger.info(`🌍 ${batchInfo} 翻译 ${batch.length} 条字幕`);
 
+    // 记录批次开始时间
+    const batchStartTime = Date.now();
+
     // 构建输入
     const inputObj: Record<string, string> = Object.fromEntries(batch);
 
@@ -302,6 +312,11 @@ export class Translator {
       temperature: 0.7,
       timeout: 80000,
     });
+
+    // 记录批次耗时
+    const batchDuration = Date.now() - batchStartTime;
+    this.batchTimes.push({ batch: batchNum, duration: batchDuration });
+    logger.info(`🌍 ${batchInfo} 翻译 ${batch.length} 条字幕，耗时 ${(batchDuration / 1000).toFixed(1)}s`);
 
     logger.info(`📥 ${batchInfo} LLM原始返回数据:\n${response}`);
 
@@ -464,6 +479,25 @@ export class Translator {
     logger.info(`   内容修改: ${contentChanges} 项`);
     logger.info(`   总计修改: ${optimizationLogs.length} 项`);
     logger.info('✅ 字幕优化汇总完成');
+  }
+
+  /**
+   * 打印翻译耗时统计
+   */
+  private printTimeStats(): void {
+    if (this.batchTimes.length === 0) return;
+
+    const totalTime = Date.now() - this.translateStartTime;
+
+    logger.info('⏱️  翻译耗时统计:');
+
+    // 输出每个批次的耗时
+    for (const { batch, duration } of this.batchTimes) {
+      const percentage = ((duration / totalTime) * 100).toFixed(0);
+      logger.info(`   批次${batch}: ${(duration / 1000).toFixed(1)}s (${percentage}%)`);
+    }
+
+    logger.info(`   总计: ${(totalTime / 1000).toFixed(1)}s`);
   }
 
   /**
