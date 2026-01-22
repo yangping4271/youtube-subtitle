@@ -165,6 +165,17 @@
                                 <!-- 动态填充 -->
                             </select>
                         </div>
+
+                        <!-- 并发数 -->
+                        <div class="setting-item">
+                            <div class="setting-label">
+                                <span class="setting-icon">⚡</span>
+                                <span class="setting-name">并发数</span>
+                                <span class="setting-value" id="threadNumValue">3</span>
+                            </div>
+                            <input type="range" id="threadNum" min="1" max="10" value="3" class="setting-slider">
+                            <div class="setting-hint">较高的并发可能触发 API 速率限制</div>
+                        </div>
                     </div>
 
                     <!-- 操作按钮 -->

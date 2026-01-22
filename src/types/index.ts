@@ -52,6 +52,7 @@ export interface ApiConfig {
   openaiApiKey: string;
   llmModel: string;
   targetLanguage: string;
+  threadNum?: number;  // 并发数，默认 3
 }
 
 /** 翻译器配置 */

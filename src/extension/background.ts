@@ -28,6 +28,7 @@ declare const chrome: {
   tabs: {
     query: (query: { active?: boolean; currentWindow?: boolean }) => Promise<chrome.tabs.Tab[]>;
     sendMessage: (tabId: number, message: unknown) => Promise<void>;
+    get: (tabId: number) => Promise<chrome.tabs.Tab>;
   };
   storage: {
     local: {
@@ -145,9 +146,10 @@ class SubtitleExtensionBackground {
 
   async handleMessage(
     request: ChromeMessage,
-    _sender: chrome.runtime.MessageSender,
+    sender: chrome.runtime.MessageSender,
     sendResponse: (response: unknown) => void
   ): Promise<void> {
+    const sourceTabId = sender.tab?.id;
     try {
       switch (request.action) {
         case 'getSubtitleData': {
@@ -164,7 +166,7 @@ class SubtitleExtensionBackground {
 
         case 'saveSubtitleData':
           await this.saveSubtitleData(request.data as SimpleSubtitleEntry[]);
-          await this.notifyContentScript('loadSubtitle', { subtitleData: request.data });
+          await this.notifyContentScript('loadSubtitle', { subtitleData: request.data }, sourceTabId);
           sendResponse({ success: true });
           break;
 
@@ -178,7 +180,7 @@ class SubtitleExtensionBackground {
           await this.notifyContentScript('loadBilingualSubtitles', {
             englishSubtitles: request.englishSubtitles,
             chineseSubtitles: request.chineseSubtitles,
-          });
+          }, sourceTabId);
           sendResponse({ success: true });
           break;
 
@@ -196,24 +198,24 @@ class SubtitleExtensionBackground {
           break;
 
         case 'toggleSubtitle':
-          await this.toggleSubtitle(request.enabled || false);
+          await this.toggleSubtitle(request.enabled || false, sourceTabId);
           sendResponse({ success: true });
           break;
 
         case 'updateSettings':
           if (request.settings) {
-            await this.updateSettings(request.settings);
+            await this.updateSettings(request.settings, sourceTabId);
           }
           sendResponse({ success: true });
           break;
 
         case 'clearSubtitleData':
-          await this.clearSubtitleData();
+          await this.clearSubtitleData(sourceTabId);
           sendResponse({ success: true });
           break;
 
         case 'forceReset':
-          await this.forceReset();
+          await this.forceReset(sourceTabId);
           sendResponse({ success: true });
           break;
 
@@ -364,9 +366,9 @@ class SubtitleExtensionBackground {
     await chrome.storage.local.set({ subtitleData: data });
   }
 
-  async toggleSubtitle(enabled: boolean): Promise<void> {
+  async toggleSubtitle(enabled: boolean, tabId?: number): Promise<void> {
     await chrome.storage.local.set({ subtitleEnabled: enabled });
-    await this.notifyContentScript('toggleSubtitle', { enabled });
+    await this.notifyContentScript('toggleSubtitle', { enabled }, tabId);
   }
 
   async setSubtitleEnabled(enabled: boolean): Promise<void> {
@@ -376,7 +378,7 @@ class SubtitleExtensionBackground {
   async updateSettings(settings: {
     language: 'english' | 'chinese';
     data: Partial<SubtitleStyleSettings>;
-  }): Promise<void> {
+  }, tabId?: number): Promise<void> {
     if (settings.language === 'english') {
       const currentSettings = await chrome.storage.local.get(['englishSettings']);
       const newSettings = {
@@ -388,7 +390,7 @@ class SubtitleExtensionBackground {
       await this.notifyContentScript('updateSettings', {
         language: 'english',
         settings: newSettings,
-      });
+      }, tabId);
     } else if (settings.language === 'chinese') {
       const currentSettings = await chrome.storage.local.get(['chineseSettings']);
       const newSettings = {
@@ -400,11 +402,11 @@ class SubtitleExtensionBackground {
       await this.notifyContentScript('updateSettings', {
         language: 'chinese',
         settings: newSettings,
-      });
+      }, tabId);
     }
   }
 
-  async clearSubtitleData(): Promise<void> {
+  async clearSubtitleData(tabId?: number): Promise<void> {
     const allData = await chrome.storage.local.get(null);
     const videoSubtitleKeys = Object.keys(allData).filter((key) =>
       key.startsWith('videoSubtitles_')
@@ -422,10 +424,10 @@ class SubtitleExtensionBackground {
       await chrome.storage.local.remove(videoSubtitleKeys);
     }
 
-    await this.notifyContentScript('clearData', {});
+    await this.notifyContentScript('clearData', {}, tabId);
   }
 
-  async forceReset(): Promise<void> {
+  async forceReset(tabId?: number): Promise<void> {
     await chrome.storage.local.clear();
 
     await chrome.storage.local.set({
@@ -440,19 +442,25 @@ class SubtitleExtensionBackground {
       autoLoadEnabled: false,
     });
 
-    await this.notifyContentScript('forceReset', {});
+    await this.notifyContentScript('forceReset', {}, tabId);
   }
 
-  async notifyContentScript(action: string, data: Record<string, unknown> = {}): Promise<void> {
+  async notifyContentScript(action: string, data: Record<string, unknown> = {}, tabId?: number): Promise<void> {
     try {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      const currentTab = tabs[0];
+      let targetTabId = tabId;
+      if (!targetTabId) {
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        targetTabId = tabs[0]?.id;
+      }
 
-      if (currentTab && currentTab.id && this.isYouTubePage(currentTab.url)) {
-        await chrome.tabs.sendMessage(currentTab.id, {
-          action,
-          ...data,
-        });
+      if (targetTabId) {
+        const tab = await chrome.tabs.get(targetTabId).catch(() => null);
+        if (tab && this.isYouTubePage(tab.url)) {
+          await chrome.tabs.sendMessage(targetTabId, {
+            action,
+            ...data,
+          });
+        }
       }
     } catch (error) {
       console.error('向content script发送消息失败:', error);
@@ -512,7 +520,7 @@ class SubtitleExtensionBackground {
 
     try {
       // 提取视频元数据
-      const videoTitle = request.videoInfo?.title;
+      const videoTitle = request.videoInfo?.ytTitle;
       const videoDescription = request.videoInfo?.description;
       const aiSummary = request.videoInfo?.aiSummary;
 

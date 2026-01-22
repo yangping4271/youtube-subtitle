@@ -28,6 +28,7 @@ export const DEFAULT_API_CONFIG: ApiConfig = {
   openaiApiKey: '',
   llmModel: '',
   targetLanguage: 'zh',
+  threadNum: 3,  // 默认并发数
 };
 
 /** 默认翻译器配置 */
@@ -38,7 +39,7 @@ const DEFAULT_TRANSLATOR_CONFIG: TranslatorConfig = {
   translationModel: 'gpt-4o',
   targetLanguage: 'zh',
   maxWordCountEnglish: 19,
-  threadNum: 18,
+  threadNum: 3,  // 默认并发数，降低以避免 rate limit
   batchSize: 20,
   toleranceMultiplier: 1.2,
   warningMultiplier: 1.5,
@@ -163,6 +164,7 @@ export async function loadConfig(): Promise<TranslatorConfig> {
           splitModel: apiConfig.llmModel || DEFAULT_TRANSLATOR_CONFIG.splitModel,
           translationModel: apiConfig.llmModel || DEFAULT_TRANSLATOR_CONFIG.translationModel,
           targetLanguage: apiConfig.targetLanguage || DEFAULT_TRANSLATOR_CONFIG.targetLanguage,
+          threadNum: apiConfig.threadNum || DEFAULT_TRANSLATOR_CONFIG.threadNum,
         });
       });
     } else {

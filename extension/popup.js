@@ -85,7 +85,8 @@ class PopupController {
             openaiBaseUrl: 'https://api.openai.com/v1',
             openaiApiKey: '',
             llmModel: '',
-            targetLanguage: 'zh'
+            targetLanguage: 'zh',
+            threadNum: 3
         };
         this.isTranslating = false;
 
@@ -1715,11 +1716,17 @@ class PopupController {
         const apiKey = document.getElementById('apiKey');
         const llmModel = document.getElementById('llmModel');
         const targetLanguage = document.getElementById('targetLanguage');
+        const threadNum = document.getElementById('threadNum');
+        const threadNumValue = document.getElementById('threadNumValue');
 
         if (apiBaseUrl) apiBaseUrl.value = this.apiConfig.openaiBaseUrl;
         if (apiKey) apiKey.value = this.apiConfig.openaiApiKey;
         if (llmModel) llmModel.value = this.apiConfig.llmModel;
         if (targetLanguage) this.setSelectValue(targetLanguage, this.apiConfig.targetLanguage);
+        if (threadNum) {
+            threadNum.value = this.apiConfig.threadNum || 3;
+            if (threadNumValue) threadNumValue.textContent = threadNum.value;
+        }
 
         // 检查API状态
         if (this.apiConfig.openaiApiKey) {
@@ -1768,6 +1775,17 @@ class PopupController {
             });
         }
 
+        // 并发数
+        const threadNum = document.getElementById('threadNum');
+        const threadNumValue = document.getElementById('threadNumValue');
+        if (threadNum) {
+            threadNum.addEventListener('input', (e) => {
+                const value = parseInt(e.target.value, 10);
+                this.apiConfig.threadNum = value;
+                if (threadNumValue) threadNumValue.textContent = value;
+            });
+        }
+
         // 测试连接按钮
         const testApiBtn = document.getElementById('testApiBtn');
         if (testApiBtn) {
@@ -1793,11 +1811,13 @@ class PopupController {
         const apiKey = document.getElementById('apiKey');
         const llmModel = document.getElementById('llmModel');
         const targetLanguage = document.getElementById('targetLanguage');
+        const threadNum = document.getElementById('threadNum');
 
         if (apiBaseUrl) this.apiConfig.openaiBaseUrl = apiBaseUrl.value.trim();
         if (apiKey) this.apiConfig.openaiApiKey = apiKey.value.trim();
         if (llmModel) this.apiConfig.llmModel = llmModel.value.trim();
         if (targetLanguage) this.apiConfig.targetLanguage = targetLanguage.value;
+        if (threadNum) this.apiConfig.threadNum = parseInt(threadNum.value, 10) || 3;
 
         await this.saveApiConfig();
     }

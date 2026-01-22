@@ -1103,6 +1103,13 @@ body::before {
     box-shadow: var(--shadow-gold-strong);
 }
 
+.setting-hint {
+    font-size: 11px;
+    color: var(--text-light);
+    margin-top: var(--spacing-xs);
+    padding-left: 2px;
+}
+
 .color-selector {
     display: flex;
     align-items: center;

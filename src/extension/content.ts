@@ -93,14 +93,6 @@ class YouTubeSubtitleOverlay {
     this.loadSubtitleData();
     this.bindMessageListener();
 
-    window.addEventListener('YTSP_TriggerAutoLoad', () => {
-      this.autoLoadEnabled = true;
-      this.attemptAutoLoad();
-    });
-
-    window.addEventListener('YTSP_StartTranslation', () => {
-      this.startTranslationFromPage();
-    });
   }
 
   private async startTranslationFromPage(): Promise<void> {
@@ -211,6 +203,13 @@ class YouTubeSubtitleOverlay {
               sendResponse({ success: false, error: (error as Error).message });
             });
           return true;
+        case 'triggerAutoLoad':
+          this.autoLoadEnabled = true;
+          this.attemptAutoLoad();
+          break;
+        case 'startTranslationFromPage':
+          this.startTranslationFromPage();
+          break;
       }
     });
   }
