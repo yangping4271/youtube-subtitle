@@ -559,13 +559,14 @@ class PopupController {
 
             if (currentVideoId) {
                 // 基于视频ID保存字幕
+                const targetLangName = this.getTargetLanguageName(this.apiConfig.targetLanguage || 'zh');
                 response = await chrome.runtime.sendMessage({
                     action: 'saveVideoSubtitles',
                     videoId: currentVideoId,
                     englishSubtitles: this.englishSubtitles,
                     chineseSubtitles: this.chineseSubtitles,
-                    englishFileName: file.name + ' (英文)',
-                    chineseFileName: file.name + ' (中文)'
+                    englishFileName: file.name + ' (原语言)',
+                    chineseFileName: file.name + ` (${targetLangName})`
                 });
             } else {
                 // 后备方案：使用旧的保存方式
@@ -2074,13 +2075,14 @@ class PopupController {
                 this.englishSubtitles = cached.englishSubtitles || [];
                 this.chineseSubtitles = cached.chineseSubtitles || [];
 
+                const targetLangName = this.getTargetLanguageName(this.apiConfig.targetLanguage || 'zh');
                 // 通知content.js加载字幕
                 await chrome.runtime.sendMessage({
                     action: 'saveBilingualSubtitles',
                     englishSubtitles: cached.englishSubtitles,
                     chineseSubtitles: cached.chineseSubtitles,
-                    englishFileName: cached.englishFileName || 'YouTube字幕 (英文)',
-                    chineseFileName: cached.chineseFileName || 'AI翻译 (中文)'
+                    englishFileName: cached.englishFileName || 'YouTube字幕 (原语言)',
+                    chineseFileName: cached.chineseFileName || `AI翻译 (${targetLangName})`
                 });
 
                 // 启用字幕显示

@@ -8,6 +8,7 @@ import { getDefaultEnglishSettings, getDefaultChineseSettings, getDefaultConfig 
 import { SubtitleParser } from './subtitle-parser';
 import { getVideoInfo } from './transcript-core';
 import type { SimpleSubtitleEntry, SubtitleStyleSettings, VideoSubtitleData, ASSParseResult } from '../types';
+import { getLanguageName } from '../utils/language';
 
 // Chrome API 类型声明
 declare const chrome: {
@@ -1052,6 +1053,12 @@ class YouTubeSubtitleOverlay {
         return;
       }
 
+      // 获取目标语言配置
+      const result = await chrome.storage.local.get(['apiConfig']);
+      const apiConfig = (result.apiConfig as Record<string, string>) || {};
+      const targetLang = apiConfig.targetLanguage || 'zh';
+      const targetLangName = getLanguageName(targetLang);
+
       if (format === '.ass') {
         const assResult: ASSParseResult = SubtitleParser.parseASS(content);
 
@@ -1064,8 +1071,8 @@ class YouTubeSubtitleOverlay {
             videoId: currentVideoId,
             englishSubtitles: assResult.english,
             chineseSubtitles: assResult.chinese,
-            englishFileName: info.filename + ' (英文)',
-            chineseFileName: info.filename + ' (中文)',
+            englishFileName: info.filename + ' (原语言)',
+            chineseFileName: info.filename + ` (${targetLangName})`,
           });
         }
       } else if (format === '.srt') {

@@ -7,6 +7,7 @@
 import { getDefaultEnglishSettings, getDefaultChineseSettings } from './config';
 import { translatorService } from './translator';
 import type { SimpleSubtitleEntry, SubtitleStyleSettings, VideoSubtitleData, TranslationProgress } from '../types';
+import { getLanguageName } from '../utils/language';
 
 // Chrome API 类型声明
 declare const chrome: {
@@ -516,13 +517,14 @@ class SubtitleExtensionBackground {
       );
 
       if (videoId) {
+        const targetLangName = getLanguageName(targetLanguage || 'zh');
         await this.saveVideoSubtitles(
           videoId,
           result.english,
           result.chinese,
           undefined,
-          'YouTube字幕 (英文)',
-          'AI翻译 (中文)',
+          'YouTube字幕 (原语言)',
+          `AI翻译 (${targetLangName})`,
           undefined
         );
 
