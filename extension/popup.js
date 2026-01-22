@@ -439,24 +439,6 @@ class PopupController {
         // 设置控件事件
         this.bindSettingsEvents();
 
-        // 帮助链接
-        const helpLink = document.getElementById('helpLink');
-        const feedbackLink = document.getElementById('feedbackLink');
-
-        if (helpLink) {
-            helpLink.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.switchTab('about');
-            });
-        }
-
-        if (feedbackLink) {
-            feedbackLink.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.switchTab('about');
-            });
-        }
-
         // 翻译按钮和API设置事件
         this.bindTranslateEvents();
         this.bindApiSettingsEvents();
