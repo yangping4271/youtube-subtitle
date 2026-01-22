@@ -13,10 +13,6 @@ const browserConfig = {
   format: 'iife',
   minify: isProduction,
   sourcemap: !isProduction,
-  define: {
-    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
-    '__PLATFORM__': '"browser"',
-  },
 };
 
 // 扩展各入口文件配置

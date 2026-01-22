@@ -1,5 +1,5 @@
 /**
- * 配置管理 - 支持 Node.js 和浏览器环境
+ * 配置管理 - Chrome 扩展
  */
 
 import type { TranslatorConfig, ApiConfig } from '../types/index.js';
@@ -13,9 +13,6 @@ declare const chrome: {
   };
 };
 
-// 检测运行环境
-const isNode = typeof process !== 'undefined' && process.versions?.node;
-
 // 默认配置
 const DEFAULT_CONFIG: TranslatorConfig = {
   openaiBaseUrl: 'https://api.openai.com/v1',
@@ -25,44 +22,16 @@ const DEFAULT_CONFIG: TranslatorConfig = {
   targetLanguage: 'zh',
   maxWordCountEnglish: 19,
   threadNum: 18,
-  batchSize: 20, // 与 Python 版本一致
-  // 阈值倍数（与 Python 版本一致）
+  batchSize: 20,
   toleranceMultiplier: 1.2,
   warningMultiplier: 1.5,
   maxMultiplier: 2.0,
 };
 
 /**
- * 从环境变量加载配置（Node.js 环境）
- * 注意：此函数仅在 CLI 构建中使用，浏览器构建会被 tree-shaking 移除
+ * 从 Chrome Storage 加载配置
  */
-async function loadConfigFromEnv(): Promise<TranslatorConfig> {
-  // 在浏览器环境下直接返回默认配置
-  if (!isNode) {
-    return { ...DEFAULT_CONFIG };
-  }
-
-  // Node.js 环境：从环境变量读取
-  // 注意：dotenv 配置应该在 CLI 入口点完成
-  return {
-    openaiBaseUrl: process.env.OPENAI_BASE_URL || DEFAULT_CONFIG.openaiBaseUrl,
-    openaiApiKey: process.env.OPENAI_API_KEY || '',
-    splitModel: process.env.SPLIT_MODEL || DEFAULT_CONFIG.splitModel,
-    translationModel: process.env.TRANSLATION_MODEL || DEFAULT_CONFIG.translationModel,
-    targetLanguage: process.env.TARGET_LANGUAGE || DEFAULT_CONFIG.targetLanguage,
-    maxWordCountEnglish: parseInt(process.env.MAX_WORD_COUNT || '19', 10),
-    threadNum: parseInt(process.env.THREAD_NUM || '18', 10),
-    batchSize: parseInt(process.env.BATCH_SIZE || '20', 10),
-    toleranceMultiplier: parseFloat(process.env.TOLERANCE_MULTIPLIER || '1.2'),
-    warningMultiplier: parseFloat(process.env.WARNING_MULTIPLIER || '1.5'),
-    maxMultiplier: parseFloat(process.env.MAX_MULTIPLIER || '2.0'),
-  };
-}
-
-/**
- * 从 Chrome Storage 加载配置（浏览器环境）
- */
-async function loadConfigFromStorage(): Promise<TranslatorConfig> {
+export async function loadConfig(): Promise<TranslatorConfig> {
   return new Promise((resolve) => {
     if (typeof chrome !== 'undefined' && chrome.storage) {
       chrome.storage.local.get(['apiConfig'], (result: Record<string, unknown>) => {
@@ -80,17 +49,6 @@ async function loadConfigFromStorage(): Promise<TranslatorConfig> {
       resolve(DEFAULT_CONFIG);
     }
   });
-}
-
-/**
- * 加载配置 - 自动检测环境
- */
-export async function loadConfig(): Promise<TranslatorConfig> {
-  if (isNode) {
-    return loadConfigFromEnv();
-  } else {
-    return loadConfigFromStorage();
-  }
 }
 
 /**

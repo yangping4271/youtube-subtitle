@@ -1,5 +1,5 @@
 /**
- * 日志系统 - 环境感知，与 Python 版本格式一致
+ * 日志系统
  */
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -12,24 +12,11 @@ interface LogEntry {
   data?: unknown;
 }
 
-// 检测运行环境
-const isNode = typeof process !== 'undefined' && process.versions?.node;
-const isBrowser = typeof window !== 'undefined';
-
-// 日志格式化（与 Python 版本一致）
+// 日志格式化
 function formatLog(entry: LogEntry): string {
   const time = entry.timestamp.split('T')[1].split('.')[0]; // HH:MM:SS
   return `${time} [${entry.module}] ${entry.message}`;
 }
-
-// Node.js 终端颜色
-const colors = {
-  debug: '\x1b[36m',  // cyan
-  info: '\x1b[32m',   // green
-  warn: '\x1b[33m',   // yellow
-  error: '\x1b[31m',  // red
-  reset: '\x1b[0m',
-};
 
 export class Logger {
   private module: string;
@@ -58,23 +45,12 @@ export class Logger {
     };
 
     const formatted = formatLog(entry);
+    const method = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log';
 
-    if (isNode) {
-      // Node.js 环境：彩色控制台输出
-      const color = colors[level];
-      if (data !== undefined) {
-        console.log(`${color}${formatted}${colors.reset}`, data);
-      } else {
-        console.log(`${color}${formatted}${colors.reset}`);
-      }
-    } else if (isBrowser) {
-      // 浏览器环境：只输出到控制台
-      const method = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log';
-      if (data !== undefined) {
-        console[method](formatted, data);
-      } else {
-        console[method](formatted);
-      }
+    if (data !== undefined) {
+      console[method](formatted, data);
+    } else {
+      console[method](formatted);
     }
   }
 

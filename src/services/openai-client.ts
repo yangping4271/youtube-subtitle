@@ -1,6 +1,5 @@
 /**
  * OpenAI API 客户端
- * 支持 Node.js 和浏览器环境
  */
 
 import { setupLogger } from '../utils/logger.js';
@@ -9,9 +8,6 @@ import { TranslationError } from '../utils/error-handler.js';
 import type { TranslatorConfig } from '../types/index.js';
 
 const logger = setupLogger('openai-client');
-
-// 检测运行环境
-const isNode = typeof process !== 'undefined' && process.versions?.node;
 
 /**
  * OpenAI API 客户端
@@ -68,35 +64,20 @@ export class OpenAIClient {
     return withRetry(
       async () => {
         try {
-          let response: Response;
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-          if (isNode) {
-            // Node.js 环境
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), timeout);
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${this.apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          });
 
-            response = await fetch(url, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${this.apiKey}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(body),
-              signal: controller.signal,
-            });
-
-            clearTimeout(timeoutId);
-          } else {
-            // 浏览器环境
-            response = await fetch(url, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${this.apiKey}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(body),
-            });
-          }
+          clearTimeout(timeoutId);
 
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
