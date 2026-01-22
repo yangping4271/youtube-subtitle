@@ -1,36 +1,36 @@
 /* ========================================
-   YouTube字幕助手 - 现代化UI设计
+   YouTube字幕助手 - 电影院美学设计
    ======================================== */
 
-/* CSS变量系统 - 支持主题切换和动态调整 */
+/* CSS变量系统 - 电影院主题 */
 :root {
-    /* 🎨 主题色彩系统 */
-    --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    --primary-color: #667eea;
-    --primary-dark: #5a67d8;
-    --secondary-color: #764ba2;
+    /* 🎬 电影院色彩系统 */
+    --primary-gradient: linear-gradient(135deg, #d4af37 0%, #f4d03f 100%);
+    --primary-color: #d4af37;
+    --primary-dark: #b8941f;
+    --secondary-color: #ff4444;
 
     /* 📝 文字颜色 */
-    --text-primary: #1a1a1a;
-    --text-secondary: #6b7280;
-    --text-light: #9ca3af;
+    --text-primary: #e8e8e8;
+    --text-secondary: #999999;
+    --text-light: #666666;
     --text-white: #ffffff;
 
-    /* 📦 背景色系 */
-    --bg-primary: #ffffff;
-    --bg-secondary: #f8fafc;
-    --bg-tertiary: #f1f5f9;
-    --bg-overlay: rgba(0, 0, 0, 0.1);
+    /* 📦 背景色系 - 深色电影院风格 */
+    --bg-primary: #0a0a0a;
+    --bg-secondary: #1a1a1a;
+    --bg-tertiary: #252525;
+    --bg-overlay: rgba(0, 0, 0, 0.5);
 
-    /* 🎯 状态色彩 */
-    --success-color: #10b981;
-    --success-bg: #ecfdf5;
-    --warning-color: #f59e0b;
-    --warning-bg: #fefbf2;
-    --error-color: #ef4444;
-    --error-bg: #fef2f2;
-    --info-color: #3b82f6;
-    --info-bg: #eff6ff;
+    /* 🎯 状态色彩 - 电影院风格 */
+    --success-color: #4ade80;
+    --success-bg: rgba(74, 222, 128, 0.15);
+    --warning-color: #fbbf24;
+    --warning-bg: rgba(251, 191, 36, 0.15);
+    --error-color: #ff4444;
+    --error-bg: rgba(255, 68, 68, 0.15);
+    --info-color: #60a5fa;
+    --info-bg: rgba(96, 165, 250, 0.15);
 
     /* 📐 间距系统 */
     --spacing-xs: 4px;
@@ -47,11 +47,13 @@
     --radius-lg: 12px;
     --radius-xl: 16px;
 
-    /* 🌟 阴影系统 */
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
-    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
-    --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.15);
+    /* 🌟 阴影系统 - 电影院发光效果 */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.8);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.6);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.7);
+    --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.8);
+    --shadow-gold: 0 0 20px rgba(212, 175, 55, 0.3);
+    --shadow-gold-strong: 0 0 30px rgba(212, 175, 55, 0.5);
 
     /* 🔄 动画时长 */
     --transition-fast: 150ms;
@@ -86,17 +88,29 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     width: 380px;
-    /* 稍微增加宽度 */
     height: 520px;
-    /* 增加高度，给内容更多空间 */
-    background: var(--bg-secondary);
+    background: var(--bg-primary);
     color: var(--text-primary);
     font-size: 14px;
     line-height: 1.5;
     overflow: hidden;
-    /* 防止整体滚动 */
+    position: relative;
+}
+
+/* 添加微妙的噪点纹理 */
+body::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    opacity: 0.03;
+    pointer-events: none;
+    z-index: 1;
 }
 
 /* 🎪 主容器 */
@@ -104,24 +118,28 @@ body {
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: var(--bg-primary);
+    background: var(--bg-secondary);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-xl);
     margin: 0;
     overflow: hidden;
+    position: relative;
+    z-index: 2;
+    border: 1px solid rgba(212, 175, 55, 0.1);
 }
 
 /* ========================================
-   📄 标题栏设计 - 紧凑现代
+   📄 标题栏设计 - 电影院风格
    ======================================== */
 .header {
-    background: var(--primary-gradient);
+    background: linear-gradient(135deg, rgba(212, 175, 55, 0.15) 0%, rgba(244, 208, 63, 0.1) 100%);
     color: var(--text-white);
     padding: var(--spacing-lg);
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-    box-shadow: var(--shadow-sm);
+    box-shadow: 0 2px 10px rgba(212, 175, 55, 0.2);
     position: relative;
     z-index: 10;
+    border-bottom: 1px solid rgba(212, 175, 55, 0.2);
 }
 
 .header-content {
@@ -139,16 +157,22 @@ body {
 }
 
 .app-info h1 {
-    font-size: 18px;
-    font-weight: 600;
+    font-family: 'Playfair Display', 'Cormorant Garamond', serif;
+    font-size: 20px;
+    font-weight: 700;
     margin-bottom: 0;
-    color: var(--text-white);
+    color: var(--primary-color);
+    text-shadow: var(--shadow-gold);
+    letter-spacing: 0.5px;
 }
 
 .app-info .version {
-    font-size: 11px;
-    opacity: 0.8;
-    color: var(--text-white);
+    font-size: 10px;
+    opacity: 0.7;
+    color: var(--text-secondary);
+    font-weight: 500;
+    letter-spacing: 1px;
+    text-transform: uppercase;
 }
 
 /* 🎛️ 主开关设计 */
@@ -208,7 +232,7 @@ body {
 }
 
 /* ========================================
-   🗂️ 标签页导航 - 现代分段控件
+   🗂️ 标签页导航 - 电影院风格
    ======================================== */
 .tab-navigation {
     display: flex;
@@ -216,7 +240,8 @@ body {
     padding: var(--spacing-xs);
     border-radius: var(--radius-md);
     margin: var(--spacing-lg) var(--spacing-lg) 0;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(212, 175, 55, 0.1);
 }
 
 .tab-button {
@@ -237,16 +262,17 @@ body {
 }
 
 .tab-button:hover {
-    background: rgba(102, 126, 234, 0.08);
+    background: rgba(212, 175, 55, 0.1);
     color: var(--primary-color);
     transform: translateY(-1px);
 }
 
 .tab-button.active {
-    background: var(--bg-primary);
+    background: linear-gradient(135deg, rgba(212, 175, 55, 0.2) 0%, rgba(244, 208, 63, 0.15) 100%);
     color: var(--primary-color);
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow-gold);
     font-weight: 600;
+    border: 1px solid rgba(212, 175, 55, 0.3);
 }
 
 .tab-icon {
@@ -291,27 +317,27 @@ body {
     transform: translateX(0);
 }
 
-/* 自定义滚动条 - 全局统一 */
+/* 自定义滚动条 - 电影院风格 */
 ::-webkit-scrollbar {
-    width: 5px;
+    width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-    background: transparent;
+    background: var(--bg-tertiary);
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(155, 155, 155, 0.4);
+    background: rgba(212, 175, 55, 0.3);
     border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(155, 155, 155, 0.6);
+    background: rgba(212, 175, 55, 0.5);
 }
 
 /* 内容区域滚动条 */
 .tab-content::-webkit-scrollbar {
-    width: 5px;
+    width: 6px;
 }
 
 .tab-content::-webkit-scrollbar-track {
@@ -320,12 +346,12 @@ body {
 }
 
 .tab-content::-webkit-scrollbar-thumb {
-    background: rgba(155, 155, 155, 0.4);
+    background: rgba(212, 175, 55, 0.3);
     border-radius: 3px;
 }
 
 .tab-content::-webkit-scrollbar-thumb:hover {
-    background: rgba(155, 155, 155, 0.6);
+    background: rgba(212, 175, 55, 0.5);
 }
 
 /* ========================================
@@ -961,13 +987,13 @@ body {
     white-space: nowrap;
 }
 
-/* ⚙️ 设置卡片 */
+/* ⚙️ 设置卡片 - 电影院风格 */
 .settings-card {
-    background: var(--bg-primary);
-    border: 2px solid var(--bg-tertiary);
+    background: var(--bg-tertiary);
+    border: 1px solid rgba(212, 175, 55, 0.2);
     border-radius: var(--radius-lg);
     padding: var(--spacing-lg);
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow-md);
 }
 
 .settings-header {
@@ -1068,13 +1094,13 @@ body {
     background: var(--primary-gradient);
     cursor: pointer;
     border-radius: 50%;
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow-gold);
     transition: all var(--transition-fast);
 }
 
 .setting-slider::-webkit-slider-thumb:hover {
-    transform: scale(1.1);
-    box-shadow: var(--shadow-md);
+    transform: scale(1.2);
+    box-shadow: var(--shadow-gold-strong);
 }
 
 .color-selector {
@@ -1086,7 +1112,7 @@ body {
 .setting-select {
     flex: 1;
     padding: var(--spacing-sm) var(--spacing-md);
-    border: 2px solid var(--bg-tertiary);
+    border: 1px solid rgba(212, 175, 55, 0.2);
     border-radius: var(--radius-md);
     background: var(--bg-secondary);
     font-size: 12px;
@@ -1098,7 +1124,7 @@ body {
 .setting-select:focus {
     outline: none;
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.15);
 }
 
 .color-picker {
@@ -1163,16 +1189,15 @@ body {
     border-top: 2px solid var(--bg-tertiary);
 }
 
-/* ========================================
-   ℹ️ 关于标签页样式
-   ======================================== */
+/* ℹ️ 关于标签页样式 - 电影院风格 */
 .about-card {
-    background: var(--bg-secondary);
+    background: var(--bg-tertiary);
     border-radius: var(--radius-lg);
     padding: var(--spacing-xl);
     margin-bottom: var(--spacing-lg);
-    border: 2px solid var(--bg-tertiary);
+    border: 1px solid rgba(212, 175, 55, 0.2);
     text-align: center;
+    box-shadow: var(--shadow-md);
 }
 
 .app-logo {
@@ -1262,16 +1287,17 @@ body {
 .about-btn:hover {
     border-color: var(--primary-color);
     color: var(--primary-color);
-    background: rgba(102, 126, 234, 0.05);
+    background: rgba(212, 175, 55, 0.1);
     transform: translateY(-2px);
+    box-shadow: var(--shadow-gold);
 }
 
 .tips-card {
-    background: var(--bg-primary);
-    border: 2px solid var(--bg-tertiary);
+    background: var(--bg-tertiary);
+    border: 1px solid rgba(212, 175, 55, 0.2);
     border-radius: var(--radius-lg);
     padding: var(--spacing-lg);
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow-md);
 }
 
 .tips-header {
@@ -1423,80 +1449,31 @@ body {
     }
 }
 
-/* 🎨 深色模式支持（预留） */
+/* 🎨 深色模式支持 - 电影院主题已经是深色 */
 @media (prefers-color-scheme: dark) {
+    /* 电影院主题本身就是深色，保持一致 */
     :root {
-        --text-primary: #f9fafb;
-        --text-secondary: #d1d5db;
-        --text-light: #9ca3af;
-        --bg-primary: #1f2937;
-        --bg-secondary: #111827;
-        --bg-tertiary: #374151;
-
-        /* 🎯 暗色主题状态色彩 */
-        --success-color: #10b981;
-        --success-bg: rgba(16, 185, 129, 0.1);
-        --warning-color: #f59e0b;
-        --warning-bg: rgba(245, 158, 11, 0.1);
-        --error-color: #ef4444;
-        --error-bg: rgba(239, 68, 68, 0.1);
-        --info-color: #3b82f6;
-        --info-bg: rgba(59, 130, 246, 0.1);
-
-        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-        --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.3);
-        --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.3);
-        --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.4);
-    }
-
-    /* 暗色模式下的ASS上传卡片 */
-    .ass-upload-card {
-        background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
-        border: 1px solid rgba(139, 92, 246, 0.3);
-    }
-
-    .ass-upload-card::before {
-        background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, transparent 50%);
-    }
-
-    .ass-drop-zone {
-        background: rgba(139, 92, 246, 0.1);
-        border-color: rgba(139, 92, 246, 0.4);
-    }
-
-    .ass-drop-zone:hover {
-        background: rgba(139, 92, 246, 0.15);
-        border-color: rgba(139, 92, 246, 0.6);
-    }
-
-    .ass-drop-zone.dragover {
-        background: rgba(139, 92, 246, 0.2);
-        border-color: #8b5cf6;
-    }
-
-    .separate-upload-header {
-        background: var(--bg-tertiary);
-        border: 1px solid rgba(139, 92, 246, 0.2);
+        /* 保持相同的颜色变量 */
     }
 }
 
 /* ===============================================
-   🤖 全新自动加载界面样式 - 现代化设计
+   🤖 自动加载界面样式 - 电影院风格
    =============================================== */
 
 /* 自动加载主卡片 */
 .auto-load-card {
-    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    background: linear-gradient(135deg, rgba(212, 175, 55, 0.15) 0%, rgba(244, 208, 63, 0.1) 100%);
     border-radius: var(--radius-xl);
     padding: var(--spacing-2xl);
     color: var(--text-white);
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--shadow-gold);
     position: relative;
     overflow: hidden;
     display: flex;
     flex-direction: column;
     gap: var(--spacing-2xl);
-    /* 增加间距从 --spacing-xl 到 --spacing-2xl */
+    border: 1px solid rgba(212, 175, 55, 0.3);
 }
 
 .auto-load-card::before {
@@ -1506,18 +1483,17 @@ body {
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, transparent 50%);
+    background: linear-gradient(135deg, rgba(212, 175, 55, 0.1) 0%, transparent 50%);
     pointer-events: none;
 }
 
 /* 服务器状态卡片 */
 .server-status-card {
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(0, 0, 0, 0.3);
     border-radius: var(--radius-lg);
     padding: var(--spacing-xl);
-    /* 增加内边距从 --spacing-lg 到 --spacing-xl */
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(212, 175, 55, 0.2);
     position: relative;
 }
 
@@ -1643,12 +1619,11 @@ body {
 
 /* 主控制区域 */
 .auto-control-section {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.2);
     border-radius: var(--radius-lg);
     padding: var(--spacing-xl);
-    /* 增加内边距从 --spacing-lg 到 --spacing-xl */
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(212, 175, 55, 0.2);
 }
 
 .control-header {
@@ -1725,14 +1700,13 @@ body {
 
 /* 当前视频显示 */
 .current-video-display {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.3);
     border-radius: var(--radius-md);
     padding: var(--spacing-lg);
-    /* 增加内边距从 --spacing-md 到 --spacing-lg */
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
-    /* 增加间距从 --spacing-sm 到 --spacing-md */
+    border: 1px solid rgba(212, 175, 55, 0.15);
 }
 
 .video-info-row,
@@ -1754,15 +1728,16 @@ body {
 .video-id {
     font-family: 'Monaco', 'Menlo', monospace;
     font-size: 12px;
-    background: rgba(0, 0, 0, 0.2);
+    background: rgba(0, 0, 0, 0.4);
     padding: 4px 8px;
     border-radius: 4px;
-    color: #a3e635;
+    color: var(--primary-color);
     font-weight: 600;
     max-width: 150px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    border: 1px solid rgba(212, 175, 55, 0.3);
 }
 
 .load-status {
@@ -1792,10 +1767,10 @@ body {
 
 /* 配置区域 */
 .config-section {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.2);
     border-radius: var(--radius-lg);
     overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(212, 175, 55, 0.15);
 }
 
 .config-toggle {
@@ -1814,7 +1789,7 @@ body {
 }
 
 .config-toggle:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(212, 175, 55, 0.1);
 }
 
 .config-arrow {
@@ -1866,8 +1841,8 @@ body {
 
 .config-input {
     width: 100%;
-    background: rgba(255, 255, 255, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(212, 175, 55, 0.2);
     border-radius: var(--radius-md);
     padding: var(--spacing-sm) var(--spacing-md);
     color: var(--text-white);
@@ -1876,13 +1851,14 @@ body {
 }
 
 .config-input::placeholder {
-    color: rgba(255, 255, 255, 0.5);
+    color: rgba(255, 255, 255, 0.4);
 }
 
 .config-input:focus {
     outline: none;
-    border-color: rgba(255, 255, 255, 0.5);
-    background: rgba(255, 255, 255, 0.2);
+    border-color: var(--primary-color);
+    background: rgba(0, 0, 0, 0.4);
+    box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.15);
 }
 
 /* 配置帮助 */
@@ -1918,15 +1894,15 @@ body {
     line-height: 1.4;
 }
 
-/* 深色模式适配 */
+/* 深色模式适配 - 电影院主题 */
 @media (prefers-color-scheme: dark) {
     .auto-load-card {
-        background: linear-gradient(135deg, #312e81 0%, #1e1b4b 100%);
-        border: 1px solid rgba(79, 70, 229, 0.3);
+        background: linear-gradient(135deg, rgba(212, 175, 55, 0.15) 0%, rgba(244, 208, 63, 0.1) 100%);
+        border: 1px solid rgba(212, 175, 55, 0.3);
     }
 
     .auto-load-card::before {
-        background: linear-gradient(135deg, rgba(79, 70, 229, 0.1) 0%, transparent 50%);
+        background: linear-gradient(135deg, rgba(212, 175, 55, 0.1) 0%, transparent 50%);
     }
 }
 
@@ -2004,23 +1980,26 @@ body {
 .test-api-btn {
     background: var(--bg-tertiary);
     color: var(--text-primary);
+    border: 1px solid rgba(212, 175, 55, 0.3);
 }
 
 .test-api-btn:hover {
-    background: var(--info-color);
-    color: var(--text-white);
+    background: rgba(96, 165, 250, 0.2);
+    color: var(--info-color);
+    border-color: var(--info-color);
     transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
+    box-shadow: 0 0 15px rgba(96, 165, 250, 0.3);
 }
 
 .save-api-btn {
     background: var(--primary-gradient);
-    color: var(--text-white);
+    color: var(--bg-primary);
+    border: 1px solid var(--primary-color);
 }
 
 .save-api-btn:hover {
     transform: translateY(-2px);
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--shadow-gold-strong);
 }
 
 /* API状态显示 */
@@ -2271,19 +2250,22 @@ body {
     transform: scale(1.2);
 }
 
-/* 翻译控制区域 */
+/* 翻译控制区域 - 电影院风格 */
 .translate-control-section {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, rgba(212, 175, 55, 0.2) 0%, rgba(244, 208, 63, 0.15) 100%);
     border-radius: var(--radius-lg);
     padding: var(--spacing-xl);
     color: var(--text-white);
+    border: 1px solid rgba(212, 175, 55, 0.3);
+    box-shadow: var(--shadow-gold);
 }
 
 .video-info-card {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.3);
     border-radius: var(--radius-md);
     padding: var(--spacing-lg);
     margin-bottom: var(--spacing-lg);
+    border: 1px solid rgba(212, 175, 55, 0.2);
 }
 
 .info-row {
@@ -2320,20 +2302,22 @@ body {
     justify-content: center;
     gap: var(--spacing-md);
     padding: var(--spacing-lg);
-    background: rgba(255, 255, 255, 0.2);
-    border: 2px solid rgba(255, 255, 255, 0.3);
+    background: linear-gradient(135deg, rgba(212, 175, 55, 0.3) 0%, rgba(244, 208, 63, 0.25) 100%);
+    border: 2px solid rgba(212, 175, 55, 0.5);
     border-radius: var(--radius-md);
     color: var(--text-white);
     font-size: 16px;
     font-weight: 600;
     cursor: pointer;
     transition: all var(--transition-fast);
+    box-shadow: var(--shadow-gold);
 }
 
 .translate-main-btn:hover {
-    background: rgba(255, 255, 255, 0.3);
-    border-color: rgba(255, 255, 255, 0.5);
+    background: linear-gradient(135deg, rgba(212, 175, 55, 0.4) 0%, rgba(244, 208, 63, 0.35) 100%);
+    border-color: rgba(212, 175, 55, 0.7);
     transform: translateY(-2px);
+    box-shadow: var(--shadow-gold-strong);
 }
 
 .translate-main-btn:active {
@@ -2350,8 +2334,9 @@ body {
 }
 
 .translate-main-btn.cancel {
-    background: rgba(239, 68, 68, 0.3);
-    border-color: rgba(239, 68, 68, 0.5);
+    background: linear-gradient(135deg, rgba(255, 68, 68, 0.3) 0%, rgba(239, 68, 68, 0.25) 100%);
+    border-color: rgba(255, 68, 68, 0.5);
+    box-shadow: 0 0 20px rgba(255, 68, 68, 0.3);
 }
 
 .retranslate-btn {
@@ -2360,17 +2345,18 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(255, 255, 255, 0.15);
-    border: 2px solid rgba(255, 255, 255, 0.25);
+    background: rgba(212, 175, 55, 0.2);
+    border: 2px solid rgba(212, 175, 55, 0.4);
     border-radius: var(--radius-md);
-    color: var(--text-white);
+    color: var(--primary-color);
     font-size: 18px;
     cursor: pointer;
     transition: all var(--transition-fast);
 }
 
 .retranslate-btn:hover {
-    background: rgba(255, 255, 255, 0.25);
-    border-color: rgba(255, 255, 255, 0.4);
+    background: rgba(212, 175, 55, 0.3);
+    border-color: rgba(212, 175, 55, 0.6);
     transform: translateY(-2px) rotate(180deg);
+    box-shadow: var(--shadow-gold);
 }
