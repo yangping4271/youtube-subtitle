@@ -4,7 +4,7 @@
  */
 
 import { TranslatorService, createTranslatorService } from '../services/translator-service.js';
-import { loadConfig } from '../utils/config.js';
+import { loadConfig } from './config.js';
 import { getLanguageName, LANGUAGE_MAPPING } from '../utils/language.js';
 import type { TranslatorConfig, SubtitleEntry, BilingualSubtitles } from '../types/index.js';
 
@@ -50,61 +50,6 @@ class TranslatorServiceWrapper {
    */
   getTargetLanguageName(langCode: string): string {
     return getLanguageName(langCode);
-  }
-
-  /**
-   * 调用 OpenAI API（兼容接口）
-   */
-  async callOpenAI(systemPrompt: string, userPrompt: string): Promise<string> {
-    if (!this.config) {
-      await this.loadConfig();
-    }
-
-    const response = await fetch(`${this.config!.openaiBaseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.config!.openaiApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: this.config!.translationModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.3,
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({})) as { error?: { message?: string } };
-      throw new Error(error.error?.message || `API请求失败: ${response.status}`);
-    }
-
-    const data = await response.json() as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    return data.choices?.[0]?.message?.content || '';
-  }
-
-  /**
-   * 解析 JSON 响应
-   */
-  parseJsonResponse(content: string): unknown {
-    try {
-      return JSON.parse(content);
-    } catch {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          return JSON.parse(jsonMatch[0]);
-        } catch {
-          console.error('JSON解析失败:', content);
-          return null;
-        }
-      }
-      return null;
-    }
   }
 
   /**

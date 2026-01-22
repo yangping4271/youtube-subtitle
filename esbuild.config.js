@@ -52,8 +52,8 @@ const extensionEntries = [
   },
 ];
 
-// 复制静态文件到 extension 目录
-function copyStaticFiles() {
+// 检查静态文件是否存在
+function checkStaticFiles() {
   // 确保 extension 目录存在
   if (!fs.existsSync('extension')) {
     fs.mkdirSync('extension', { recursive: true });
@@ -82,13 +82,8 @@ function copyStaticFiles() {
 
 async function build() {
   try {
-    // 确保输出目录存在
-    if (!fs.existsSync('extension')) {
-      fs.mkdirSync('extension', { recursive: true });
-    }
-
-    // 复制静态文件
-    copyStaticFiles();
+    // 检查静态文件
+    checkStaticFiles();
 
     // 构建所有扩展入口
     const extensionConfigs = extensionEntries.map(entry => ({

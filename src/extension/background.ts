@@ -499,6 +499,15 @@ class SubtitleExtensionBackground {
       await chrome.storage.local.remove(debugContextKeys);
     }
 
+    // 立即清除 UI 上的字幕
+    if (sourceTabId) {
+      try {
+        await chrome.tabs.sendMessage(sourceTabId, { action: 'clearData' });
+      } catch (error) {
+        console.error('清除字幕显示失败:', error);
+      }
+    }
+
     sendResponse({ success: true, message: '翻译已在后台启动' });
 
     try {

@@ -10,7 +10,17 @@ import type {
   ModelOption,
   LanguageOption,
   ApiConfig,
+  TranslatorConfig,
 } from '../types';
+
+// Chrome API 类型声明
+declare const chrome: {
+  storage?: {
+    local: {
+      get: (keys: string[], callback: (result: Record<string, unknown>) => void) => void;
+    };
+  };
+};
 
 /** 默认 API 配置 */
 export const DEFAULT_API_CONFIG: ApiConfig = {
@@ -18,6 +28,21 @@ export const DEFAULT_API_CONFIG: ApiConfig = {
   openaiApiKey: '',
   llmModel: '',
   targetLanguage: 'zh',
+};
+
+/** 默认翻译器配置 */
+const DEFAULT_TRANSLATOR_CONFIG: TranslatorConfig = {
+  openaiBaseUrl: 'https://api.openai.com/v1',
+  openaiApiKey: '',
+  splitModel: 'gpt-4o-mini',
+  translationModel: 'gpt-4o',
+  targetLanguage: 'zh',
+  maxWordCountEnglish: 19,
+  threadNum: 18,
+  batchSize: 20,
+  toleranceMultiplier: 1.2,
+  warningMultiplier: 1.5,
+  maxMultiplier: 2.0,
 };
 
 /** 支持的 LLM 模型列表 */
@@ -123,6 +148,61 @@ export function isEmptySettings(obj: unknown): boolean {
   return !obj || (typeof obj === 'object' && Object.keys(obj).length === 0);
 }
 
+/**
+ * 从 Chrome Storage 加载翻译器配置
+ */
+export async function loadConfig(): Promise<TranslatorConfig> {
+  return new Promise((resolve) => {
+    if (typeof chrome !== 'undefined' && chrome.storage) {
+      chrome.storage.local.get(['apiConfig'], (result: Record<string, unknown>) => {
+        const apiConfig: ApiConfig = (result.apiConfig as ApiConfig) || {};
+        resolve({
+          ...DEFAULT_TRANSLATOR_CONFIG,
+          openaiBaseUrl: apiConfig.openaiBaseUrl || DEFAULT_TRANSLATOR_CONFIG.openaiBaseUrl,
+          openaiApiKey: apiConfig.openaiApiKey || '',
+          splitModel: apiConfig.llmModel || DEFAULT_TRANSLATOR_CONFIG.splitModel,
+          translationModel: apiConfig.llmModel || DEFAULT_TRANSLATOR_CONFIG.translationModel,
+          targetLanguage: apiConfig.targetLanguage || DEFAULT_TRANSLATOR_CONFIG.targetLanguage,
+        });
+      });
+    } else {
+      resolve(DEFAULT_TRANSLATOR_CONFIG);
+    }
+  });
+}
+
+/**
+ * 获取默认翻译器配置
+ */
+export function getDefaultTranslatorConfig(): TranslatorConfig {
+  return { ...DEFAULT_TRANSLATOR_CONFIG };
+}
+
+/**
+ * 验证翻译器配置
+ */
+export function validateConfig(config: TranslatorConfig): string[] {
+  const errors: string[] = [];
+
+  if (!config.openaiApiKey) {
+    errors.push('API 密钥未配置');
+  }
+
+  if (!config.openaiBaseUrl) {
+    errors.push('API 地址未配置');
+  }
+
+  if (config.maxWordCountEnglish < 5 || config.maxWordCountEnglish > 50) {
+    errors.push('最大单词数应在 5-50 之间');
+  }
+
+  if (config.batchSize < 10 || config.batchSize > 100) {
+    errors.push('批次大小应在 10-100 之间（推荐: 20）');
+  }
+
+  return errors;
+}
+
 // 浏览器环境：挂载到全局
 declare global {
   interface Window {
@@ -136,7 +216,7 @@ declare global {
       SUPPORTED_MODELS: typeof SUPPORTED_MODELS;
       SUPPORTED_LANGUAGES: typeof SUPPORTED_LANGUAGES;
     };
-    // 直接暴露的便捷函数
+    // 直接暴露的便捷函数（popup.js 需要）
     getDefaultEnglishSettings: typeof getDefaultEnglishSettings;
     getDefaultChineseSettings: typeof getDefaultChineseSettings;
     getDefaultConfig: typeof getDefaultConfig;
@@ -155,7 +235,7 @@ if (typeof window !== 'undefined') {
     SUPPORTED_LANGUAGES,
   };
 
-  // 直接暴露便捷函数（兼容旧代码）
+  // 直接暴露便捷函数（popup.js 依赖）
   window.getDefaultEnglishSettings = getDefaultEnglishSettings;
   window.getDefaultChineseSettings = getDefaultChineseSettings;
   window.getDefaultConfig = getDefaultConfig;
