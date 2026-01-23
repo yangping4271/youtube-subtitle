@@ -5,10 +5,9 @@
 
 import { setupLogger } from '../utils/logger.js';
 import { createOpenAIClient } from './openai-client.js';
-import { mergeSegmentsBatch, countWords } from '../core/splitter.js';
+import { mergeSegmentsBatch, countWords, calculateFirstBatchSegmentRange } from '../core/splitter.js';
 import { SubtitleData } from '../core/subtitle-data.js';
 import { createTranslator } from '../core/translator.js';
-import { calculateBatchSizes } from '../utils/batch-utils.js';
 import type {
   TranslatorConfig,
   SubtitleEntry,
@@ -57,82 +56,29 @@ export class TranslatorService {
       }
 
       // 断句处理阶段
-      logger.info('\n✂️ 字幕断句处理 开始');
+      logger.info('✂️ 字幕断句处理 开始');
 
-      // 打印原始数据信息
-      const originalSegments = subtitleData.getSegments();
-
-      // 检查字幕类型并统一转换为单词级别
-      let processData = subtitleData;
-      if (subtitleData.isWordTimestamp()) {
-        logger.info('检测到单词级别时间戳，执行合并断句');
-      } else {
-        logger.info('检测到片段级别时间戳，先转换为单词级别');
-        processData = subtitleData.splitToWordSegments();
-        logger.info(`转换完成，生成 ${processData.length()} 个单词级别片段`);
-      }
+      // 转换为单词
+      const processData = subtitleData.splitToWordSegments();
+      logger.info(`📝 转换为单词: ${processData.length()} 个单词`);
 
       // 执行断句处理
       logger.info(`🤖 使用模型: ${this.config.splitModel}`);
       logger.info(`📏 句子长度限制: ${this.config.maxWordCountEnglish} 字`);
+      logger.info(`📦 批次规划: 每组500字`);
 
       const splitClient = createOpenAIClient(this.config, 'split');
-      const splitResult = await mergeSegmentsBatch(processData, subtitleData, splitClient, this.config, 3);
 
-      logger.info(`✅ 断句完成 (优化为 ${splitResult.length()} 句)\n`);
-
-      if (onProgress) onProgress('split', 1, 2);
-
-      // 构建优化后的字幕索引
-      const optimizedSubtitles: Record<string, string> = {};
-      const splitSegments = splitResult.getSegments();
-
-      splitSegments.forEach((seg, idx) => {
-        optimizedSubtitles[String(idx + 1)] = seg.text;
-      });
-
-      // 步骤2：分批翻译
-      logger.info('🌐 步骤2: 翻译字幕...');
-      if (onProgress) onProgress('translate', 1, 2);
-
-      const translationClient = createOpenAIClient(this.config, 'translation');
-      const translator = createTranslator(translationClient, this.config);
-
-      // 如果有 onPartialResult 回调，则进行分批处理
-      if (onPartialResult) {
-        await this.translateInBatches(
-          splitSegments,
-          optimizedSubtitles,
-          translator,
-          options,
-          firstBatchSize,
-          onPartialResult,
-          onProgress
-        );
-      } else {
-        // 原有的一次性翻译逻辑
-        const translatedEntries = await translator.translate(
-          optimizedSubtitles,
-          {
-            videoTitle: options.videoTitle,
-            videoDescription: options.videoDescription,
-            aiSummary: options.aiSummary,
-          },
-          (current, total) => {
-            if (onProgress) {
-              const progress = 1 + (current / total);
-              onProgress('translate', progress, 2);
-            }
-          }
-        );
-
-        if (onProgress) onProgress('complete', 2, 2);
-
-        // 构建双语字幕结果
-        const result = this.buildBilingualResult(splitSegments, translatedEntries);
-        logger.info(`✅ 翻译完成: ${result.english.length} 条双语字幕`);
-        return result;
-      }
+      // 使用流水线模式
+      await this.translateWithPipeline(
+        processData,
+        subtitleData,
+        splitClient,
+        options,
+        firstBatchSize,
+        onPartialResult ?? (() => {}),  // 使用空合并运算符
+        onProgress
+      );
 
       if (onProgress) onProgress('complete', 2, 2);
 
@@ -145,66 +91,119 @@ export class TranslatorService {
   }
 
   /**
-   * 分批翻译并逐步回调
+   * 流水线模式：分段处理首批和剩余部分
    */
-  private async translateInBatches(
-    splitSegments: SubtitleEntry[],
-    optimizedSubtitles: Record<string, string>,
-    translator: ReturnType<typeof createTranslator>,
+  private async translateWithPipeline(
+    processData: SubtitleData,
+    originalData: SubtitleData,
+    splitClient: OpenAIClient,
     options: TranslateOptions,
     firstBatchSize: number,
     onPartialResult: (partial: BilingualSubtitles, isFirst: boolean) => void,
     onProgress?: ProgressCallback
   ): Promise<void> {
-    const totalCount = splitSegments.length;
+    logger.info('🚀 启动分段处理模式');
 
-    // 计算批次分配：首批单独，后续灵活分配
-    const batchSizes = [
-      Math.min(firstBatchSize, totalCount),
-      ...calculateBatchSizes(Math.max(0, totalCount - firstBatchSize))
-    ];
-    logger.info(`📋 批次分配: [${batchSizes.join(', ')}] (共 ${batchSizes.length} 批)`);
+    // 计算首批范围
+    const firstBatchSegmentCount = calculateFirstBatchSegmentRange(
+      originalData,
+      processData,
+      firstBatchSize
+    );
 
-    let currentIndex = 0;
+    // 分割数据
+    const segments = processData.getSegments();
+    const firstBatchData = new SubtitleData(segments.slice(0, firstBatchSegmentCount));
+    const remainingData = new SubtitleData(segments.slice(firstBatchSegmentCount));
 
-    // 按计算出的批次大小进行翻译
-    for (let batchIdx = 0; batchIdx < batchSizes.length; batchIdx++) {
-      const batchSize = batchSizes[batchIdx];
-      const batchEnd = currentIndex + batchSize;
-      const isFirst = batchIdx === 0;
+    logger.info(`📏 首批范围: 前${firstBatchSize}条原始字幕 → ${firstBatchSegmentCount}个单词`);
+    logger.info(`📏 剩余范围: ${remainingData.length()}个单词`);
 
-      logger.info(`${isFirst ? '🚀' : '🔄'} ${isFirst ? '首批' : '批次'}翻译: ${currentIndex + 1}-${batchEnd} 条 (${batchSize} 个字幕)`);
+    // 并行断句
+    logger.info('🔄 并行断句处理...');
 
-      const batchSubtitles: Record<string, string> = {};
-      for (let i = currentIndex; i < batchEnd; i++) {
-        batchSubtitles[String(i + 1)] = optimizedSubtitles[String(i + 1)];
-      }
+    // 启动首批和剩余的断句（不等待）
+    const firstBatchPromise = mergeSegmentsBatch(firstBatchData, originalData, splitClient, this.config, 3, '首批');
+    const remainingPromise = remainingData.length() > 0
+      ? mergeSegmentsBatch(remainingData, originalData, splitClient, this.config, 3, '剩余')
+      : Promise.resolve(new SubtitleData([]));
 
-      const batchTranslated = await translator.translate(
-        batchSubtitles,
-        {
-          videoTitle: options.videoTitle,
-          videoDescription: options.videoDescription,
-          aiSummary: options.aiSummary,
-        }
+    // 创建翻译器
+    const translationClient = createOpenAIClient(this.config, 'translation');
+    const translator = createTranslator(translationClient, this.config);
+
+    // 等待首批断句完成，立即开始首批翻译
+    const firstBatchResult = await firstBatchPromise;
+    logger.info(`✅ 首批断句完成: ${firstBatchResult.length()}条`);
+    if (onProgress) onProgress('split', 0.5, 2);
+
+    // 翻译首批（同时剩余部分继续断句）
+    await this.translateBatch(
+      firstBatchResult.getSegments(),
+      translator,
+      options,
+      true,
+      onPartialResult,
+      onProgress
+    );
+
+    // 等待剩余断句完成
+    const remainingResult = await remainingPromise;
+    if (remainingResult.length() > 0) {
+      logger.info(`✅ 剩余断句完成: ${remainingResult.length()}条`);
+
+      // 翻译剩余部分
+      await this.translateBatch(
+        remainingResult.getSegments(),
+        translator,
+        options,
+        false,
+        onPartialResult,
+        onProgress
       );
-
-      const batchResult = this.buildBilingualResult(
-        splitSegments.slice(currentIndex, batchEnd),
-        batchTranslated
-      );
-
-      logger.info(`✅ ${isFirst ? '首批' : '批次'}翻译完成: ${batchResult.english.length} 条`);
-      onPartialResult(batchResult, isFirst);
-
-      if (onProgress) {
-        onProgress('translate', 1 + (batchEnd / totalCount), 2);
-      }
-
-      currentIndex = batchEnd;
     }
 
-    logger.info(`✅ 全部翻译完成: ${totalCount} 条双语字幕`);
+    logger.info(`✅ 全部完成: 共翻译 ${firstBatchResult.length() + remainingResult.length()} 条双语字幕`);
+  }
+
+  /**
+   * 翻译单个批次
+   */
+  private async translateBatch(
+    segments: SubtitleEntry[],
+    translator: ReturnType<typeof createTranslator>,
+    options: TranslateOptions,
+    isFirst: boolean,
+    onPartialResult: (partial: BilingualSubtitles, isFirst: boolean) => void,
+    onProgress?: ProgressCallback
+  ): Promise<void> {
+    logger.info(`${isFirst ? '🚀' : '🔄'} ${isFirst ? '首批' : '剩余'}翻译开始: ${segments.length}条字幕`);
+
+    // 构建字幕索引
+    const optimizedSubtitles: Record<string, string> = {};
+    segments.forEach((seg, idx) => {
+      optimizedSubtitles[String(idx + 1)] = seg.text;
+    });
+
+    // 翻译
+    const translated = await translator.translate(
+      optimizedSubtitles,
+      {
+        videoTitle: options.videoTitle,
+        videoDescription: options.videoDescription,
+        aiSummary: options.aiSummary,
+      }
+    );
+
+    // 构建结果并回调
+    const result = this.buildBilingualResult(segments, translated);
+    logger.info(`✅ ${isFirst ? '首批' : '剩余'}翻译完成: ${result.english.length}条`);
+    onPartialResult(result, isFirst);
+
+    if (onProgress) {
+      const progress = isFirst ? 1.5 : 2;
+      onProgress('translate', progress, 2);
+    }
   }
 
   /**

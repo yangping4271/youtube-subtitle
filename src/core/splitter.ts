@@ -146,6 +146,39 @@ export function countWords(text: string): number {
 }
 
 /**
+ * 计算前N条原始字幕对应的单词索引范围
+ * @param originalData 原始字幕数据
+ * @param processData 单词数据
+ * @param firstBatchCount 首批原始字幕数量
+ * @returns 单词的结束索引（不包含）
+ */
+export function calculateFirstBatchSegmentRange(
+  originalData: SubtitleData,
+  processData: SubtitleData,
+  firstBatchCount: number
+): number {
+  const originalSegments = originalData.getSegments();
+  const processSegments = processData.getSegments();
+
+  // 获取前N条原始字幕的结束时间
+  const lastOriginalIndex = Math.min(firstBatchCount, originalSegments.length) - 1;
+  if (lastOriginalIndex < 0) return 0;
+
+  const endTime = originalSegments[lastOriginalIndex].endTime;
+
+  // 找到对应的单词索引
+  let endIndex = processSegments.length;
+  for (let i = 0; i < processSegments.length; i++) {
+    if (processSegments[i].startTime >= endTime) {
+      endIndex = i;
+      break;
+    }
+  }
+
+  return endIndex;
+}
+
+/**
  * 按明确的句子结束标记拆分句子
  */
 export function splitByEndMarks(sentence: string): string[] {
@@ -449,8 +482,6 @@ export async function splitByLLM(
 ): Promise<string[]> {
   const { maxWordCountEnglish, toleranceMultiplier, warningMultiplier, maxMultiplier } = config;
 
-  logger.info(`📝 处理文本: 共${countWords(text)}个单词`);
-
   // 构建 Prompt
   const systemPrompt = buildSplitPrompt({ maxWordCountEnglish });
   const userPrompt = `Please use multiple <br> tags to separate the following sentence. Make sure to preserve all spaces and punctuation exactly as they appear in the original text:\n${text}`;
@@ -723,7 +754,8 @@ export async function mergeSegmentsBatch(
   originalData: SubtitleData,
   client: OpenAIClient,
   config: TranslatorConfig,
-  numThreads = 3
+  numThreads = 3,
+  label?: string  // 可选标签，用于区分首批/剩余
 ): Promise<SubtitleData> {
   const logger = setupLogger('断句合并');
 
@@ -735,17 +767,21 @@ export async function mergeSegmentsBatch(
   const batches = splitByWordCount(subtitleData, wordThreshold);
   const totalBatches = batches.length;
 
-  logger.info(`📋 批次规划: 每组${wordThreshold}字，共 ${totalBatches} 个批次`);
+  const prefix = label ? `[${label}] ` : '';
 
-  // 显示批次分布
-  const batchInfo: string[] = [];
-  for (let i = 0; i < batches.length; i++) {
-    const batchText = batches[i].toText();
-    const wordCount = countWords(batchText);
-    batchInfo.push(`批次${i + 1}: ${wordCount}字`);
+  // 只有多个批次时才显示批次规划
+  if (totalBatches > 1) {
+    logger.info(`${prefix}📋 共 ${totalBatches} 个批次`);
+
+    // 显示批次分布
+    const batchInfo: string[] = [];
+    for (let i = 0; i < batches.length; i++) {
+      const batchText = batches[i].toText();
+      const wordCount = countWords(batchText);
+      batchInfo.push(`批次${i + 1}: ${wordCount}字`);
+    }
+    logger.info(`${prefix}批次详情: ${batchInfo.join(', ')}`);
   }
-  logger.info(`批次详情: ${batchInfo.join(', ')}`);
-  logger.info('🚀 开始并行断句处理...');
 
   // 并行处理每个批次
   const allSegments: SubtitleEntry[] = [];
@@ -757,7 +793,9 @@ export async function mergeSegmentsBatch(
     const batchText = batch.toText();
     const wordCount = countWords(batchText);
 
-    logger.info(`📝 [批次${batchIndex}] 处理 ${wordCount} 个单词`);
+    // 只有多批次时才显示批次编号
+    const batchLabel = totalBatches > 1 ? `[批次${batchIndex}] ` : '';
+    logger.info(`${prefix}📝 ${batchLabel}处理 ${wordCount} 个单词`);
 
     // 记录批次开始时间
     const batchStartTime = Date.now();
@@ -768,7 +806,7 @@ export async function mergeSegmentsBatch(
     // 记录批次耗时
     const batchDuration = Date.now() - batchStartTime;
     batchTimes.push({ batch: batchIndex, duration: batchDuration });
-    logger.info(`✂️  [批次${batchIndex}] 断句完成，耗时 ${(batchDuration / 1000).toFixed(1)}s`);
+    logger.info(`${prefix}✅ ${batchLabel}断句完成，耗时 ${(batchDuration / 1000).toFixed(1)}s`);
 
     // 使用相似度匹配重新分配时间戳
     const batchSegments = batch.getSegments();
@@ -777,13 +815,15 @@ export async function mergeSegmentsBatch(
     return resultSegments;
   });
 
-  // 控制并发数：每次只启动 numThreads 个任务
-  const results: SubtitleEntry[][] = [];
+  // 并发执行所有批次
+  const results: SubtitleEntry[][] = new Array(batches.length);
+
   for (let i = 0; i < taskFunctions.length; i += numThreads) {
     const chunk = taskFunctions.slice(i, i + numThreads);
-    // 执行这批任务函数
     const chunkResults = await Promise.all(chunk.map(fn => fn()));
-    results.push(...chunkResults);
+    chunkResults.forEach((result, j) => {
+      results[i + j] = result;
+    });
   }
 
   // 合并所有结果

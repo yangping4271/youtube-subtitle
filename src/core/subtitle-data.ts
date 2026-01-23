@@ -60,7 +60,7 @@ export class SubtitleData {
   }
 
   /**
-   * 将片段级别字幕转换为单词级别字幕
+   * 将片段转换为单词（按单词拆分）
    */
   splitToWordSegments(): SubtitleData {
     const CHARS_PER_PHONEME = 4;  // 每个音素包含的字符数（基于语音学理论）
