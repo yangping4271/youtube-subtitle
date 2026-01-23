@@ -340,8 +340,8 @@ export class Translator {
     // 构建结果
     return batch.map(([key, originalText]) => {
       const entry = responseContent[key];
-      const optimized = entry?.optimized_subtitle || originalText;
-      const translation = entry?.translation || `[翻译失败] ${originalText}`;
+      const optimized = entry?.optimized_subtitle !== undefined ? entry.optimized_subtitle : originalText;
+      const translation = entry?.translation !== undefined ? entry.translation : `[翻译失败] ${originalText}`;
 
       if (!entry) {
         logger.warn(`⚠️ API返回结果缺少字幕ID: ${key}`);
