@@ -770,12 +770,8 @@ export async function mergeSegmentsBatch(
     batchTimes.push({ batch: batchIndex, duration: batchDuration });
     logger.info(`✂️  [批次${batchIndex}] 断句完成，耗时 ${(batchDuration / 1000).toFixed(1)}s`);
 
-    // 🔍 调试：打印原始数据信息
-    const batchSegments = batch.getSegments();
-    logger.info(`🔍 批次${batchIndex} 时间戳范围: ${batchSegments[0]?.startTime}s - ${batchSegments[batchSegments.length - 1]?.endTime}s`);
-    logger.info(`🔍 批次${batchIndex} 片段数量: ${batchSegments.length}`);
-
     // 使用相似度匹配重新分配时间戳
+    const batchSegments = batch.getSegments();
     const resultSegments = mergeSegmentsBasedOnSentences(batchSegments, sentences);
 
     return resultSegments;

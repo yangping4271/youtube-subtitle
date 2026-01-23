@@ -60,12 +60,6 @@ export class TranslatorService {
 
       // 打印原始数据信息
       const originalSegments = subtitleData.getSegments();
-      logger.info(`🔍 原始数据: ${originalSegments.length} 条字幕`);
-      if (originalSegments.length > 0) {
-        logger.info(`🔍 原始时间戳: ${originalSegments[0].startTime}s - ${originalSegments[originalSegments.length - 1].endTime}s`);
-        logger.info(`🔍 第一条: "${originalSegments[0].text}"`);
-        logger.info(`🔍 第一条时长: ${originalSegments[0].endTime - originalSegments[0].startTime}s`);
-      }
 
       // 检查字幕类型并统一转换为单词级别
       let processData = subtitleData;
@@ -75,13 +69,6 @@ export class TranslatorService {
         logger.info('检测到片段级别时间戳，先转换为单词级别');
         processData = subtitleData.splitToWordSegments();
         logger.info(`转换完成，生成 ${processData.length()} 个单词级别片段`);
-
-        const processSegments = processData.getSegments();
-        if (processSegments.length > 0) {
-          logger.info(`🔍 转换后时间戳: ${processSegments[0].startTime}s - ${processSegments[processSegments.length - 1].endTime}s`);
-          logger.info(`🔍 转换后第一条: "${processSegments[0].text}"`);
-          logger.info(`🔍 转换后第一条时长: ${processSegments[0].endTime - processSegments[0].startTime}s`);
-        }
       }
 
       // 执行断句处理
