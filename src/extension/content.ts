@@ -148,6 +148,12 @@ class YouTubeSubtitleOverlay {
             request.chineseSubtitles || []
           );
           break;
+        case 'appendBilingualSubtitles':
+          this.appendBilingualSubtitles(
+            request.englishSubtitles || [],
+            request.chineseSubtitles || []
+          );
+          break;
         case 'clearData':
           this.clearSubtitleData();
           break;
@@ -880,6 +886,47 @@ class YouTubeSubtitleOverlay {
         this.setupVideoListeners();
         this.updateSubtitle();
       }
+    }
+  }
+
+  private appendBilingualSubtitles(
+    englishSubtitles: SimpleSubtitleEntry[],
+    chineseSubtitles: SimpleSubtitleEntry[]
+  ): void {
+    // 追加字幕数据
+    this.englishSubtitles.push(...(englishSubtitles || []));
+    this.chineseSubtitles.push(...(chineseSubtitles || []));
+
+    // 按时间排序确保顺序正确
+    this.englishSubtitles.sort((a, b) => a.startTime - b.startTime);
+    this.chineseSubtitles.sort((a, b) => a.startTime - b.startTime);
+
+    // 如果是首次追加，需要初始化
+    if (!this.isEnabled && (this.englishSubtitles.length > 0 || this.chineseSubtitles.length > 0)) {
+      this.isEnabled = true;
+
+      if (!this.currentVideo) {
+        this.currentVideo = document.querySelector('video');
+      }
+
+      if (!this.overlayElement) {
+        this.createOverlayElement();
+        this.insertOverlayToPage();
+      }
+
+      chrome.runtime.sendMessage({
+        action: 'setSubtitleEnabled',
+        enabled: true,
+      });
+
+      if (this.currentVideo && this.overlayElement) {
+        this.setupVideoListeners();
+      }
+    }
+
+    // 更新当前显示的字幕
+    if (this.currentVideo && this.overlayElement) {
+      this.updateSubtitle();
     }
   }
 

@@ -523,39 +523,52 @@ class SubtitleExtensionBackground {
       const videoDescription = request.videoInfo?.description;
       const aiSummary = request.videoInfo?.aiSummary;
 
+      // 累积所有翻译结果
+      const allEnglishSubtitles: SimpleSubtitleEntry[] = [];
+      const allChineseSubtitles: SimpleSubtitleEntry[] = [];
+
       const result = await translatorService.translateFull(
         subtitles,
         targetLanguage || 'zh',
         null,
         videoDescription,
         aiSummary,
-        videoTitle
+        videoTitle,
+        // 渐进式结果回调
+        async (partial, isFirst) => {
+          // 累积字幕
+          allEnglishSubtitles.push(...partial.english);
+          allChineseSubtitles.push(...partial.chinese);
+
+          if (sourceTabId) {
+            try {
+              await chrome.tabs.sendMessage(sourceTabId, {
+                action: 'appendBilingualSubtitles',
+                englishSubtitles: partial.english,
+                chineseSubtitles: partial.chinese,
+              });
+            } catch (error) {
+              console.error('发送部分结果失败:', error);
+            }
+          }
+        }
       );
 
-      if (videoId) {
+      // 使用累积的结果或返回的结果
+      const finalEnglish = allEnglishSubtitles.length > 0 ? allEnglishSubtitles : result.english;
+      const finalChinese = allChineseSubtitles.length > 0 ? allChineseSubtitles : result.chinese;
+
+      if (videoId && (finalEnglish.length > 0 || finalChinese.length > 0)) {
         const targetLangName = getLanguageName(targetLanguage || 'zh');
         await this.saveVideoSubtitles(
           videoId,
-          result.english,
-          result.chinese,
+          finalEnglish,
+          finalChinese,
           undefined,
           'YouTube字幕 (原语言)',
           `AI翻译 (${targetLangName})`,
           undefined
         );
-
-        // 直接向源标签页发送消息
-        if (sourceTabId) {
-          try {
-            await chrome.tabs.sendMessage(sourceTabId, {
-              action: 'loadBilingualSubtitles',
-              englishSubtitles: result.english,
-              chineseSubtitles: result.chinese,
-            });
-          } catch (error) {
-            console.error('向源标签页发送消息失败:', error);
-          }
-        }
       }
     } catch (error) {
       console.error('❌ 后台翻译失败:', error);

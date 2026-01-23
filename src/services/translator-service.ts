@@ -42,7 +42,7 @@ export class TranslatorService {
     }
 
     this.isTranslating = true;
-    const { inputFile, videoTitle, onProgress } = options;
+    const { inputFile, videoTitle, onProgress, onPartialResult, firstBatchSize = 10 } = options;
 
     try {
       // 创建字幕数据对象
@@ -90,40 +90,139 @@ export class TranslatorService {
         optimizedSubtitles[String(idx + 1)] = seg.text;
       });
 
-      // 步骤2：翻译
+      // 步骤2：分批翻译
       logger.info('🌐 步骤2: 翻译字幕...');
       if (onProgress) onProgress('translate', 1, 2);
 
       const translationClient = createOpenAIClient(this.config, 'translation');
       const translator = createTranslator(translationClient, this.config);
 
-      const translatedEntries = await translator.translate(
-        optimizedSubtitles,
-        {
-          videoTitle: options.videoTitle,
-          videoDescription: options.videoDescription,
-          aiSummary: options.aiSummary,
-        },
-        (current, total) => {
-          if (onProgress) {
-            const progress = 1 + (current / total);
-            onProgress('translate', progress, 2);
+      // 如果有 onPartialResult 回调，则进行分批处理
+      if (onPartialResult) {
+        await this.translateInBatches(
+          splitSegments,
+          optimizedSubtitles,
+          translator,
+          options,
+          firstBatchSize,
+          onPartialResult,
+          onProgress
+        );
+      } else {
+        // 原有的一次性翻译逻辑
+        const translatedEntries = await translator.translate(
+          optimizedSubtitles,
+          {
+            videoTitle: options.videoTitle,
+            videoDescription: options.videoDescription,
+            aiSummary: options.aiSummary,
+          },
+          (current, total) => {
+            if (onProgress) {
+              const progress = 1 + (current / total);
+              onProgress('translate', progress, 2);
+            }
           }
-        }
-      );
+        );
+
+        if (onProgress) onProgress('complete', 2, 2);
+
+        // 构建双语字幕结果
+        const result = this.buildBilingualResult(splitSegments, translatedEntries);
+        logger.info(`✅ 翻译完成: ${result.english.length} 条双语字幕`);
+        return result;
+      }
 
       if (onProgress) onProgress('complete', 2, 2);
 
-      // 构建双语字幕结果
-      const result = this.buildBilingualResult(splitSegments, translatedEntries);
-
-      logger.info(`✅ 翻译完成: ${result.english.length} 条双语字幕`);
-
-      return result;
+      // 返回空结果（实际结果已通过回调返回）
+      return { english: [], chinese: [] };
 
     } finally {
       this.isTranslating = false;
     }
+  }
+
+  /**
+   * 分批翻译并逐步回调
+   */
+  private async translateInBatches(
+    splitSegments: SubtitleEntry[],
+    optimizedSubtitles: Record<string, string>,
+    translator: ReturnType<typeof createTranslator>,
+    options: TranslateOptions,
+    firstBatchSize: number,
+    onPartialResult: (partial: BilingualSubtitles, isFirst: boolean) => void,
+    onProgress?: ProgressCallback
+  ): Promise<void> {
+    const totalCount = splitSegments.length;
+
+    // 首批处理
+    const firstBatchEnd = Math.min(firstBatchSize, totalCount);
+    logger.info(`🚀 首批翻译: 前 ${firstBatchEnd} 条字幕`);
+
+    const firstBatchSubtitles: Record<string, string> = {};
+    for (let i = 0; i < firstBatchEnd; i++) {
+      firstBatchSubtitles[String(i + 1)] = optimizedSubtitles[String(i + 1)];
+    }
+
+    const firstBatchTranslated = await translator.translate(
+      firstBatchSubtitles,
+      {
+        videoTitle: options.videoTitle,
+        videoDescription: options.videoDescription,
+        aiSummary: options.aiSummary,
+      }
+    );
+
+    const firstBatchResult = this.buildBilingualResult(
+      splitSegments.slice(0, firstBatchEnd),
+      firstBatchTranslated
+    );
+
+    logger.info(`✅ 首批翻译完成: ${firstBatchResult.english.length} 条`);
+    onPartialResult(firstBatchResult, true);
+
+    if (onProgress) {
+      onProgress('translate', 1 + (firstBatchEnd / totalCount), 2);
+    }
+
+    // 后续批次处理
+    if (firstBatchEnd < totalCount) {
+      const batchSize = 20; // 后续批次大小
+      for (let i = firstBatchEnd; i < totalCount; i += batchSize) {
+        const batchEnd = Math.min(i + batchSize, totalCount);
+        logger.info(`🔄 翻译批次: ${i + 1}-${batchEnd} 条`);
+
+        const batchSubtitles: Record<string, string> = {};
+        for (let j = i; j < batchEnd; j++) {
+          batchSubtitles[String(j + 1)] = optimizedSubtitles[String(j + 1)];
+        }
+
+        const batchTranslated = await translator.translate(
+          batchSubtitles,
+          {
+            videoTitle: options.videoTitle,
+            videoDescription: options.videoDescription,
+            aiSummary: options.aiSummary,
+          }
+        );
+
+        const batchResult = this.buildBilingualResult(
+          splitSegments.slice(i, batchEnd),
+          batchTranslated
+        );
+
+        logger.info(`✅ 批次翻译完成: ${batchResult.english.length} 条`);
+        onPartialResult(batchResult, false);
+
+        if (onProgress) {
+          onProgress('translate', 1 + (batchEnd / totalCount), 2);
+        }
+      }
+    }
+
+    logger.info(`✅ 全部翻译完成: ${totalCount} 条双语字幕`);
   }
 
   /**

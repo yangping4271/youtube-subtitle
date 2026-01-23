@@ -75,6 +75,12 @@ export type ProgressCallback = (
   total: number
 ) => void;
 
+/** 部分结果回调 */
+export type PartialResultCallback = (
+  partial: BilingualSubtitles,
+  isFirst: boolean
+) => void;
+
 /** 翻译选项 */
 export interface TranslateOptions {
   inputFile?: string;
@@ -83,6 +89,8 @@ export interface TranslateOptions {
   aiSummary?: string | null;      // AI 生成的摘要（直接使用，不通过 Summarizer）
   debug?: boolean;
   onProgress?: ProgressCallback;
+  onPartialResult?: PartialResultCallback;  // 渐进式结果回调
+  firstBatchSize?: number;        // 首批字幕数量，默认 10
 }
 
 /** LLM API 响应 */

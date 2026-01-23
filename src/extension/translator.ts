@@ -60,6 +60,7 @@ class TranslatorServiceWrapper {
    * @param videoDescription 视频说明
    * @param aiSummary AI 生成的摘要
    * @param videoTitle 视频标题
+   * @param onPartialResult 部分结果回调
    */
   async translateFull(
     subtitles: Array<{ startTime: number; endTime: number; text: string }>,
@@ -67,7 +68,8 @@ class TranslatorServiceWrapper {
     onProgress: ((step: string, current: number, total: number) => void) | null = null,
     videoDescription?: string,
     aiSummary?: string | null,
-    videoTitle?: string
+    videoTitle?: string,
+    onPartialResult?: (partial: BilingualSubtitles, isFirst: boolean) => void
   ): Promise<BilingualSubtitles> {
     if (this.isTranslating) {
       throw new Error('翻译正在进行中');
@@ -117,6 +119,22 @@ class TranslatorServiceWrapper {
         onProgress: async (step, current, total) => {
           await saveProgress(step, current, total);
         },
+        onPartialResult: onPartialResult ? (partial, isFirst) => {
+          // 将部分结果的时间戳从毫秒转换回秒
+          const convertedPartial: BilingualSubtitles = {
+            english: partial.english.map(entry => ({
+              ...entry,
+              startTime: msToSeconds(entry.startTime),
+              endTime: msToSeconds(entry.endTime),
+            })),
+            chinese: partial.chinese.map(entry => ({
+              ...entry,
+              startTime: msToSeconds(entry.startTime),
+              endTime: msToSeconds(entry.endTime),
+            })),
+          };
+          onPartialResult(convertedPartial, isFirst);
+        } : undefined,
       });
 
       await saveProgress('complete', 2, 2);
