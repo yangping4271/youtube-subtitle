@@ -7,6 +7,7 @@ import { buildTranslatePrompt, buildSingleTranslatePrompt } from './prompts.js';
 import { parseLlmResponse } from '../utils/json-repair.js';
 import { getLanguageName } from '../utils/language.js';
 import { normalizeEnglishPunctuation, normalizeChinesePunctuation, isChinese } from '../utils/punctuation.js';
+import { calculateBatchSizes } from '../utils/batch-utils.js';
 import type { TranslatorConfig, TranslatedEntry } from '../types/index.js';
 
 const logger = setupLogger('translator');
@@ -267,12 +268,16 @@ export class Translator {
    * 创建批次，优化边界
    */
   private createBatches(items: [string, string][], batchSize: number): [string, string][][] {
+    const batchSizes = calculateBatchSizes(items.length, batchSize);
+    logger.info(`📋 批次分配: [${batchSizes.join(', ')}] (共 ${batchSizes.length} 批)`);
+
     const batches: [string, string][][] = [];
     let i = 0;
     let adjustedCount = 0;
 
-    while (i < items.length) {
-      let endIdx = Math.min(i + batchSize, items.length);
+    // 按照计算出的批次大小创建批次
+    for (const currentBatchSize of batchSizes) {
+      let endIdx = Math.min(i + currentBatchSize, items.length);
 
       // 如果不是最后一个批次，检查边界
       if (endIdx < items.length) {

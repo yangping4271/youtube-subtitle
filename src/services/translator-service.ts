@@ -8,6 +8,7 @@ import { createOpenAIClient } from './openai-client.js';
 import { mergeSegmentsBatch, countWords } from '../core/splitter.js';
 import { SubtitleData } from '../core/subtitle-data.js';
 import { createTranslator } from '../core/translator.js';
+import { calculateBatchSizes } from '../utils/batch-utils.js';
 import type {
   TranslatorConfig,
   SubtitleEntry,
@@ -157,69 +158,50 @@ export class TranslatorService {
   ): Promise<void> {
     const totalCount = splitSegments.length;
 
-    // 首批处理
-    const firstBatchEnd = Math.min(firstBatchSize, totalCount);
-    logger.info(`🚀 首批翻译: 前 ${firstBatchEnd} 条字幕`);
+    // 计算批次分配：首批单独，后续灵活分配
+    const batchSizes = [
+      Math.min(firstBatchSize, totalCount),
+      ...calculateBatchSizes(Math.max(0, totalCount - firstBatchSize))
+    ];
+    logger.info(`📋 批次分配: [${batchSizes.join(', ')}] (共 ${batchSizes.length} 批)`);
 
-    const firstBatchSubtitles: Record<string, string> = {};
-    for (let i = 0; i < firstBatchEnd; i++) {
-      firstBatchSubtitles[String(i + 1)] = optimizedSubtitles[String(i + 1)];
-    }
+    let currentIndex = 0;
 
-    const firstBatchTranslated = await translator.translate(
-      firstBatchSubtitles,
-      {
-        videoTitle: options.videoTitle,
-        videoDescription: options.videoDescription,
-        aiSummary: options.aiSummary,
+    // 按计算出的批次大小进行翻译
+    for (let batchIdx = 0; batchIdx < batchSizes.length; batchIdx++) {
+      const batchSize = batchSizes[batchIdx];
+      const batchEnd = currentIndex + batchSize;
+      const isFirst = batchIdx === 0;
+
+      logger.info(`${isFirst ? '🚀' : '🔄'} ${isFirst ? '首批' : '批次'}翻译: ${currentIndex + 1}-${batchEnd} 条 (${batchSize} 个字幕)`);
+
+      const batchSubtitles: Record<string, string> = {};
+      for (let i = currentIndex; i < batchEnd; i++) {
+        batchSubtitles[String(i + 1)] = optimizedSubtitles[String(i + 1)];
       }
-    );
 
-    const firstBatchResult = this.buildBilingualResult(
-      splitSegments.slice(0, firstBatchEnd),
-      firstBatchTranslated
-    );
-
-    logger.info(`✅ 首批翻译完成: ${firstBatchResult.english.length} 条`);
-    onPartialResult(firstBatchResult, true);
-
-    if (onProgress) {
-      onProgress('translate', 1 + (firstBatchEnd / totalCount), 2);
-    }
-
-    // 后续批次处理
-    if (firstBatchEnd < totalCount) {
-      const batchSize = 20; // 后续批次大小
-      for (let i = firstBatchEnd; i < totalCount; i += batchSize) {
-        const batchEnd = Math.min(i + batchSize, totalCount);
-        logger.info(`🔄 翻译批次: ${i + 1}-${batchEnd} 条`);
-
-        const batchSubtitles: Record<string, string> = {};
-        for (let j = i; j < batchEnd; j++) {
-          batchSubtitles[String(j + 1)] = optimizedSubtitles[String(j + 1)];
+      const batchTranslated = await translator.translate(
+        batchSubtitles,
+        {
+          videoTitle: options.videoTitle,
+          videoDescription: options.videoDescription,
+          aiSummary: options.aiSummary,
         }
+      );
 
-        const batchTranslated = await translator.translate(
-          batchSubtitles,
-          {
-            videoTitle: options.videoTitle,
-            videoDescription: options.videoDescription,
-            aiSummary: options.aiSummary,
-          }
-        );
+      const batchResult = this.buildBilingualResult(
+        splitSegments.slice(currentIndex, batchEnd),
+        batchTranslated
+      );
 
-        const batchResult = this.buildBilingualResult(
-          splitSegments.slice(i, batchEnd),
-          batchTranslated
-        );
+      logger.info(`✅ ${isFirst ? '首批' : '批次'}翻译完成: ${batchResult.english.length} 条`);
+      onPartialResult(batchResult, isFirst);
 
-        logger.info(`✅ 批次翻译完成: ${batchResult.english.length} 条`);
-        onPartialResult(batchResult, false);
-
-        if (onProgress) {
-          onProgress('translate', 1 + (batchEnd / totalCount), 2);
-        }
+      if (onProgress) {
+        onProgress('translate', 1 + (batchEnd / totalCount), 2);
       }
+
+      currentIndex = batchEnd;
     }
 
     logger.info(`✅ 全部翻译完成: ${totalCount} 条双语字幕`);
