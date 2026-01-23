@@ -109,7 +109,7 @@ export class OpenAIClient {
         }
       },
       {
-        maxRetries: 2,
+        maxRetries: 1,  // 首次 + 1次重试 = 总共2次（与Python项目一致）
         delays: [1000, 2000],
         operationName: `OpenAI API (${this.model})`,
       }

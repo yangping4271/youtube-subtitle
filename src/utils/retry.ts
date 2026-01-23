@@ -60,7 +60,7 @@ export async function withRetry<T>(
   options: RetryOptions = {}
 ): Promise<T> {
   const {
-    maxRetries = 2,
+    maxRetries = 1,  // 首次 + 1次重试 = 总共2次（与Python项目一致）
     delays = [1000, 2000, 4000],
     shouldRetry = (error: Error) => classifyError(error) === 'retryable',
     operationName = 'Operation',
