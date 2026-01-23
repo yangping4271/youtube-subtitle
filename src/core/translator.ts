@@ -22,6 +22,70 @@ interface OpenAIClient {
 }
 
 /**
+ * 格式化两个字符串的差异，只显示变化部分
+ */
+function formatDiff(original: string, optimized: string): string {
+  if (original === optimized) {
+    return `无变化: ${original}`;
+  }
+
+  // 按单词分割
+  const originalWords = original.split(/(\s+)/); // 保留空格
+  const optimizedWords = optimized.split(/(\s+)/);
+
+  // 找到第一个不同的单词位置
+  let startDiff = 0;
+  while (startDiff < originalWords.length && startDiff < optimizedWords.length &&
+         originalWords[startDiff] === optimizedWords[startDiff]) {
+    startDiff++;
+  }
+
+  // 找到最后一个不同的单词位置（从后往前）
+  let endDiffOriginal = originalWords.length - 1;
+  let endDiffOptimized = optimizedWords.length - 1;
+  while (endDiffOriginal >= startDiff && endDiffOptimized >= startDiff &&
+         originalWords[endDiffOriginal] === optimizedWords[endDiffOptimized]) {
+    endDiffOriginal--;
+    endDiffOptimized--;
+  }
+
+  // 提取变化部分
+  const deletedPart = originalWords.slice(startDiff, endDiffOriginal + 1).join('');
+  const addedPart = optimizedWords.slice(startDiff, endDiffOptimized + 1).join('');
+
+  // 提取上下文（前后各3个单词）
+  const contextBefore = originalWords.slice(Math.max(0, startDiff - 3), startDiff).join('');
+  const contextAfter = originalWords.slice(endDiffOriginal + 1, Math.min(originalWords.length, endDiffOriginal + 4)).join('');
+
+  // 构建显示字符串
+  let result = '';
+
+  // 前缀省略号
+  if (startDiff > 3) {
+    result += '...';
+  }
+
+  result += contextBefore;
+
+  // 显示删除和添加的部分
+  if (deletedPart) {
+    result += `[-${deletedPart}-]`;
+  }
+  if (addedPart) {
+    result += ` [+${addedPart}+]`;
+  }
+
+  result += contextAfter;
+
+  // 后缀省略号
+  if (endDiffOriginal + 4 < originalWords.length) {
+    result += '...';
+  }
+
+  return result.trim();
+}
+
+/**
  * 检查句子是否完整
  */
 function isSentenceComplete(text: string): boolean {
@@ -179,40 +243,8 @@ export class Translator {
     results.sort((a, b) => a.index - b.index);
 
     // ============ 二次失败检查和重试 ============
-    const failedEntries = results.filter(r => r.translation.startsWith('[翻译失败]'));
-
-    if (failedEntries.length > 0) {
-      logger.info(`🔄 发现 ${failedEntries.length} 个字幕翻译失败，使用单条翻译再次尝试`);
-
-      // 构建失败字幕映射
-      const failedSubtitles: [string, string][] = failedEntries.map(entry => [
-        String(entry.index),
-        entry.original,
-      ]);
-
-      try {
-        // 二次重试（使用单条翻译，不带上下文）
-        const retryResults = await this.translateSingle(failedSubtitles, targetLanguage);
-
-        // 更新成功的重试结果
-        let successCount = 0;
-        for (const retryResult of retryResults) {
-          if (!retryResult.translation.startsWith('[翻译失败]')) {
-            const idx = results.findIndex(r => r.index === retryResult.index);
-            if (idx >= 0) {
-              results[idx] = retryResult;
-              successCount++;
-              logger.info(`✅ 字幕 ID ${retryResult.index} 二次重试成功`);
-            }
-          }
-        }
-
-        logger.info(`📊 二次重试结果: ${successCount}/${failedEntries.length} 条字幕成功翻译`);
-
-      } catch (error) {
-        logger.error(`❌ 二次重试过程出错: ${error}`);
-      }
-    }
+    // 已移除：缺少ID不应触发重试，应该立即修复
+    // Python项目不会因为缺少ID而重试，只有整个批次失败才会降级到单条翻译
     // ============ 二次失败检查和重试结束 ============
 
     // 标点符号规范化处理
@@ -337,15 +369,44 @@ export class Translator {
     // 构建结果
     return batch.map(([key, originalText]) => {
       const entry = responseContent[key];
-      const optimized = entry?.optimized_subtitle !== undefined ? entry.optimized_subtitle : originalText;
-      const translation = entry?.translation !== undefined ? entry.translation : `[翻译失败] ${originalText}`;
+
+      // 三层检查和自动修复（参考Python项目）
+      let optimized = originalText;
+      let translation = originalText;  // 默认使用原文
+      let hasProblems = false;
 
       if (!entry) {
+        // 缺少整个条目
         logger.warn(`⚠️ API返回结果缺少字幕ID: ${key}`);
+        logger.warn(`⚠️ 原始字幕: ${originalText}`);
+        hasProblems = true;
+        // 自动修复：标记为失败
+        translation = `[翻译失败] ${originalText}`;
+      } else {
+        // 检查 optimized_subtitle 字段
+        if (entry.optimized_subtitle !== undefined) {
+          optimized = entry.optimized_subtitle;
+        } else {
+          logger.warn(`⚠️ 字幕ID ${key} 缺少optimized_subtitle字段`);
+          logger.warn(`⚠️ 该字幕返回的数据: ${JSON.stringify(entry)}`);
+          hasProblems = true;
+          // 自动修复：使用原文
+        }
+
+        // 检查 translation 字段
+        if (entry.translation !== undefined) {
+          translation = entry.translation;
+        } else {
+          logger.warn(`⚠️ 字幕ID ${key} 缺少translation字段`);
+          logger.warn(`⚠️ 该字幕返回的数据: ${JSON.stringify(entry)}`);
+          hasProblems = true;
+          // 自动修复：标记为失败
+          translation = `[翻译失败] ${originalText}`;
+        }
       }
 
-      // 记录优化日志
-      if (originalText !== optimized) {
+      // 记录优化日志（只记录成功优化的）
+      if (!hasProblems && originalText !== optimized) {
         this.batchLogs.push({
           type: 'content_optimization',
           id: parseInt(key, 10),
@@ -462,8 +523,7 @@ export class Translator {
 
     for (const log of optimizationLogs) {
       logger.info(`🔧 字幕ID ${log.id} - 内容优化:`);
-      logger.info(`   原文: ${log.original}`);
-      logger.info(`   优化: ${log.optimized}`);
+      logger.info(`   ${formatDiff(log.original, log.optimized)}`);
 
       if (normalizeText(log.original) === normalizeText(log.optimized)) {
         formatChanges++;
@@ -485,16 +545,23 @@ export class Translator {
     if (this.batchTimes.length === 0) return;
 
     const totalTime = Date.now() - this.translateStartTime;
+    const cumulativeTime = this.batchTimes.reduce((sum, { duration }) => sum + duration, 0);
 
     logger.info('⏱️  翻译耗时统计:');
 
     // 输出每个批次的耗时
     for (const { batch, duration } of this.batchTimes) {
-      const percentage = ((duration / totalTime) * 100).toFixed(0);
-      logger.info(`   批次${batch}: ${(duration / 1000).toFixed(1)}s (${percentage}%)`);
+      logger.info(`   批次${batch}: ${(duration / 1000).toFixed(1)}s`);
     }
 
-    logger.info(`   总计: ${(totalTime / 1000).toFixed(1)}s`);
+    logger.info(`   累计耗时: ${(cumulativeTime / 1000).toFixed(1)}s`);
+    logger.info(`   实际耗时: ${(totalTime / 1000).toFixed(1)}s`);
+
+    // 计算并行效率
+    if (totalTime > 0) {
+      const efficiency = ((cumulativeTime / totalTime) * 100).toFixed(0);
+      logger.info(`   并行效率: ${efficiency}%`);
+    }
   }
 
   /**
@@ -514,11 +581,6 @@ export class Translator {
       if (typeof chrome !== 'undefined' && chrome.storage) {
         await chrome.storage.local.set({ [key]: debugInfo });
         logger.info(`💾 已保存调试上下文: ${key}`);
-      } else {
-        // 在 Node 环境中输出到控制台
-        logger.info(`🔍 调试上下文 [批次${debugInfo.batchNum}]:`);
-        logger.info(`System Prompt:\n${debugInfo.systemPrompt}`);
-        logger.info(`User Prompt:\n${debugInfo.userPrompt}`);
       }
     } catch (error) {
       logger.warn(`⚠️ 保存调试上下文失败: ${error}`);
