@@ -21,3 +21,6 @@ log/
 
 # TypeScript cache
 *.tsbuildinfo
+
+# Personal TODO
+TODO.md
