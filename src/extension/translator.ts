@@ -101,7 +101,7 @@ class TranslatorServiceWrapper {
       this.config!.targetLanguage = targetLang;
       this.service = createTranslatorService(this.config!);
 
-      // 转换字幕格式，同时将秒转换为毫秒（与 CLI 版本和核心服务保持一致）
+      // 转换字幕格式，同时将秒转换为毫秒
       const entries: SubtitleEntry[] = subtitles.map((sub, idx) => ({
         index: idx + 1,
         startTime: secondsToMs(sub.startTime),

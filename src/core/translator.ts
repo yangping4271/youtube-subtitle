@@ -1,6 +1,5 @@
 /**
- * 翻译模块 - 移植自 Python optimizer.py
- * 实现批次翻译、边界优化、上下文注入
+ * 翻译模块 - 实现批次翻译、边界优化、上下文注入
  */
 
 import { setupLogger } from '../utils/logger.js';
@@ -179,9 +178,7 @@ export class Translator {
     // 按 ID 排序
     results.sort((a, b) => a.index - b.index);
 
-    // ============ 关键改进：二次失败检查和重试 ============
-    // 模拟 Python 版本的 optimizer.py:94-112 行逻辑
-    // 检查翻译结果，找出失败的条目
+    // ============ 二次失败检查和重试 ============
     const failedEntries = results.filter(r => r.translation.startsWith('[翻译失败]'));
 
     if (failedEntries.length > 0) {
@@ -218,11 +215,11 @@ export class Translator {
     }
     // ============ 二次失败检查和重试结束 ============
 
-    // 标点符号规范化处理（Netflix 标准）
+    // 标点符号规范化处理
     for (const entry of results) {
-      // 英文原文：删除 . , ; :
+      // 英文原文
       entry.optimized = normalizeEnglishPunctuation(entry.optimized);
-      // 中文翻译：删除 ，。、；：
+      // 中文翻译
       if (isChinese(this.config.targetLanguage)) {
         entry.translation = normalizeChinesePunctuation(entry.translation);
       }
@@ -405,7 +402,7 @@ export class Translator {
 
   /**
    * 单条翻译（降级处理）
-   * 注意：重试逻辑已移至 OpenAIClient，此处不再重复
+   * 注意：重试逻辑已移至 OpenAIClient
    */
   private async translateSingle(
     batch: [string, string][],

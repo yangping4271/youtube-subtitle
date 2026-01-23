@@ -1,7 +1,6 @@
 /**
  * YouTube Subtitle Translator - 统一配置中心
- * ============================================
- * 所有默认值的单一数据源 (Single Source of Truth)
+ * 所有默认值的单一数据源
  */
 
 import type {

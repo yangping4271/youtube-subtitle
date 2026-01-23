@@ -1,7 +1,5 @@
 /**
- * 断句模块 - 移植自 Python split_by_llm.py
- * 包含 5 层防护机制和智能分割策略
- * 支持批量并行处理（与 Python 版本保持一致）
+ * 断句模块 - 包含 5 层防护机制和智能分割策略
  */
 
 import { setupLogger } from '../utils/logger.js';
@@ -12,12 +10,11 @@ import type { TranslatorConfig, SplitStats, SubtitleEntry } from '../types/index
 
 const logger = setupLogger('splitter');
 
-// 时间间隔阈值（毫秒）- 与 Python 版本一致
+// 时间间隔阈值（毫秒）
 const MAX_GAP = 1500; // 1.5秒
 
 /**
- * 按时间间隔分组片段（与 Python merge_by_time_gaps 一致）
- * 避免合并时间跨度过大的片段
+ * 按时间间隔分组片段
  */
 function groupSegmentsByTimeGaps(segments: SubtitleEntry[], maxGap: number = MAX_GAP): SubtitleEntry[][] {
   if (segments.length === 0) return [];
@@ -46,11 +43,6 @@ function groupSegmentsByTimeGaps(segments: SubtitleEntry[], maxGap: number = MAX
 
 /**
  * 基于句子相似度匹配来合并字幕片段
- * 与 Python 版本 merge_segments_based_on_sentences 完全一致
- *
- * @param segments 原始字幕片段列表
- * @param sentences LLM 返回的断句结果
- * @returns 合并后的字幕片段（带有正确的时间戳）
  */
 function mergeSegmentsBasedOnSentences(
   segments: SubtitleEntry[],
@@ -81,7 +73,7 @@ function mergeSegmentsBasedOnSentences(
       // 获取匹配的片段
       const matchedSegments = segments.slice(position, position + windowSize);
 
-      // 按时间间隔分组（与 Python 版本一致）
+      // 按时间间隔分组
       const groups = groupSegmentsByTimeGaps(matchedSegments, MAX_GAP);
 
       // 为每组创建合并的字幕
@@ -122,7 +114,7 @@ function mergeSegmentsBasedOnSentences(
 
       // 使用估算时间（降级处理）
       // 使用固定 5 秒默认持续时间（与下载 SRT 字幕算法一致）
-      const estimatedDuration = 5000; // 固定5秒（5000毫秒，与 Python 版本保持一致）
+      const estimatedDuration = 5000; // 固定5秒
       const lastEndTime = newSegments.length > 0
         ? newSegments[newSegments.length - 1].endTime
         : segments[0]?.startTime || 0;
@@ -216,12 +208,7 @@ export function splitByEndMarks(sentence: string): string[] {
 }
 
 /**
- * 智能分割：基于语义边界的拆分
- *
- * 策略：
- * 1. 优先基于标点符号（句号、分号、逗号等）
- * 2. 其次基于连接词（并列连词、从属连词、关系代词）
- * 3. 如果找不到合适的语义边界，返回原句
+ * 智能断句 - 多层阈值保护机制
  */
 export function aggressiveSplit(text: string, maxWords: number): string[] {
   const words = text.split(/\s+/);
@@ -606,15 +593,7 @@ export async function splitByLLM(
 }
 
 /**
- * 按句子边界分批字幕（移植自 Python spliter.py:split_by_sentences）
- *
- * 1. 先按句子结束标记（.!?等）切分
- * 2. 按单词数阈值分组，但在句子边界处切分
- * 3. 如果单个句子超过阈值，在分句标点（,;等）处尝试切分
- *
- * @param subtitleData 字幕数据
- * @param wordThreshold 每批的单词数阈值（默认 500）
- * @returns 分批后的字幕数据数组
+ * 按句子边界分批字幕
  */
 export function splitByWordCount(
   subtitleData: SubtitleData,
@@ -738,13 +717,6 @@ export function splitByWordCount(
 
 /**
  * 批量并行断句处理
- * 参考 Python 版本: spliter.py:merge_segments
- *
- * @param subtitleData 字幕数据
- * @param client OpenAI 客户端
- * @param config 配置
- * @param numThreads 并发线程数（默认 3）
- * @returns 处理后的字幕数据
  */
 export async function mergeSegmentsBatch(
   subtitleData: SubtitleData,
@@ -758,12 +730,11 @@ export async function mergeSegmentsBatch(
   // 记录总开始时间
   const totalStartTime = Date.now();
 
-  // 按单词数分批（用于生成文本和匹配）
-  const wordThreshold = 500;  // 与 Python 版本一致
+  // 按单词数分批
+  const wordThreshold = 500;
   const batches = splitByWordCount(subtitleData, wordThreshold);
   const totalBatches = batches.length;
 
-  // 记录批次信息（与 Python 版本一致的日志格式）
   logger.info(`📋 批次规划: 每组${wordThreshold}字，共 ${totalBatches} 个批次`);
 
   // 显示批次分布
@@ -804,7 +775,7 @@ export async function mergeSegmentsBatch(
     logger.info(`🔍 批次${batchIndex} 时间戳范围: ${batchSegments[0]?.startTime}s - ${batchSegments[batchSegments.length - 1]?.endTime}s`);
     logger.info(`🔍 批次${batchIndex} 片段数量: ${batchSegments.length}`);
 
-    // 使用相似度匹配重新分配时间戳（与 Python 版本一致）
+    // 使用相似度匹配重新分配时间戳
     const resultSegments = mergeSegmentsBasedOnSentences(batchSegments, sentences);
 
     return resultSegments;
@@ -827,7 +798,7 @@ export async function mergeSegmentsBatch(
   // 按时间排序
   allSegments.sort((a, b) => a.startTime - b.startTime);
 
-  // 合并过短的分段（与 Python merge_short_segment 一致）
+  // 合并过短的分段
   mergeShortSegment(allSegments, config);
 
   // 重新编号
@@ -851,7 +822,7 @@ export async function mergeSegmentsBatch(
 }
 
 /**
- * 合并过短的分段（与 Python merge_short_segment 一致）
+ * 合并过短的分段
  */
 function mergeShortSegment(segments: SubtitleEntry[], config: TranslatorConfig): void {
   if (segments.length === 0) return;

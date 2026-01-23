@@ -1,6 +1,5 @@
 /**
  * YouTube Subtitle Extension - Background Service Worker
- * ============================================
  * 处理扩展的后台任务：消息通信、存储管理、翻译任务
  */
 

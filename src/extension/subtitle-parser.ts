@@ -1,8 +1,6 @@
 /**
  * YouTube SubtitlePlus - 字幕解析器
- * ============================================
- * 提供统一的字幕文件解析功能
- * 支持格式：SRT、ASS
+ * 提供统一的字幕文件解析功能，支持 SRT、ASS
  */
 
 import type { SimpleSubtitleEntry, ASSParseResult } from '../types';

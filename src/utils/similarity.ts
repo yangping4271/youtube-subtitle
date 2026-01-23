@@ -1,6 +1,5 @@
 /**
  * 字符串相似度计算工具
- * 完全模拟 Python difflib.SequenceMatcher 的 Ratcliff/Obershelp 算法
  */
 
 /**
@@ -14,7 +13,6 @@ interface MatchingBlock {
 
 /**
  * 在给定范围内查找最长匹配
- * 完全模拟 Python difflib.SequenceMatcher.find_longest_match
  */
 function findLongestMatch(
   text1: string,
@@ -66,10 +64,9 @@ function findLongestMatch(
   return { a: besti, b: bestj, size: bestsize };
 }
 
-/**
- * 获取所有匹配块
- * 完全模拟 Python difflib.SequenceMatcher.get_matching_blocks
- */
+  /**
+   * 获取所有匹配块
+   */
 function getMatchingBlocks(text1: string, text2: string): MatchingBlock[] {
   const matches: MatchingBlock[] = [];
   const queue: Array<[number, number, number, number]> = [
@@ -98,15 +95,9 @@ function getMatchingBlocks(text1: string, text2: string): MatchingBlock[] {
   return matches;
 }
 
-/**
- * 计算两个字符串的相似度（0-1之间的浮点数）
- * 完全模拟 Python 的 difflib.SequenceMatcher.ratio()
- * 使用 Ratcliff/Obershelp 模式识别算法
- *
- * @param text1 第一个字符串
- * @param text2 第二个字符串
- * @returns 相似度（0表示完全不同，1表示完全相同）
- */
+  /**
+   * 计算两个文本的相似度（0-1）
+   */
 export function calculateSimilarity(text1: string, text2: string): number {
   // 处理空字符串
   if (!text1 && !text2) {
@@ -123,26 +114,20 @@ export function calculateSimilarity(text1: string, text2: string): number {
   const totalMatches = matches.reduce((sum, m) => sum + m.size, 0);
 
   // 相似度 = 2 * 匹配字符数 / 总字符数
-  // 这与 Python difflib.SequenceMatcher.ratio() 完全一致
+   // 计算相似度
   return (2.0 * totalMatches) / (text1.length + text2.length);
 }
 
 /**
- * 标准化文本（移除多余空格）
+ * 预处理文本：移除标点符号、规范化空格
  */
 export function preprocessText(text: string): string {
   return text.split(/\s+/).filter(w => w.length > 0).join(' ');
 }
 
 /**
- * 查找最佳匹配位置
- *
- * @param sentence 要匹配的句子
- * @param segments 原始字幕段列表
- * @param startIndex 开始搜索的索引
- * @param maxShift 最大偏移量
- * @param threshold 相似度阈值
- * @returns 匹配结果 { position, windowSize, similarity } 或 null
+ * 滑动窗口相似度匹配
+ * 查找目标句子在源片段列表中的最佳匹配位置
  */
 export function findBestMatch(
   sentence: string,

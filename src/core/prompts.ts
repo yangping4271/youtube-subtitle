@@ -1,12 +1,5 @@
 /**
- * Prompt 模板 - 与 Python prompts.py 完全同步
- * 最后同步时间: 2026-01-17 20:00
- * 源文件: src/subtitle_translator/translation_core/prompts.py
- *
- * 优化内容：
- * 1. SPLIT_SYSTEM_PROMPT: 精简内容，删除冗余示例
- * 2. TRANSLATE_PROMPT: 删除冗余说明
- * 3. SINGLE_TRANSLATE_PROMPT: 增强翻译规则，添加术语表
+ * Prompt 模板
  */
 
 // ========================================

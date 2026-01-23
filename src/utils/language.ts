@@ -1,5 +1,5 @@
 /**
- * 语言代码映射 - 与 Python 版本 config.py 一致
+ * 语言代码映射
  */
 
 export const LANGUAGE_MAPPING: Record<string, string> = {

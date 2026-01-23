@@ -1,7 +1,6 @@
 /**
  * 翻译服务 - 整合所有模块
  * 提供完整的翻译流程：断句 → 翻译
- * 与 Python 版本 (service.py) 保持完全一致的逻辑
  */
 
 import { setupLogger } from '../utils/logger.js';
@@ -33,17 +32,6 @@ export class TranslatorService {
 
   /**
    * 执行完整翻译流程
-   * 参考 Python 版本: service.py:translate_srt
-   *
-   * 流程：
-   * 1. 检测字幕类型（单词级 vs 片段级）
-   * 2. 如果是片段级，转换为单词级（音素理论）
-   * 3. 断句优化
-   * 4. 翻译
-   * 5. 对齐时间戳
-   *
-   * @param subtitles 原始字幕数组
-   * @param options 翻译选项
    */
   async translateFull(
     subtitles: SubtitleEntry[],

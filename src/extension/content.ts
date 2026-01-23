@@ -1,6 +1,5 @@
 /**
  * YouTube Subtitle Extension - Content Script
- * ============================================
  * 在 YouTube 页面上叠加字幕的核心逻辑
  */
 

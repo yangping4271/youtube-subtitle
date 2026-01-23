@@ -1,10 +1,6 @@
 /**
  * 错误处理工具
  */
-
-/**
- * 错误类型枚举
- */
 export enum ErrorCategory {
   MODEL_NOT_FOUND = 'model_not_found',
   INVALID_API_KEY = 'invalid_api_key',
@@ -119,7 +115,7 @@ export function classifyErrorWithSuggestion(error: unknown): ErrorInfo {
 }
 
 /**
- * 格式化错误信息，包含建议
+ * 格式化错误信息
  */
 export function formatErrorWithSuggestion(error: unknown): string {
   const errorInfo = classifyErrorWithSuggestion(error);

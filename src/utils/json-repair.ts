@@ -1,6 +1,5 @@
 /**
- * JSON 修复模块 - 移植自 Python json_repair.py
- * 用于修复 LLM 返回的不完整或格式错误的 JSON
+ * JSON 修复模块
  */
 
 import { setupLogger } from './logger.js';
@@ -9,9 +8,9 @@ const logger = setupLogger('json_repair');
 
 type JSONValue = string | number | boolean | null | JSONValue[] | { [key: string]: JSONValue };
 
-/**
- * JSON 解析器类 - 实现宽松的 JSON 解析
- */
+  /**
+   * 完整的 JSON 解析流程
+   */
 class JSONParser {
   private json_str: string;
   private index: number;

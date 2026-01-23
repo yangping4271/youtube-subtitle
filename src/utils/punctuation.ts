@@ -1,6 +1,5 @@
 /**
- * Punctuation normalization utilities for subtitles
- * Following Netflix subtitle standards
+ * 标点符号规范化工具
  */
 
 /**

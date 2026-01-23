@@ -1,6 +1,5 @@
 /**
  * 字幕数据处理模块
- * 与 Python 版本 (data.py) 保持完全一致的逻辑
  */
 
 import type { SubtitleEntry } from '../types/index.js';
@@ -35,12 +34,6 @@ export class SubtitleData {
 
   /**
    * 判断是否是单词级时间戳
-   * 规则：
-   * 1. 对于英文，每个segment应该只包含一个单词
-   * 2. 对于中文，每个segment应该只包含一个汉字
-   * 3. 允许20%的误差率
-   *
-   * 参考 Python 版本: data.py:56-76
    */
   isWordTimestamp(): boolean {
     if (this.segments.length === 0) {
@@ -67,21 +60,7 @@ export class SubtitleData {
   }
 
   /**
-   * 将片段级别字幕转换为单词级别字幕，并按音素精确分配时间戳
-   *
-   * 这个方法借鉴了 VideoCaptioner 项目的实现策略，通过以下步骤处理：
-   * 1. 使用多语言正则表达式识别所有有效字符和单词
-   * 2. 基于音素理论分配时间戳（每4个字符=1个音素）
-   * 3. 支持拉丁语系、中日韩、阿拉伯文、俄文等多种语言
-   *
-   * 优势：
-   * - 时间戳分配比简单比例分配更准确
-   * - 支持多语言混合文本
-   * - 转换后可复用现有的批量断句框架
-   *
-   * 参考 Python 版本: data.py:78-164
-   *
-   * @returns 包含分割后字词级别 segments 的新 SubtitleData 实例
+   * 将片段级别字幕转换为单词级别字幕
    */
   splitToWordSegments(): SubtitleData {
     const CHARS_PER_PHONEME = 4;  // 每个音素包含的字符数（基于语音学理论）
@@ -159,10 +138,6 @@ export class SubtitleData {
 
   /**
    * 转换为纯文本格式
-   * - 正确处理标点符号（不在标点前加空格）
-   * - 保持单词之间的空格
-   *
-   * 参考 Python 版本: data.py:166-189
    */
   toText(): string {
     const texts: string[] = [];
