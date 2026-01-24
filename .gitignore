@@ -25,3 +25,9 @@ log/
 # Personal TODO
 TODO.md
 AGENTS.md
+
+# Test files
+jest.config.js
+test-real-srt.js
+src/**/*.test.ts
+src/tests/
