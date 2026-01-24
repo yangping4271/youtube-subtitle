@@ -4,8 +4,8 @@
  */
 
 import { setupLogger } from '../utils/logger.js';
-import { createOpenAIClient } from './openai-client.js';
-import { mergeSegmentsBatch, mergeSegmentsBatchStream, countWords, calculateFirstBatchSegmentRange } from '../core/splitter.js';
+import { createOpenAIClient, OpenAIClient } from './openai-client.js';
+import { presplitByPunctuation, batchBySentenceCount, mergeSegmentsWithinBatch, countWords } from '../core/splitter.js';
 import { SubtitleData } from '../core/subtitle-data.js';
 import { createTranslator } from '../core/translator.js';
 import type {
@@ -64,8 +64,6 @@ export class TranslatorService {
 
       // 执行断句处理
       logger.info(`🤖 使用模型: ${this.config.splitModel}`);
-      logger.info(`📏 句子长度限制: ${this.config.maxWordCountEnglish} 字`);
-      logger.info(`📦 批次规划: 每组500字`);
 
       const splitClient = createOpenAIClient(this.config, 'split');
 
@@ -102,31 +100,39 @@ export class TranslatorService {
     onPartialResult: (partial: BilingualSubtitles, isFirst: boolean) => void,
     onProgress?: ProgressCallback
   ): Promise<void> {
-    logger.info('🚀 启动分段处理模式');
+    logger.info('🚀 启动按句子数分批的流水线处理');
 
-    // 计算首批范围
-    const firstBatchSegmentCount = calculateFirstBatchSegmentRange(
-      originalData,
-      processData,
-      firstBatchSize
-    );
+    // 1. 转单词级别
+    const wordSegments = processData.getSegments();
+    logger.info(`📝 单词级字幕: ${wordSegments.length} 个单词`);
 
-    // 分割数据
-    const segments = processData.getSegments();
-    const firstBatchData = new SubtitleData(segments.slice(0, firstBatchSegmentCount));
-    const remainingData = new SubtitleData(segments.slice(firstBatchSegmentCount));
+    // 2. 预分句
+    const preSplitSentences = presplitByPunctuation(wordSegments);
 
-    logger.info(`📏 首批范围: 前${firstBatchSize}条原始字幕 → ${firstBatchSegmentCount}个单词`);
-    logger.info(`📏 剩余范围: ${remainingData.length()}个单词`);
+    // 3. 按句子数分批（首批5句，后续5-10句）
+    const batches = batchBySentenceCount(preSplitSentences, 5, 5, 10);
+    logger.info(`📦 预分句 ${preSplitSentences.length} 个句子，分为 ${batches.length} 批`);
+
+    if (batches.length === 0) {
+      logger.warn('⚠️ 没有可处理的批次');
+      return;
+    }
 
     // 创建翻译器
     const translationClient = createOpenAIClient(this.config, 'translation');
     const translator = createTranslator(translationClient, this.config);
 
-    // 处理首批（使用原函数，保持不变）
-    logger.info('🔄 开始首批断句...');
-    const firstBatchResult = await mergeSegmentsBatch(firstBatchData, originalData, splitClient, this.config, 3, '首批');
-    logger.info(`✅ 首批断句完成: ${firstBatchResult.length()}条`);
+    // 4. 处理首批
+    const firstBatch = batches[0];
+    logger.info(`🔄 开始首批断句 (${firstBatch.length} 个预分句)...`);
+    const firstBatchResult = await mergeSegmentsWithinBatch(
+      firstBatch,
+      wordSegments,
+      splitClient,
+      this.config
+      // 首批不传 batchIndex，日志中不显示批次编号
+    );
+    logger.info(`✅ 首批断句完成: ${firstBatchResult.length()} 条`);
     if (onProgress) onProgress('split', 0.5, 2);
 
     // 翻译首批
@@ -139,35 +145,46 @@ export class TranslatorService {
       onProgress
     );
 
-    // 处理剩余部分：使用流式断句
-    if (remainingData.length() > 0) {
-      logger.info('🔄 开始剩余部分流式处理...\n');
+    // 5. 处理剩余批次
+    const remainingBatches = batches.slice(1);
+    if (remainingBatches.length > 0) {
+      logger.info(`🔄 开始剩余 ${remainingBatches.length} 批次的流式处理...\n`);
 
-      const streamGen = mergeSegmentsBatchStream(remainingData, originalData, splitClient, this.config, 3, '剩余');
       const pendingTranslations: Promise<void>[] = [];
-      let batchCounter = 0;
 
-      for await (const batchResult of streamGen) {
-        batchCounter++;
-        logger.info(`🎯 [流式批次${batchCounter}] 收到 ${batchResult.length()} 条字幕`);
+      for (let i = 0; i < remainingBatches.length; i++) {
+        const batch = remainingBatches[i];
+        const batchIndex = i + 1;
 
-        // 立即启动翻译（不等待）
-        const translatePromise = this.translateBatch(
-          batchResult.getSegments(),
-          translator,
-          options,
-          false,
-          onPartialResult,
-          onProgress,
-          batchCounter  // 传递批次编号
-        );
-        pendingTranslations.push(translatePromise);
+        logger.info(`🎯 [批次${batchIndex}] 开始处理 ${batch.length} 个预分句`);
+
+        // 立即启动断句和翻译（不等待）
+        const promise = mergeSegmentsWithinBatch(
+          batch,
+          wordSegments,
+          splitClient,
+          this.config,
+          batchIndex
+        ).then(batchResult => {
+          logger.info(`🎯 [批次${batchIndex}] 断句完成: ${batchResult.length()} 条`);
+          return this.translateBatch(
+            batchResult.getSegments(),
+            translator,
+            options,
+            false,
+            onPartialResult,
+            onProgress,
+            batchIndex
+          );
+        });
+
+        pendingTranslations.push(promise);
       }
 
       // 等待所有翻译完成
-      logger.info(`\n⏳ 等待 ${pendingTranslations.length} 个批次翻译完成...`);
+      logger.info(`\n⏳ 等待 ${pendingTranslations.length} 个批次完成...`);
       await Promise.all(pendingTranslations);
-      logger.info(`✅ 所有剩余批次翻译完成\n`);
+      logger.info(`✅ 所有剩余批次完成\n`);
     }
 
     logger.info(`✅ 全部完成: 流水线处理结束`);
@@ -185,11 +202,14 @@ export class TranslatorService {
     onProgress?: ProgressCallback,
     batchNumber?: number  // 新增：批次编号
   ): Promise<void> {
-    const batchLabel = isFirst
-      ? '首批'
-      : batchNumber
-        ? `批次${batchNumber}`
-        : '剩余';
+    let batchLabel: string;
+    if (isFirst) {
+      batchLabel = '首批';
+    } else if (batchNumber) {
+      batchLabel = `批次${batchNumber}`;
+    } else {
+      batchLabel = '剩余';
+    }
 
     logger.info(`${isFirst ? '🚀' : '🔄'} [${batchLabel}] 翻译开始: ${segments.length}条字幕`);
 

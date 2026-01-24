@@ -70,8 +70,7 @@ export class SubtitleData {
       const text = seg.text;
       const duration = seg.endTime - seg.startTime;
 
-      // 多语言字符匹配模式（借鉴 VideoCaptioner 的全面支持）
-      // 分为两类：连续提取的语言和单字提取的语言
+      // 多语言字符匹配模式 + 标点符号
       const pattern = new RegExp(
         // 以单词形式出现的语言(连续提取)
         "[a-zA-Z\\u00c0-\\u00ff\\u0100-\\u017f']+" +  // 拉丁字母及其变体(英语、德语、法语等)
@@ -89,7 +88,9 @@ export class SubtitleData {
         "|[\\u0900-\\u097f]" +  // 天城文(印地语等)
         "|[\\u0980-\\u09ff]" +  // 孟加拉语
         "|[\\u0e80-\\u0eff]" +  // 老挝文
-        "|[\\u1000-\\u109f]",   // 缅甸文
+        "|[\\u1000-\\u109f]" +  // 缅甸文
+        // 标点符号（作为单独的token）
+        "|[.,!?;:…。，！？；：、]",  // 常见标点符号
         'g'
       );
 
@@ -100,36 +101,47 @@ export class SubtitleData {
         continue;
       }
 
-      // 基于音素理论计算时间分配
+      // 计算总音素数（标点符号算作0.5个音素）
       const totalPhonemes = matches.reduce((sum, match) => {
-        return sum + Math.ceil(match[0].length / CHARS_PER_PHONEME);
+        const token = match[0];
+        // 如果是标点符号，算作0.5个音素
+        if (/[.,!?;:…。，！？；：、]/.test(token)) {
+          return sum + 0.5;
+        }
+        return sum + Math.ceil(token.length / CHARS_PER_PHONEME);
       }, 0);
 
       const timePerPhoneme = duration / Math.max(totalPhonemes, 1);  // 防止除零错误
 
-      // 为每个识别出的词/字符创建独立的时间戳
+      // 为每个识别出的词/字符/标点创建独立的时间戳
       let currentTime = seg.startTime;
       const MIN_WORD_DURATION = 50; // 最小时长50毫秒
+      const MIN_PUNCTUATION_DURATION = 30; // 标点最小时长30毫秒
 
       for (const match of matches) {
-        const word = match[0];
+        const token = match[0];
 
-        // 计算当前词的音素数量
-        const wordPhonemes = Math.ceil(word.length / CHARS_PER_PHONEME);
-        // 使用浮点数计算，确保每个单词至少有最小时长
-        const wordDuration = Math.max(timePerPhoneme * wordPhonemes, MIN_WORD_DURATION);
+        // 判断是否是标点符号
+        const isPunctuation = /[.,!?;:…。，！？；：、]/.test(token);
+
+        // 计算当前token的音素数量
+        const tokenPhonemes = isPunctuation ? 0.5 : Math.ceil(token.length / CHARS_PER_PHONEME);
+        const minDuration = isPunctuation ? MIN_PUNCTUATION_DURATION : MIN_WORD_DURATION;
+
+        // 使用浮点数计算，确保每个token至少有最小时长
+        const tokenDuration = Math.max(timePerPhoneme * tokenPhonemes, minDuration);
 
         // 创建新的字词级 segment，确保时间不超出原始范围
-        const wordEndTime = Math.min(currentTime + wordDuration, seg.endTime);
+        const tokenEndTime = Math.min(currentTime + tokenDuration, seg.endTime);
 
         newSegments.push({
           index: newSegments.length + 1,
           startTime: currentTime,
-          endTime: wordEndTime,
-          text: word,
+          endTime: tokenEndTime,
+          text: token,
         });
 
-        currentTime = wordEndTime;
+        currentTime = tokenEndTime;
       }
     }
 

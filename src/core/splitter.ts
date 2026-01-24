@@ -6,12 +6,125 @@ import { setupLogger } from '../utils/logger.js';
 import { buildSplitPrompt } from './prompts.js';
 import { SubtitleData } from './subtitle-data.js';
 import { findBestMatch, preprocessText } from '../utils/similarity.js';
-import type { TranslatorConfig, SplitStats, SubtitleEntry } from '../types/index.js';
+import type { TranslatorConfig, SplitStats, SubtitleEntry, PreSplitSentence } from '../types/index.js';
+import { calculateBatchSizes } from '../utils/batch-utils.js';
 
 const logger = setupLogger('splitter');
 
 // 时间间隔阈值（毫秒）
 const MAX_GAP = 1500; // 1.5秒
+
+/**
+ * 基于标点预分句，返回句子列表及其对应的单词索引范围
+ */
+export function presplitByPunctuation(wordSegments: SubtitleEntry[]): PreSplitSentence[] {
+  if (wordSegments.length === 0) return [];
+
+  // 拼接所有单词为完整文本
+  const fullText = wordSegments.map(seg => seg.text).join(' ');
+
+  // 使用 splitByEndMarks 进行预分句
+  const sentences = splitByEndMarks(fullText);
+
+  const preSplitSentences: PreSplitSentence[] = [];
+  let currentWordIndex = 0;
+
+  for (const sentence of sentences) {
+    const sentenceWords = sentence.trim().split(/\s+/);
+    const wordCount = sentenceWords.length;
+
+    // 计算单词索引范围
+    const wordStartIndex = currentWordIndex;
+    const wordEndIndex = currentWordIndex + wordCount;
+
+    // 获取时间范围
+    const startTime = wordSegments[wordStartIndex]?.startTime || 0;
+    const endTime = wordSegments[Math.min(wordEndIndex - 1, wordSegments.length - 1)]?.endTime || 0;
+
+    preSplitSentences.push({
+      text: sentence,
+      wordStartIndex,
+      wordEndIndex,
+      startTime,
+      endTime,
+    });
+
+    currentWordIndex = wordEndIndex;
+  }
+
+  return preSplitSentences;
+}
+
+/**
+ * 按句子数分批
+ */
+export function batchBySentenceCount(
+  sentences: PreSplitSentence[],
+  firstBatchSize: number = 5,
+  minSize: number = 5,
+  maxSize: number = 10
+): PreSplitSentence[][] {
+  if (sentences.length === 0) return [];
+
+  const batches: PreSplitSentence[][] = [];
+
+  // 首批
+  const firstBatch = sentences.slice(0, Math.min(firstBatchSize, sentences.length));
+  batches.push(firstBatch);
+
+  // 剩余部分
+  const remaining = sentences.slice(firstBatch.length);
+  if (remaining.length > 0) {
+    // 使用 calculateBatchSizes 灵活分配
+    const batchSizes = calculateBatchSizes(remaining.length, (minSize + maxSize) / 2, minSize, maxSize);
+
+    let startIndex = 0;
+    for (const size of batchSizes) {
+      batches.push(remaining.slice(startIndex, startIndex + size));
+      startIndex += size;
+    }
+  }
+
+  return batches;
+}
+
+/**
+ * 在批次内进行断句和时间戳对齐
+ */
+export async function mergeSegmentsWithinBatch(
+  preSplitSentences: PreSplitSentence[],
+  wordSegments: SubtitleEntry[],
+  client: any,
+  config: TranslatorConfig,
+  batchIndex?: number
+): Promise<SubtitleData> {
+  if (preSplitSentences.length === 0) {
+    return new SubtitleData([]);
+  }
+
+  // 提取批次对应的单词片段
+  const startIndex = preSplitSentences[0].wordStartIndex;
+  const endIndex = preSplitSentences[preSplitSentences.length - 1].wordEndIndex;
+  const batchWordSegments = wordSegments.slice(startIndex, endIndex);
+
+  // 拼接为文本
+  const batchText = batchWordSegments.map(seg => seg.text).join(' ');
+
+  // LLM 断句
+  const llmSentences = await splitByLLM(batchText, client, config, batchIndex);
+
+  // 时间戳对齐：在当前批次的单词片段中匹配（使用旧的相似度匹配方式）
+  const alignedSegments = mergeSegmentsBasedOnSentences(
+    batchWordSegments,
+    llmSentences
+  );
+
+  // 合并过短的分段
+  mergeShortSegment(alignedSegments, config);
+
+  return new SubtitleData(alignedSegments);
+}
+
 
 /**
  * 按时间间隔分组片段
@@ -146,43 +259,10 @@ export function countWords(text: string): number {
 }
 
 /**
- * 计算前N条原始字幕对应的单词索引范围
- * @param originalData 原始字幕数据
- * @param processData 单词数据
- * @param firstBatchCount 首批原始字幕数量
- * @returns 单词的结束索引（不包含）
- */
-export function calculateFirstBatchSegmentRange(
-  originalData: SubtitleData,
-  processData: SubtitleData,
-  firstBatchCount: number
-): number {
-  const originalSegments = originalData.getSegments();
-  const processSegments = processData.getSegments();
-
-  // 获取前N条原始字幕的结束时间
-  const lastOriginalIndex = Math.min(firstBatchCount, originalSegments.length) - 1;
-  if (lastOriginalIndex < 0) return 0;
-
-  const endTime = originalSegments[lastOriginalIndex].endTime;
-
-  // 找到对应的单词索引
-  let endIndex = processSegments.length;
-  for (let i = 0; i < processSegments.length; i++) {
-    if (processSegments[i].startTime >= endTime) {
-      endIndex = i;
-      break;
-    }
-  }
-
-  return endIndex;
-}
-
-/**
  * 按明确的句子结束标记拆分句子
  */
 export function splitByEndMarks(sentence: string): string[] {
-  const endMarks = ['. ', '! ', '? '];
+  const endMarks = ['. ', '! ', '? ', '.', '!', '?'];  // 包含有空格和无空格的版本
   const positions: number[] = [];
 
   // 查找句子结束标记的位置
@@ -193,11 +273,14 @@ export function splitByEndMarks(sentence: string): string[] {
       if (pos === -1) break;
 
       // 确保不是小数点
-      if (mark === '. ' && pos > 0 && /\d/.test(sentence[pos - 1])) {
+      if ((mark === '. ' || mark === '.') && pos > 0 && /\d/.test(sentence[pos - 1])) {
         start = pos + 1;
         continue;
       }
-      positions.push(pos + 1); // 标点后的位置
+
+      // 记录标点后的位置（如果有空格则跳过空格）
+      const markLen = mark.length;
+      positions.push(pos + markLen);
       start = pos + 1;
     }
   }
@@ -207,12 +290,14 @@ export function splitByEndMarks(sentence: string): string[] {
     return [sentence];
   }
 
+  // 去重并排序
+  const uniquePositions = Array.from(new Set(positions)).sort((a, b) => a - b);
+
   // 执行分割
-  positions.sort((a, b) => a - b);
   const segments: string[] = [];
   let start = 0;
 
-  for (const pos of positions) {
+  for (const pos of uniquePositions) {
     const segment = sentence.slice(start, pos).trim();
     // 确保每段至少有3个单词才分割
     if (segment && countWords(segment) >= 3) {
@@ -230,11 +315,6 @@ export function splitByEndMarks(sentence: string): string[] {
     } else {
       segments.push(lastSegment);
     }
-  }
-
-  // 记录分割结果
-  if (segments.length > 1) {
-    logger.info(`✂️ 标点分割: ${segments.length}段`);
   }
 
   return segments.length > 1 ? segments : [sentence];
@@ -502,7 +582,8 @@ export async function splitByLLM(
     throw new Error('API 返回为空');
   }
 
-  logger.info(`API 返回结果: \n\n${response}\n`);
+  const batchPrefix = batchIndex !== undefined ? `[批次${batchIndex}] ` : '';
+  logger.info(`${batchPrefix}API 返回结果: \n\n${response}\n`);
 
   // 清理响应
   let result = response;
@@ -617,353 +698,9 @@ export async function splitByLLM(
     logger.error(`   ❌ 严重超标: ${stats.rejected}句 (>${maxThreshold}字)`);
   }
 
-  const batchPrefix = batchIndex ? `[批次${batchIndex}]` : '';
-  logger.info(`✅ ${batchPrefix} 断句完成: ${sentences.length} 个句子，耗时 ${(duration / 1000).toFixed(1)}s`);
+  logger.info(`✅ ${batchPrefix}断句完成: ${sentences.length} 个句子，耗时 ${(duration / 1000).toFixed(1)}s`);
 
   return sentences;
-}
-
-/**
- * 按句子边界分批字幕
- */
-export function splitByWordCount(
-  subtitleData: SubtitleData,
-  wordThreshold = 500
-): SubtitleData[] {
-  const segments = subtitleData.getSegments();
-
-  // 句子结束标记
-  const sentenceEndMarkers = ['.', '!', '?', '。', '！', '？', '…'];
-  // 分句标点
-  const splitMarkers = [',', '，', ';', '；', '、'];
-
-  // 按句子切分
-  const sentenceSegments: SubtitleEntry[][] = [];
-  let currentSentenceSegments: SubtitleEntry[] = [];
-
-  for (const seg of segments) {
-    currentSentenceSegments.push(seg);
-    const text = seg.text.trim();
-
-    // 检查是否是句子结尾
-    if (sentenceEndMarkers.some(marker => text.endsWith(marker))) {
-      if (currentSentenceSegments.length > 0) {
-        sentenceSegments.push(currentSentenceSegments);
-        currentSentenceSegments = [];
-      }
-    }
-  }
-
-  // 处理最后一组未完成的句子
-  if (currentSentenceSegments.length > 0) {
-    sentenceSegments.push(currentSentenceSegments);
-  }
-
-  // 拆分过长的句子
-  const splitLongSentence = (sentenceSegs: SubtitleEntry[]): SubtitleEntry[][] => {
-    const result: SubtitleEntry[][] = [];
-    let tempSegs: SubtitleEntry[] = [];
-    let tempWordCount = 0;
-
-    for (const seg of sentenceSegs) {
-      const segText = seg.text.trim();
-      const segWordCount = countWords(segText);
-
-      // 如果当前段落加上之前的已经超过阈值，并且当前段落以分句标点结尾
-      if (tempWordCount + segWordCount > wordThreshold &&
-          splitMarkers.some(marker => segText.endsWith(marker))) {
-        if (tempSegs.length > 0) {
-          result.push(tempSegs);
-          tempSegs = [];
-          tempWordCount = 0;
-        }
-      }
-
-      tempSegs.push(seg);
-      tempWordCount += segWordCount;
-
-      // 如果累积的单词数已经接近阈值，强制分段
-      if (tempWordCount >= wordThreshold * 1.2) {
-        if (tempSegs.length > 0) {
-          result.push(tempSegs);
-          tempSegs = [];
-          tempWordCount = 0;
-        }
-      }
-    }
-
-    // 处理剩余的段落
-    if (tempSegs.length > 0) {
-      result.push(tempSegs);
-    }
-
-    return result;
-  };
-
-  // 按单词数阈值分组
-  const batches: SubtitleData[] = [];
-  let currentSegments: SubtitleEntry[] = [];
-  let currentWordCount = 0;
-
-  for (const sentence of sentenceSegments) {
-    // 计算当前句子的单词数
-    const sentenceText = sentence.map(seg => seg.text).join(' ');
-    const sentenceWordCount = countWords(sentenceText);
-
-    // 如果当前句子超过阈值，尝试拆分
-    if (sentenceWordCount >= wordThreshold) {
-      // 先保存当前批次
-      if (currentSegments.length > 0) {
-        batches.push(new SubtitleData(currentSegments));
-        currentSegments = [];
-        currentWordCount = 0;
-      }
-
-      // 拆分长句子
-      const splitParts = splitLongSentence(sentence);
-      for (const part of splitParts) {
-        batches.push(new SubtitleData(part));
-      }
-      continue;
-    }
-
-    // 如果添加当前句子后超过阈值，先保存当前批次
-    if (currentWordCount + sentenceWordCount > wordThreshold && currentSegments.length > 0) {
-      batches.push(new SubtitleData(currentSegments));
-      currentSegments = [];
-      currentWordCount = 0;
-    }
-
-    currentSegments.push(...sentence);
-    currentWordCount += sentenceWordCount;
-  }
-
-  // 处理最后一批
-  if (currentSegments.length > 0) {
-    batches.push(new SubtitleData(currentSegments));
-  }
-
-  return batches;
-}
-
-/**
- * 批量并行断句处理
- */
-export async function mergeSegmentsBatch(
-  subtitleData: SubtitleData,
-  originalData: SubtitleData,
-  client: OpenAIClient,
-  config: TranslatorConfig,
-  numThreads = 3,
-  label?: string  // 可选标签，用于区分首批/剩余
-): Promise<SubtitleData> {
-  const logger = setupLogger('断句合并');
-
-  // 记录总开始时间
-  const totalStartTime = Date.now();
-
-  // 按单词数分批
-  const wordThreshold = 500;
-  const batches = splitByWordCount(subtitleData, wordThreshold);
-  const totalBatches = batches.length;
-
-  const prefix = label ? `[${label}] ` : '';
-
-  // 只有多个批次时才显示批次规划
-  if (totalBatches > 1) {
-    logger.info(`${prefix}📋 共 ${totalBatches} 个批次`);
-
-    // 显示批次分布
-    const batchInfo: string[] = [];
-    for (let i = 0; i < batches.length; i++) {
-      const batchText = batches[i].toText();
-      const wordCount = countWords(batchText);
-      batchInfo.push(`批次${i + 1}: ${wordCount}字`);
-    }
-    logger.info(`${prefix}批次详情: ${batchInfo.join(', ')}`);
-  }
-
-  // 并行处理每个批次
-  const allSegments: SubtitleEntry[] = [];
-  const batchTimes: Array<{ batch: number; duration: number }> = [];
-
-  // 创建惰性任务函数（不立即执行）
-  const taskFunctions = batches.map((batch, index) => async () => {
-    const batchIndex = index + 1;
-    const batchText = batch.toText();
-    const wordCount = countWords(batchText);
-
-    // 只有多批次时才显示批次编号
-    const batchLabel = totalBatches > 1 ? `[批次${batchIndex}] ` : '';
-    logger.info(`${prefix}📝 ${batchLabel}处理 ${wordCount} 个单词`);
-
-    // 记录批次开始时间
-    const batchStartTime = Date.now();
-
-    // 调用 LLM 处理
-    const sentences = await splitByLLM(batchText, client, config, batchIndex);
-
-    // 记录批次耗时
-    const batchDuration = Date.now() - batchStartTime;
-    batchTimes.push({ batch: batchIndex, duration: batchDuration });
-    logger.info(`${prefix}✅ ${batchLabel}断句完成，耗时 ${(batchDuration / 1000).toFixed(1)}s`);
-
-    // 使用相似度匹配重新分配时间戳
-    const batchSegments = batch.getSegments();
-    const resultSegments = mergeSegmentsBasedOnSentences(batchSegments, sentences);
-
-    return resultSegments;
-  });
-
-  // 并发执行所有批次
-  const results: SubtitleEntry[][] = new Array(batches.length);
-
-  for (let i = 0; i < taskFunctions.length; i += numThreads) {
-    const chunk = taskFunctions.slice(i, i + numThreads);
-    const chunkResults = await Promise.all(chunk.map(fn => fn()));
-    chunkResults.forEach((result, j) => {
-      results[i + j] = result;
-    });
-  }
-
-  // 合并所有结果
-  for (const segments of results) {
-    allSegments.push(...segments);
-  }
-
-  // 按时间排序
-  allSegments.sort((a, b) => a.startTime - b.startTime);
-
-  // 合并过短的分段
-  mergeShortSegment(allSegments, config);
-
-  // 重新编号
-  allSegments.forEach((seg, idx) => {
-    seg.index = idx + 1;
-  });
-
-  // 输出断句耗时汇总
-  const totalTime = Date.now() - totalStartTime;
-  logger.info('⏱️  断句耗时统计:');
-
-  // 输出每个批次的耗时
-  for (const { batch, duration } of batchTimes) {
-    const percentage = ((duration / totalTime) * 100).toFixed(0);
-    logger.info(`   批次${batch}: ${(duration / 1000).toFixed(1)}s (${percentage}%)`);
-  }
-
-  logger.info(`   总计: ${(totalTime / 1000).toFixed(1)}s`);
-
-  return new SubtitleData(allSegments);
-}
-
-/**
- * 批量并行断句处理 - 流式版本
- * 每完成一批就立即返回，不等待全部完成
- */
-export async function* mergeSegmentsBatchStream(
-  subtitleData: SubtitleData,
-  originalData: SubtitleData,
-  client: OpenAIClient,
-  config: TranslatorConfig,
-  numThreads = 3,
-  label?: string
-): AsyncGenerator<SubtitleData, void, unknown> {
-  const logger = setupLogger('断句合并');
-
-  const totalStartTime = Date.now();
-
-  // 按单词数分批 (流式版本使用较小批次以增加并行度)
-  const wordThreshold = 100;
-  const batches = splitByWordCount(subtitleData, wordThreshold);
-  const totalBatches = batches.length;
-
-  const prefix = label ? `[${label}] ` : '';
-
-  if (totalBatches > 1) {
-    logger.info(`${prefix}📋 共 ${totalBatches} 个批次 (流式处理)\n`);
-  }
-
-  // 并发控制: 维护正在执行的任务队列
-  const pending: Map<number, Promise<{ index: number; result: SubtitleEntry[] }>> = new Map();
-  let activeCount = 0;
-  let completedCount = 0;
-
-  // 创建批次处理函数
-  const processBatch = async (batch: SubtitleData, index: number) => {
-    const batchIndex = index + 1;
-    const batchText = batch.toText();
-    const wordCount = countWords(batchText);
-
-    const batchLabel = totalBatches > 1 ? `[批次${batchIndex}] ` : '';
-    logger.info(`${prefix}📝 ${batchLabel}处理 ${wordCount} 个单词`);
-
-    const batchStartTime = Date.now();
-
-    // 调用 LLM 处理
-    const sentences = await splitByLLM(batchText, client, config, batchIndex);
-
-    const batchDuration = Date.now() - batchStartTime;
-    logger.info(`${prefix}✅ ${batchLabel}断句完成，耗时 ${(batchDuration / 1000).toFixed(1)}s`);
-
-    // 使用相似度匹配重新分配时间戳
-    const batchSegments = batch.getSegments();
-    const resultSegments = mergeSegmentsBasedOnSentences(batchSegments, sentences);
-
-    // 批次内合并短片段
-    mergeShortSegment(resultSegments, config);
-
-    return { index, result: resultSegments };
-  };
-
-  // 启动所有批次
-  for (let i = 0; i < batches.length; i++) {
-    const task = processBatch(batches[i], i);
-    pending.set(i, task);
-    activeCount++;
-
-    // 达到并发上限，等待任意一个完成
-    if (activeCount >= numThreads || i === batches.length - 1) {
-      // 等待最早完成的任务
-      const completed = await Promise.race(pending.values());
-      pending.delete(completed.index);
-      activeCount--;
-      completedCount++;
-
-      // 按时间排序并重新编号
-      const sortedSegments = completed.result.sort((a, b) => a.startTime - b.startTime);
-      sortedSegments.forEach((seg, idx) => {
-        seg.index = idx + 1;
-      });
-
-      // 立即输出
-      yield new SubtitleData(sortedSegments);
-
-      const batchLabel = totalBatches > 1 ? `批次${completed.index + 1}` : '';
-      logger.info(`${prefix}🚀 ${batchLabel}已流式输出 (进度: ${completedCount}/${totalBatches})\n`);
-    }
-  }
-
-  // 等待剩余任务
-  while (pending.size > 0) {
-    const completed = await Promise.race(pending.values());
-    pending.delete(completed.index);
-    completedCount++;
-
-    // 按时间排序并重新编号
-    const sortedSegments = completed.result.sort((a, b) => a.startTime - b.startTime);
-    sortedSegments.forEach((seg, idx) => {
-      seg.index = idx + 1;
-    });
-
-    yield new SubtitleData(sortedSegments);
-
-    const batchLabel = totalBatches > 1 ? `批次${completed.index + 1}` : '';
-    logger.info(`${prefix}🚀 ${batchLabel}已流式输出 (进度: ${completedCount}/${totalBatches})\n`);
-  }
-
-  const totalTime = Date.now() - totalStartTime;
-  logger.info(`${prefix}⏱️  流式断句总耗时: ${(totalTime / 1000).toFixed(1)}s`);
 }
 
 /**

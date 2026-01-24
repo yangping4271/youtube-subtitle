@@ -43,6 +43,15 @@ export interface SplitStats {
   rejected: number;    // > max
 }
 
+/** 预分句结果 */
+export interface PreSplitSentence {
+  text: string;              // 句子文本
+  wordStartIndex: number;    // 起始单词索引
+  wordEndIndex: number;      // 结束单词索引（不含）
+  startTime: number;         // 起始时间（毫秒）
+  endTime: number;           // 结束时间（毫秒）
+}
+
 /** API 配置 */
 export interface ApiConfig {
   openaiBaseUrl: string;
