@@ -188,6 +188,7 @@ export class Translator {
   private batchLogs: Array<{ type: string; id: number; original: string; optimized: string }> = [];
   private batchTimes: Array<{ batch: number; duration: number }> = [];
   private translateStartTime: number = 0;
+  private currentBatchLabel: string = '';  // 当前批次标签
 
   constructor(client: OpenAIClient, config: TranslatorConfig) {
     this.client = client;
@@ -203,11 +204,12 @@ export class Translator {
   async translate(
     subtitles: Record<string, string>,
     context?: { videoTitle?: string; videoDescription?: string; aiSummary?: string | null },
-    onProgress?: (current: number, total: number) => void
+    batchLabel?: string  // 新增：批次标签用于日志
   ): Promise<TranslatedEntry[]> {
     this.batchLogs = [];
     this.batchTimes = [];
     this.translateStartTime = Date.now();
+    this.currentBatchLabel = batchLabel || '';  // 保存批次标签
 
     const targetLanguage = getLanguageName(this.config.targetLanguage);
     const batchSize = this.config.batchSize;
@@ -338,7 +340,8 @@ export class Translator {
     const userPrompt = `Correct and translate the following subtitles into ${targetLanguage}:
 <subtitles>${JSON.stringify(inputObj, null, 2)}</subtitles>${contextInfo}`;
 
-    logger.info(`📤 ${batchInfo} 提交给LLM的字幕数据 (共${batch.length}条):`);
+    const prefix = this.currentBatchLabel ? `[${this.currentBatchLabel}] ` : '';
+    logger.info(`${prefix}📤 ${batchInfo} 提交给LLM的字幕数据 (共${batch.length}条):`);
     logger.info(`   输入JSON: ${JSON.stringify(inputObj)}`);
 
     // 调用 API（OpenAIClient 已内置重试）
@@ -350,9 +353,9 @@ export class Translator {
     // 记录批次耗时
     const batchDuration = Date.now() - batchStartTime;
     this.batchTimes.push({ batch: batchNum, duration: batchDuration });
-    logger.info(`🌍 ${batchInfo} 翻译 ${batch.length} 条字幕，耗时 ${(batchDuration / 1000).toFixed(1)}s`);
+    logger.info(`${prefix}🌍 ${batchInfo} 翻译 ${batch.length} 条字幕，耗时 ${(batchDuration / 1000).toFixed(1)}s`);
 
-    logger.info(`📥 ${batchInfo} LLM原始返回数据:\n${response}`);
+    logger.info(`${prefix}📥 ${batchInfo} LLM原始返回数据:\n${response}`);
 
     // 解析响应
     const responseContent = this.normalizeResponse(parseLlmResponse(response), batchInfo);

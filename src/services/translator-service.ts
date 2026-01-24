@@ -5,7 +5,7 @@
 
 import { setupLogger } from '../utils/logger.js';
 import { createOpenAIClient } from './openai-client.js';
-import { mergeSegmentsBatch, countWords, calculateFirstBatchSegmentRange } from '../core/splitter.js';
+import { mergeSegmentsBatch, mergeSegmentsBatchStream, countWords, calculateFirstBatchSegmentRange } from '../core/splitter.js';
 import { SubtitleData } from '../core/subtitle-data.js';
 import { createTranslator } from '../core/translator.js';
 import type {
@@ -119,25 +119,17 @@ export class TranslatorService {
     logger.info(`📏 首批范围: 前${firstBatchSize}条原始字幕 → ${firstBatchSegmentCount}个单词`);
     logger.info(`📏 剩余范围: ${remainingData.length()}个单词`);
 
-    // 并行断句
-    logger.info('🔄 并行断句处理...');
-
-    // 启动首批和剩余的断句（不等待）
-    const firstBatchPromise = mergeSegmentsBatch(firstBatchData, originalData, splitClient, this.config, 3, '首批');
-    const remainingPromise = remainingData.length() > 0
-      ? mergeSegmentsBatch(remainingData, originalData, splitClient, this.config, 3, '剩余')
-      : Promise.resolve(new SubtitleData([]));
-
     // 创建翻译器
     const translationClient = createOpenAIClient(this.config, 'translation');
     const translator = createTranslator(translationClient, this.config);
 
-    // 等待首批断句完成，立即开始首批翻译
-    const firstBatchResult = await firstBatchPromise;
+    // 处理首批（使用原函数，保持不变）
+    logger.info('🔄 开始首批断句...');
+    const firstBatchResult = await mergeSegmentsBatch(firstBatchData, originalData, splitClient, this.config, 3, '首批');
     logger.info(`✅ 首批断句完成: ${firstBatchResult.length()}条`);
     if (onProgress) onProgress('split', 0.5, 2);
 
-    // 翻译首批（同时剩余部分继续断句）
+    // 翻译首批
     await this.translateBatch(
       firstBatchResult.getSegments(),
       translator,
@@ -147,23 +139,38 @@ export class TranslatorService {
       onProgress
     );
 
-    // 等待剩余断句完成
-    const remainingResult = await remainingPromise;
-    if (remainingResult.length() > 0) {
-      logger.info(`✅ 剩余断句完成: ${remainingResult.length()}条`);
+    // 处理剩余部分：使用流式断句
+    if (remainingData.length() > 0) {
+      logger.info('🔄 开始剩余部分流式处理...\n');
 
-      // 翻译剩余部分
-      await this.translateBatch(
-        remainingResult.getSegments(),
-        translator,
-        options,
-        false,
-        onPartialResult,
-        onProgress
-      );
+      const streamGen = mergeSegmentsBatchStream(remainingData, originalData, splitClient, this.config, 3, '剩余');
+      const pendingTranslations: Promise<void>[] = [];
+      let batchCounter = 0;
+
+      for await (const batchResult of streamGen) {
+        batchCounter++;
+        logger.info(`🎯 [流式批次${batchCounter}] 收到 ${batchResult.length()} 条字幕`);
+
+        // 立即启动翻译（不等待）
+        const translatePromise = this.translateBatch(
+          batchResult.getSegments(),
+          translator,
+          options,
+          false,
+          onPartialResult,
+          onProgress,
+          batchCounter  // 传递批次编号
+        );
+        pendingTranslations.push(translatePromise);
+      }
+
+      // 等待所有翻译完成
+      logger.info(`\n⏳ 等待 ${pendingTranslations.length} 个批次翻译完成...`);
+      await Promise.all(pendingTranslations);
+      logger.info(`✅ 所有剩余批次翻译完成\n`);
     }
 
-    logger.info(`✅ 全部完成: 共翻译 ${firstBatchResult.length() + remainingResult.length()} 条双语字幕`);
+    logger.info(`✅ 全部完成: 流水线处理结束`);
   }
 
   /**
@@ -175,9 +182,16 @@ export class TranslatorService {
     options: TranslateOptions,
     isFirst: boolean,
     onPartialResult: (partial: BilingualSubtitles, isFirst: boolean) => void,
-    onProgress?: ProgressCallback
+    onProgress?: ProgressCallback,
+    batchNumber?: number  // 新增：批次编号
   ): Promise<void> {
-    logger.info(`${isFirst ? '🚀' : '🔄'} ${isFirst ? '首批' : '剩余'}翻译开始: ${segments.length}条字幕`);
+    const batchLabel = isFirst
+      ? '首批'
+      : batchNumber
+        ? `批次${batchNumber}`
+        : '剩余';
+
+    logger.info(`${isFirst ? '🚀' : '🔄'} [${batchLabel}] 翻译开始: ${segments.length}条字幕`);
 
     // 构建字幕索引
     const optimizedSubtitles: Record<string, string> = {};
@@ -185,19 +199,20 @@ export class TranslatorService {
       optimizedSubtitles[String(idx + 1)] = seg.text;
     });
 
-    // 翻译
+    // 翻译（传递批次标签）
     const translated = await translator.translate(
       optimizedSubtitles,
       {
         videoTitle: options.videoTitle,
         videoDescription: options.videoDescription,
         aiSummary: options.aiSummary,
-      }
+      },
+      batchLabel  // 传递批次标签用于日志
     );
 
     // 构建结果并回调
     const result = this.buildBilingualResult(segments, translated);
-    logger.info(`✅ ${isFirst ? '首批' : '剩余'}翻译完成: ${result.english.length}条`);
+    logger.info(`✅ [${batchLabel}] 翻译完成: ${result.english.length}条`);
     onPartialResult(result, isFirst);
 
     if (onProgress) {

@@ -858,6 +858,115 @@ export async function mergeSegmentsBatch(
 }
 
 /**
+ * 批量并行断句处理 - 流式版本
+ * 每完成一批就立即返回，不等待全部完成
+ */
+export async function* mergeSegmentsBatchStream(
+  subtitleData: SubtitleData,
+  originalData: SubtitleData,
+  client: OpenAIClient,
+  config: TranslatorConfig,
+  numThreads = 3,
+  label?: string
+): AsyncGenerator<SubtitleData, void, unknown> {
+  const logger = setupLogger('断句合并');
+
+  const totalStartTime = Date.now();
+
+  // 按单词数分批 (流式版本使用较小批次以增加并行度)
+  const wordThreshold = 100;
+  const batches = splitByWordCount(subtitleData, wordThreshold);
+  const totalBatches = batches.length;
+
+  const prefix = label ? `[${label}] ` : '';
+
+  if (totalBatches > 1) {
+    logger.info(`${prefix}📋 共 ${totalBatches} 个批次 (流式处理)\n`);
+  }
+
+  // 并发控制: 维护正在执行的任务队列
+  const pending: Map<number, Promise<{ index: number; result: SubtitleEntry[] }>> = new Map();
+  let activeCount = 0;
+  let completedCount = 0;
+
+  // 创建批次处理函数
+  const processBatch = async (batch: SubtitleData, index: number) => {
+    const batchIndex = index + 1;
+    const batchText = batch.toText();
+    const wordCount = countWords(batchText);
+
+    const batchLabel = totalBatches > 1 ? `[批次${batchIndex}] ` : '';
+    logger.info(`${prefix}📝 ${batchLabel}处理 ${wordCount} 个单词`);
+
+    const batchStartTime = Date.now();
+
+    // 调用 LLM 处理
+    const sentences = await splitByLLM(batchText, client, config, batchIndex);
+
+    const batchDuration = Date.now() - batchStartTime;
+    logger.info(`${prefix}✅ ${batchLabel}断句完成，耗时 ${(batchDuration / 1000).toFixed(1)}s`);
+
+    // 使用相似度匹配重新分配时间戳
+    const batchSegments = batch.getSegments();
+    const resultSegments = mergeSegmentsBasedOnSentences(batchSegments, sentences);
+
+    // 批次内合并短片段
+    mergeShortSegment(resultSegments, config);
+
+    return { index, result: resultSegments };
+  };
+
+  // 启动所有批次
+  for (let i = 0; i < batches.length; i++) {
+    const task = processBatch(batches[i], i);
+    pending.set(i, task);
+    activeCount++;
+
+    // 达到并发上限，等待任意一个完成
+    if (activeCount >= numThreads || i === batches.length - 1) {
+      // 等待最早完成的任务
+      const completed = await Promise.race(pending.values());
+      pending.delete(completed.index);
+      activeCount--;
+      completedCount++;
+
+      // 按时间排序并重新编号
+      const sortedSegments = completed.result.sort((a, b) => a.startTime - b.startTime);
+      sortedSegments.forEach((seg, idx) => {
+        seg.index = idx + 1;
+      });
+
+      // 立即输出
+      yield new SubtitleData(sortedSegments);
+
+      const batchLabel = totalBatches > 1 ? `批次${completed.index + 1}` : '';
+      logger.info(`${prefix}🚀 ${batchLabel}已流式输出 (进度: ${completedCount}/${totalBatches})\n`);
+    }
+  }
+
+  // 等待剩余任务
+  while (pending.size > 0) {
+    const completed = await Promise.race(pending.values());
+    pending.delete(completed.index);
+    completedCount++;
+
+    // 按时间排序并重新编号
+    const sortedSegments = completed.result.sort((a, b) => a.startTime - b.startTime);
+    sortedSegments.forEach((seg, idx) => {
+      seg.index = idx + 1;
+    });
+
+    yield new SubtitleData(sortedSegments);
+
+    const batchLabel = totalBatches > 1 ? `批次${completed.index + 1}` : '';
+    logger.info(`${prefix}🚀 ${batchLabel}已流式输出 (进度: ${completedCount}/${totalBatches})\n`);
+  }
+
+  const totalTime = Date.now() - totalStartTime;
+  logger.info(`${prefix}⏱️  流式断句总耗时: ${(totalTime / 1000).toFixed(1)}s`);
+}
+
+/**
  * 合并过短的分段
  */
 function mergeShortSegment(segments: SubtitleEntry[], config: TranslatorConfig): void {
