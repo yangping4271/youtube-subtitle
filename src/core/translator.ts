@@ -187,6 +187,41 @@ export class Translator {
 
     results.sort((a, b) => a.index - b.index);
 
+    // 检测翻译失败的字幕并重试
+    const failedEntries = results.filter(r => r.translation.startsWith('[翻译失败]'));
+    if (failedEntries.length > 0) {
+      logger.info(`${prefix}发现 ${failedEntries.length} 个字幕翻译失败，重新发起请求`);
+
+      const failedSubtitles: [string, string][] = failedEntries.map(
+        entry => [String(entry.index), entry.original]
+      );
+
+      try {
+        const retryResults = await this.translateBatchInternal(
+          failedSubtitles,
+          targetLanguage,
+          context,
+          `${currentBatchLabel}-重试`
+        );
+
+        const successfulRetries = retryResults.filter(
+          r => !r.translation.startsWith('[翻译失败]')
+        );
+
+        for (const retryResult of successfulRetries) {
+          const idx = results.findIndex(r => r.index === retryResult.index);
+          if (idx >= 0) {
+            results[idx] = retryResult;
+          }
+        }
+
+        logger.info(`${prefix}重试结果: ${successfulRetries.length}/${failedEntries.length} 条字幕成功翻译`);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logger.info(`${prefix}⚠️ 重试失败: ${errorMsg}`);
+      }
+    }
+
     for (const entry of results) {
       entry.optimized = normalizeEnglishPunctuation(entry.optimized);
       if (isChinese(this.config.targetLanguage)) {
@@ -241,46 +276,24 @@ export class Translator {
       });
     }
 
+    const failedIds: number[] = [];
+
     const results = batch.map(([key, originalText]) => {
+      const id = parseInt(key, 10);
       const entry = responseContent[key];
-      let optimized = originalText;
-      let translation = originalText;
-      let hasProblems = false;
 
-      if (!entry) {
-        logger.warn(`API返回结果缺少字幕ID: ${key}`);
-        logger.warn(`原始字幕: ${originalText}`);
-        hasProblems = true;
-        translation = `[翻译失败] ${originalText}`;
-      } else {
-        if (entry.optimized_subtitle !== undefined) {
-          optimized = entry.optimized_subtitle;
-        } else {
-          logger.warn(`字幕ID ${key} 缺少optimized_subtitle字段`);
-          logger.warn(`该字幕返回的数据: ${JSON.stringify(entry)}`);
-          hasProblems = true;
-        }
+      const optimized = entry?.optimized_subtitle ?? originalText;
+      const translation = entry?.translation ?? `[翻译失败] ${originalText}`;
+      const isFailed = entry?.translation === undefined;
 
-        if (entry.translation !== undefined) {
-          translation = entry.translation;
-        } else {
-          logger.warn(`字幕ID ${key} 缺少translation字段`);
-          logger.warn(`该字幕返回的数据: ${JSON.stringify(entry)}`);
-          hasProblems = true;
-          translation = `[翻译失败] ${originalText}`;
-        }
-      }
-
-      if (!hasProblems && originalText !== optimized) {
-        optimizationLogs.push({
-          id: parseInt(key, 10),
-          original: originalText,
-          optimized,
-        });
+      if (isFailed) {
+        failedIds.push(id);
+      } else if (originalText !== optimized) {
+        optimizationLogs.push({ id, original: originalText, optimized });
       }
 
       return {
-        index: parseInt(key, 10),
+        index: id,
         startTime: 0,
         endTime: 0,
         original: originalText,
@@ -288,6 +301,10 @@ export class Translator {
         translation,
       };
     });
+
+    if (failedIds.length > 0) {
+      logger.info(`${prefix}⚠️ ${failedIds.length} 条字幕翻译失败 (ID: ${failedIds.join(', ')})`);
+    }
 
     this.printOptimizationLogs(optimizationLogs, prefix);
 
