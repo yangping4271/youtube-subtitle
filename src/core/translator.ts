@@ -18,6 +18,7 @@ interface OpenAIClient {
   callChat(systemPrompt: string, userPrompt: string, options?: {
     temperature?: number;
     timeout?: number;
+    signal?: AbortSignal;
   }): Promise<string>;
 }
 
@@ -163,7 +164,8 @@ export class Translator {
   async translate(
     subtitles: Record<string, string>,
     context?: { videoTitle?: string; videoDescription?: string; aiSummary?: string | null },
-    batchLabel?: string
+    batchLabel?: string,
+    signal?: AbortSignal
   ): Promise<TranslatedEntry[]> {
     const currentBatchLabel = batchLabel || '';
     const targetLanguage = getLanguageName(this.config.targetLanguage);
@@ -174,11 +176,12 @@ export class Translator {
       items,
       targetLanguage,
       context,
-      currentBatchLabel
+      currentBatchLabel,
+      signal
     ).catch(error => {
       const prefix = currentBatchLabel ? `[${currentBatchLabel}] ` : '';
       logger.error(`${prefix}翻译失败: ${error}`);
-      return this.translateSingle(items, targetLanguage);
+      return this.translateSingle(items, targetLanguage, signal);
     });
 
     const batchDuration = Date.now() - batchStartTime;
@@ -201,7 +204,8 @@ export class Translator {
           failedSubtitles,
           targetLanguage,
           context,
-          `${currentBatchLabel}-重试`
+          `${currentBatchLabel}-重试`,
+          signal
         );
 
         const successfulRetries = retryResults.filter(
@@ -239,7 +243,8 @@ export class Translator {
     batch: [string, string][],
     targetLanguage: string,
     context: { videoTitle?: string; videoDescription?: string; aiSummary?: string | null } | undefined,
-    batchLabel: string
+    batchLabel: string,
+    signal?: AbortSignal
   ): Promise<TranslatedEntry[]> {
     const prefix = batchLabel ? `[${batchLabel}] ` : '';
     logger.info(`${prefix}翻译 ${batch.length} 条字幕`);
@@ -258,6 +263,7 @@ export class Translator {
     const response = await this.client.callChat(systemPrompt, userPrompt, {
       temperature: 0.7,
       timeout: 80000,
+      signal,
     });
 
     logger.info(`${prefix}LLM原始返回数据:\n${response}`);
@@ -350,7 +356,8 @@ export class Translator {
    */
   private async translateSingle(
     batch: [string, string][],
-    targetLanguage: string
+    targetLanguage: string,
+    signal?: AbortSignal
   ): Promise<TranslatedEntry[]> {
     logger.info(`正在单条翻译字幕，共${batch.length}条`);
 
@@ -366,6 +373,7 @@ export class Translator {
         const response = await this.client.callChat(systemPrompt, value, {
           temperature: 0.7,
           timeout: 80000,
+          signal,
         });
 
         translation = response.trim();

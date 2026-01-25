@@ -97,6 +97,7 @@ export interface TranslateOptions {
   videoDescription?: string;      // 视频说明（直接使用，不通过 Summarizer）
   aiSummary?: string | null;      // AI 生成的摘要（直接使用，不通过 Summarizer）
   debug?: boolean;
+  signal?: AbortSignal;            // 取消信号
   onProgress?: ProgressCallback;
   onPartialResult?: PartialResultCallback;  // 渐进式结果回调
   firstBatchSize?: number;        // 首批字幕数量，默认 10

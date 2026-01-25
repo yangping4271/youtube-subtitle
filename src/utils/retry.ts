@@ -17,6 +17,8 @@ export interface RetryOptions {
   shouldRetry?: (error: Error) => boolean;
   /** 操作名称，用于日志 */
   operationName?: string;
+  /** 取消信号 */
+  signal?: AbortSignal;
 }
 
 /** 致命错误模式 - 不应重试 */
@@ -64,16 +66,27 @@ export async function withRetry<T>(
     delays = [1000, 2000, 4000],
     shouldRetry = (error: Error) => classifyError(error) === 'retryable',
     operationName = 'Operation',
+    signal,
   } = options;
 
   let lastError: Error | undefined;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    // 检查是否已取消
+    if (signal?.aborted) {
+      throw new DOMException('操作已取消', 'AbortError');
+    }
+
     try {
       if (attempt > 0) {
         const delayMs = delays[Math.min(attempt - 1, delays.length - 1)];
         logger.info(`⏳ ${operationName} 第 ${attempt} 次重试，延迟 ${delayMs}ms`);
         await delay(delayMs);
+
+        // 延迟后再次检查是否已取消
+        if (signal?.aborted) {
+          throw new DOMException('操作已取消', 'AbortError');
+        }
       }
 
       const result = await fn();
@@ -86,6 +99,12 @@ export async function withRetry<T>(
 
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
+
+      // AbortError 不重试，直接抛出
+      if (lastError.name === 'AbortError') {
+        logger.info(`🛑 ${operationName} 已取消`);
+        throw lastError;
+      }
 
       if (!shouldRetry(lastError)) {
         logger.error(`❌ ${operationName} 遇到致命错误，不再重试: ${lastError.message}`);

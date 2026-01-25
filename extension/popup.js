@@ -66,6 +66,10 @@ class Toast {
     static warning(message, duration = 2500) {
         this.show(message, 'warning', duration);
     }
+
+    static info(message, duration = 2000) {
+        this.show(message, 'info', duration);
+    }
 }
 
 class PopupController {
@@ -175,6 +179,9 @@ class PopupController {
 
         // 检查是否有正在进行的翻译
         this.checkTranslationProgress();
+
+        // 更新翻译按钮文案
+        await this.updateTranslateButton();
     }
 
     /**
@@ -1977,8 +1984,8 @@ class PopupController {
                     autoLoadStatus.textContent = `翻译失败: ${newValue.error}`;
                     autoLoadStatus.className = 'load-status error';
                 }
-                Toast.error('翻译失败: ' + newValue.error);
                 this.resetTranslationButton();
+                await this.updateTranslateButton();
                 chrome.storage.onChanged.removeListener(this._progressListener);
                 this._progressListener = null;
             } else {
@@ -1987,7 +1994,6 @@ class PopupController {
                     autoLoadStatus.textContent = '翻译完成!';
                     autoLoadStatus.className = 'load-status success';
                 }
-                Toast.success('翻译完成');
 
                 // 启用字幕显示
                 const subtitleToggle = document.getElementById('subtitleToggle');
@@ -1995,6 +2001,7 @@ class PopupController {
                 await this.toggleSubtitle(true);
 
                 this.resetTranslationButton();
+                await this.updateTranslateButton();
                 this.updateSubtitleInfoWithRetry();
                 chrome.storage.onChanged.removeListener(this._progressListener);
                 this._progressListener = null;
@@ -2008,7 +2015,34 @@ class PopupController {
      * 强制重置翻译状态
      */
     async forceResetTranslation() {
-        // 清除 storage 中的翻译状态
+        // 发送取消消息到后台
+        try {
+            await chrome.runtime.sendMessage({ action: 'cancelTranslation' });
+        } catch (error) {
+            console.warn('发送取消消息失败:', error);
+        }
+
+        // 清除当前视频的缓存
+        const currentVideoId = await this.getCurrentVideoId();
+        if (currentVideoId) {
+            const cacheKey = `videoSubtitles_${currentVideoId}`;
+            await chrome.storage.local.remove([cacheKey]);
+        }
+
+        // 清空页面字幕
+        try {
+            await chrome.runtime.sendMessage({
+                action: 'clearSubtitleData'
+            });
+        } catch (error) {
+            console.warn('清除页面字幕失败:', error);
+        }
+
+        // 清空当前数据
+        this.englishSubtitles = [];
+        this.chineseSubtitles = [];
+
+        // 清除翻译进度
         await chrome.storage.local.remove('translationProgress');
 
         // 停止监听
@@ -2017,9 +2051,22 @@ class PopupController {
             this._progressListener = null;
         }
 
+        // 重置进度条
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        if (progressFill) progressFill.style.width = '0%';
+        if (progressText) progressText.textContent = '0%';
+
+        // 更新状态显示
+        const autoLoadStatus = document.getElementById('autoLoadStatus');
+        if (autoLoadStatus) {
+            autoLoadStatus.textContent = '翻译已取消';
+            autoLoadStatus.className = 'load-status';
+        }
+
         // 重置 UI
         this.resetTranslationButton();
-        Toast.info('已取消翻译');
+        await this.updateTranslateButton();
     }
 
     /**
@@ -2037,35 +2084,116 @@ class PopupController {
         }
     }
 
-    bindTranslateEvents() {
+    /**
+     * 根据缓存状态更新翻译按钮文案
+     */
+    async updateTranslateButton() {
         const translateBtn = document.getElementById('translateBtn');
-        const retranslateBtn = document.getElementById('retranslateBtn');
+        if (!translateBtn || this.isTranslating) return;
 
-        if (translateBtn) {
-            translateBtn.addEventListener('click', () => this.startTranslation(false));
+        const currentVideoId = await this.getCurrentVideoId();
+        if (!currentVideoId) {
+            translateBtn.innerHTML = '<span class="btn-icon">🚀</span><span class="btn-text">开始翻译</span>';
+            return;
         }
 
-        if (retranslateBtn) {
-            retranslateBtn.addEventListener('click', () => this.startTranslation(true));
+        const cacheKey = `videoSubtitles_${currentVideoId}`;
+        const result = await chrome.storage.local.get([cacheKey]);
+        const cached = result[cacheKey];
+
+        if (cached && (cached.englishSubtitles?.length > 0 || cached.chineseSubtitles?.length > 0)) {
+            translateBtn.innerHTML = '<span class="btn-icon">🔄</span><span class="btn-text">重新翻译</span>';
+        } else {
+            translateBtn.innerHTML = '<span class="btn-icon">🚀</span><span class="btn-text">开始翻译</span>';
         }
     }
 
-    async startTranslation(forceRetranslate = false) {
+    bindTranslateEvents() {
+        const translateBtn = document.getElementById('translateBtn');
+
+        if (translateBtn) {
+            translateBtn.addEventListener('click', () => this.startTranslation());
+        }
+    }
+
+    async startTranslation() {
+        console.log('🎬 startTranslation() 被调用');
+
         if (this.isTranslating) {
-            Toast.warning('翻译正在进行中');
+            console.log('⚠️ 翻译正在进行中，忽略重复请求');
             return;
         }
 
         // 检查API配置
         if (!this.apiConfig.openaiApiKey) {
-            Toast.error('请先配置API密钥');
+            const autoLoadStatus = document.getElementById('autoLoadStatus');
+            if (autoLoadStatus) {
+                autoLoadStatus.textContent = '请先配置API密钥';
+                autoLoadStatus.className = 'load-status error';
+            }
             this.switchTab('api');
             return;
         }
 
-        // 检查是否已有翻译缓存（除非强制重新翻译）
+        // 获取当前视频ID
         const currentVideoId = await this.getCurrentVideoId();
-        if (!forceRetranslate && currentVideoId) {
+        console.log('📹 当前视频ID:', currentVideoId);
+
+        // 检查按钮文案判断是否为重新翻译
+        const translateBtn = document.getElementById('translateBtn');
+        const isRetranslate = translateBtn && translateBtn.textContent.includes('重新翻译');
+        console.log('🔄 是否重新翻译:', isRetranslate, '按钮文案:', translateBtn?.textContent);
+
+        // 如果是重新翻译，先完全重置
+        if (isRetranslate && currentVideoId) {
+            console.log('🧹 开始清理缓存和重置状态...');
+            try {
+                // 清理缓存
+                const cacheKey = `videoSubtitles_${currentVideoId}`;
+                await chrome.storage.local.remove([cacheKey]);
+                console.log('✅ 缓存已清除:', cacheKey);
+
+                // 清空页面字幕
+                try {
+                    await chrome.runtime.sendMessage({
+                        action: 'clearSubtitleData'
+                    });
+                    console.log('✅ 页面字幕已清空');
+                } catch (error) {
+                    console.warn('⚠️ 清空页面字幕失败:', error);
+                }
+
+                // 清空当前数据
+                this.englishSubtitles = [];
+                this.chineseSubtitles = [];
+
+                // 重置进度条
+                const progressFill = document.getElementById('progressFill');
+                const progressText = document.getElementById('progressText');
+                if (progressFill) progressFill.style.width = '0%';
+                if (progressText) progressText.textContent = '0%';
+
+                // 更新状态显示
+                const autoLoadStatus = document.getElementById('autoLoadStatus');
+                if (autoLoadStatus) {
+                    autoLoadStatus.textContent = '正在准备重新翻译...';
+                    autoLoadStatus.className = 'load-status translating';
+                }
+
+                console.log('✅ 清理完成，继续执行翻译流程');
+            } catch (error) {
+                console.error('❌ 清理缓存时出错:', error);
+                const autoLoadStatus = document.getElementById('autoLoadStatus');
+                if (autoLoadStatus) {
+                    autoLoadStatus.textContent = `清理失败: ${error.message}`;
+                    autoLoadStatus.className = 'load-status error';
+                }
+                return;
+            }
+        }
+
+        // 检查是否已有翻译缓存（重新翻译时已清除）
+        if (!isRetranslate && currentVideoId) {
             const cacheKey = `videoSubtitles_${currentVideoId}`;
             const result = await chrome.storage.local.get([cacheKey]);
             const cached = result[cacheKey];
@@ -2093,12 +2221,18 @@ class PopupController {
                 await this.toggleSubtitle(true);
 
                 this.updateSubtitleInfoWithRetry();
-                Toast.success(`已加载缓存翻译: ${cached.chineseSubtitles?.length || 0}条字幕`);
+
+                // 更新状态显示
+                const autoLoadStatus = document.getElementById('autoLoadStatus');
+                if (autoLoadStatus) {
+                    autoLoadStatus.textContent = `已加载缓存: ${cached.chineseSubtitles?.length || 0}条字幕`;
+                    autoLoadStatus.className = 'load-status success';
+                }
                 return;
             }
         }
 
-        const translateBtn = document.getElementById('translateBtn');
+        console.log('🚀 开始执行翻译流程...');
         const progressRow = document.getElementById('progressRow');
         const progressFill = document.getElementById('progressFill');
         const progressText = document.getElementById('progressText');
@@ -2182,8 +2316,8 @@ class PopupController {
                 autoLoadStatus.textContent = `翻译失败: ${error.message}`;
                 autoLoadStatus.className = 'load-status error';
             }
-            Toast.error('翻译失败: ' + error.message);
             this.resetTranslationButton();
+            await this.updateTranslateButton();
         }
     }
 

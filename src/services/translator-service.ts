@@ -37,10 +37,7 @@ export class TranslatorService {
     subtitles: SubtitleEntry[],
     options: TranslateOptions = {}
   ): Promise<BilingualSubtitles> {
-    if (this.isTranslating) {
-      throw new Error('翻译正在进行中');
-    }
-
+    // 强制重置状态（开始新翻译前）
     this.isTranslating = true;
     const { onProgress, onPartialResult, firstBatchSize = 10 } = options;
 
@@ -80,6 +77,15 @@ export class TranslatorService {
   }
 
   /**
+   * 检查取消信号，如果已取消则抛出 AbortError
+   */
+  private checkAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) {
+      throw new DOMException('翻译已取消', 'AbortError');
+    }
+  }
+
+  /**
    * 流水线模式：所有批次并行处理（带并发控制）
    */
   private async translateWithPipeline(
@@ -91,6 +97,9 @@ export class TranslatorService {
     onProgress?: ProgressCallback
   ): Promise<void> {
     logger.info('启动按句子数分批的流水线处理（所有批次并行）');
+
+    const { signal } = options;
+    this.checkAborted(signal);
 
     const wordSegments = processData.getSegments();
     logger.info(`单词级字幕: ${wordSegments.length} 个单词`);
@@ -106,6 +115,8 @@ export class TranslatorService {
       return;
     }
 
+    this.checkAborted(signal);
+
     const translationClient = createOpenAIClient(this.config, 'translation');
     const translator = createTranslator(translationClient, this.config);
 
@@ -117,6 +128,8 @@ export class TranslatorService {
     const total = preSplitSentences.length;
 
     const batchTasks = batches.map((batch, index) => async () => {
+      this.checkAborted(signal);
+
       const batchNumber = index + 1;
       logger.info(`[批次${batchNumber}] 开始处理 ${batch.length} 个预分句`);
 
@@ -125,10 +138,12 @@ export class TranslatorService {
         wordSegments,
         splitClient,
         this.config,
-        batchNumber
+        batchNumber,
+        signal
       );
 
       logger.info(`[批次${batchNumber}] 断句完成: ${batchResult.length()} 条`);
+      this.checkAborted(signal);
 
       await this.translateBatch(
         batchResult.getSegments(),
@@ -148,7 +163,7 @@ export class TranslatorService {
       logger.info(`[批次${batchNumber}] 完成`);
     });
 
-    await this.executeBatchesWithConcurrency(batchTasks, threadNum);
+    await this.executeBatchesWithConcurrency(batchTasks, threadNum, signal);
 
     logger.info(`\n全部完成: 流水线处理结束`);
     if (onProgress) onProgress('complete', total, total);
@@ -159,9 +174,11 @@ export class TranslatorService {
    */
   private async executeBatchesWithConcurrency(
     tasks: Array<() => Promise<void>>,
-    concurrency: number
+    concurrency: number,
+    signal?: AbortSignal
   ): Promise<void> {
     for (let i = 0; i < tasks.length; i += concurrency) {
+      this.checkAborted(signal);
       const chunk = tasks.slice(i, i + concurrency);
       await Promise.all(chunk.map(task => task()));
     }
@@ -195,7 +212,8 @@ export class TranslatorService {
         videoDescription: options.videoDescription,
         aiSummary: options.aiSummary,
       },
-      batchLabel
+      batchLabel,
+      options.signal // 传递 signal
     );
 
     const result = this.buildBilingualResult(segments, translated);

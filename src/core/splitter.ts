@@ -94,9 +94,10 @@ export function batchBySentenceCount(
 export async function mergeSegmentsWithinBatch(
   preSplitSentences: PreSplitSentence[],
   wordSegments: SubtitleEntry[],
-  client: any,
+  client: OpenAIClient,
   config: TranslatorConfig,
-  batchIndex?: number
+  batchIndex?: number,
+  signal?: AbortSignal
 ): Promise<SubtitleData> {
   if (preSplitSentences.length === 0) {
     return new SubtitleData([]);
@@ -111,7 +112,7 @@ export async function mergeSegmentsWithinBatch(
   const batchText = batchWordSegments.map(seg => seg.text).join(' ');
 
   // LLM 断句
-  const llmSentences = await splitByLLM(batchText, client, config, batchIndex);
+  const llmSentences = await splitByLLM(batchText, client, config, batchIndex, signal);
 
   // 时间戳对齐：在当前批次的单词片段中匹配（使用旧的相似度匹配方式）
   const alignedSegments = mergeSegmentsBasedOnSentences(
@@ -544,6 +545,7 @@ interface OpenAIClient {
   callChat(systemPrompt: string, userPrompt: string, options?: {
     temperature?: number;
     timeout?: number;
+    signal?: AbortSignal;
   }): Promise<string>;
 }
 
@@ -558,7 +560,8 @@ export async function splitByLLM(
   text: string,
   client: OpenAIClient,
   config: TranslatorConfig,
-  batchIndex?: number
+  batchIndex?: number,
+  signal?: AbortSignal
 ): Promise<string[]> {
   const { maxWordCountEnglish, toleranceMultiplier, warningMultiplier, maxMultiplier } = config;
 
@@ -573,6 +576,7 @@ export async function splitByLLM(
   const response = await client.callChat(systemPrompt, userPrompt, {
     temperature: 0.2,
     timeout: 80000,
+    signal,
   });
 
   // 记录耗时

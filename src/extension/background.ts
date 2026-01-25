@@ -8,6 +8,9 @@ import { translatorService } from './translator';
 import type { SimpleSubtitleEntry, SubtitleStyleSettings, VideoSubtitleData, TranslationProgress } from '../types';
 import { getLanguageName } from '../utils/language';
 
+// 翻译任务的取消控制器
+let translationAbortController: AbortController | null = null;
+
 // Chrome API 类型声明
 declare const chrome: {
   runtime: {
@@ -518,6 +521,17 @@ class SubtitleExtensionBackground {
     sendResponse({ success: true, message: '翻译已在后台启动' });
 
     try {
+      // 先取消之前的翻译（如果有）
+      if (translationAbortController) {
+        translationAbortController.abort();
+      }
+
+      // 强制重置翻译服务状态
+      translatorService.cancelTranslation();
+
+      // 创建新的取消控制器
+      translationAbortController = new AbortController();
+
       // 提取视频元数据
       const videoTitle = request.videoInfo?.ytTitle;
       const videoDescription = request.videoInfo?.description;
@@ -551,7 +565,8 @@ class SubtitleExtensionBackground {
               console.error('发送部分结果失败:', error);
             }
           }
-        }
+        },
+        translationAbortController.signal
       );
 
       // 使用累积的结果或返回的结果
@@ -571,6 +586,15 @@ class SubtitleExtensionBackground {
         );
       }
     } catch (error) {
+      // 如果是用户主动取消，不报错
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('🛑 翻译已被用户取消');
+        // 清除进度状态，但不设置错误
+        await chrome.storage.local.remove('translationProgress');
+        return;
+      }
+
+      // 其他错误才报告为翻译失败
       console.error('❌ 后台翻译失败:', error);
       await chrome.storage.local.set({
         translationProgress: {
@@ -583,8 +607,27 @@ class SubtitleExtensionBackground {
   }
 
   async cancelBackgroundTranslation(sendResponse: (response: unknown) => void): Promise<void> {
+    // 中止正在进行的翻译
+    if (translationAbortController) {
+      translationAbortController.abort();
+      translationAbortController = null;
+    }
+
+    // 取消翻译服务中的状态
     translatorService.cancelTranslation();
+
+    // 清除翻译进度
     await chrome.storage.local.remove('translationProgress');
+
+    // 清除所有视频字幕缓存
+    const allData = await chrome.storage.local.get(null);
+    const videoSubtitleKeys = Object.keys(allData).filter((key) =>
+      key.startsWith('videoSubtitles_')
+    );
+    if (videoSubtitleKeys.length > 0) {
+      await chrome.storage.local.remove(videoSubtitleKeys);
+    }
+
     sendResponse({ success: true });
   }
 }

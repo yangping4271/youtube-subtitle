@@ -39,9 +39,9 @@ export class OpenAIClient {
   async callChat(
     systemPrompt: string,
     userPrompt: string,
-    options: { temperature?: number; timeout?: number } = {}
+    options: { temperature?: number; timeout?: number; signal?: AbortSignal } = {}
   ): Promise<string> {
-    const { temperature = 0.7, timeout = 80000 } = options;
+    const { temperature = 0.7, timeout = 80000, signal: externalSignal } = options;
 
     if (!this.apiKey) {
       throw TranslationError.fromError(
@@ -63,10 +63,14 @@ export class OpenAIClient {
     // 使用 withRetry 包装 API 调用，自动重试 2 次
     return withRetry(
       async () => {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), timeout);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
 
+        // 监听外部 signal，如果外部取消则 abort
+        const externalAbortHandler = (): void => controller.abort();
+        externalSignal?.addEventListener('abort', externalAbortHandler);
+
+        try {
           const response = await fetch(url, {
             method: 'POST',
             headers: {
@@ -76,8 +80,6 @@ export class OpenAIClient {
             body: JSON.stringify(body),
             signal: controller.signal,
           });
-
-          clearTimeout(timeoutId);
 
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
@@ -91,27 +93,30 @@ export class OpenAIClient {
           };
 
           const content = data.choices?.[0]?.message?.content;
-
           if (!content) {
             throw new Error('API 返回内容为空');
           }
 
           return content;
-
         } catch (error) {
-          if (error instanceof Error) {
-            if (error.name === 'AbortError') {
-              throw new Error('请求超时');
+          if (error instanceof Error && error.name === 'AbortError') {
+            // 区分是超时还是外部取消
+            if (externalSignal?.aborted) {
+              throw new DOMException('翻译已取消', 'AbortError');
             }
-            throw error;
+            throw new Error('请求超时');
           }
-          throw new Error(`API 调用失败: ${error}`);
+          throw error instanceof Error ? error : new Error(`API 调用失败: ${error}`);
+        } finally {
+          clearTimeout(timeoutId);
+          externalSignal?.removeEventListener('abort', externalAbortHandler);
         }
       },
       {
-        maxRetries: 1,  // 首次 + 1次重试 = 总共2次（与Python项目一致）
+        maxRetries: 1,
         delays: [1000, 2000],
         operationName: `OpenAI API (${this.model})`,
+        signal: externalSignal,
       }
     );
   }

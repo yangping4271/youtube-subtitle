@@ -61,6 +61,7 @@ class TranslatorServiceWrapper {
    * @param aiSummary AI 生成的摘要
    * @param videoTitle 视频标题
    * @param onPartialResult 部分结果回调
+   * @param signal AbortSignal 用于取消翻译
    */
   async translateFull(
     subtitles: Array<{ startTime: number; endTime: number; text: string }>,
@@ -69,12 +70,10 @@ class TranslatorServiceWrapper {
     videoDescription?: string,
     aiSummary?: string | null,
     videoTitle?: string,
-    onPartialResult?: (partial: BilingualSubtitles, isFirst: boolean) => void
+    onPartialResult?: (partial: BilingualSubtitles, isFirst: boolean) => void,
+    signal?: AbortSignal
   ): Promise<BilingualSubtitles> {
-    if (this.isTranslating) {
-      throw new Error('翻译正在进行中');
-    }
-
+    // 强制重置状态（开始新翻译前）
     this.isTranslating = true;
 
     // 保存翻译状态到 storage
@@ -116,6 +115,7 @@ class TranslatorServiceWrapper {
         videoTitle,
         videoDescription,
         aiSummary,
+        signal,
         onProgress: async (step, current, total) => {
           await saveProgress(step, current, total);
         },
