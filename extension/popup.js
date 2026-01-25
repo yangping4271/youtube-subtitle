@@ -2240,11 +2240,21 @@ class PopupController {
 
         try {
             this.isTranslating = true;
+
+            // 立即将按钮变成"取消翻译"状态
             if (translateBtn) {
-                translateBtn.disabled = true;
-                translateBtn.innerHTML = '<span>⏳ 翻译中...</span>';
+                translateBtn.disabled = false; // 不禁用按钮，允许点击取消
+                translateBtn.innerHTML = '<span>❌ 取消翻译</span>';
                 translateBtn.classList.add('translating');
+
+                // 绑定取消事件（只绑定一次）
+                if (!translateBtn._cancelBound) {
+                    translateBtn._cancelBound = true;
+                    translateBtn._originalClick = translateBtn.onclick;
+                    translateBtn.onclick = () => this.forceResetTranslation();
+                }
             }
+
             if (progressRow) progressRow.style.display = 'flex';
             if (autoLoadStatus) {
                 autoLoadStatus.textContent = '获取字幕中...';
