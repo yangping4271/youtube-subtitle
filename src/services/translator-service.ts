@@ -113,8 +113,8 @@ export class TranslatorService {
     logger.info(`并发控制: 最多同时处理 ${threadNum} 个批次`);
     logger.info(`开始处理 ${batches.length} 个批次...\n`);
 
-    let completedSentences = 0;
-    const totalSentences = preSplitSentences.length;
+    let completed = 0;
+    const total = preSplitSentences.length;
 
     const batchTasks = batches.map((batch, index) => async () => {
       const batchNumber = index + 1;
@@ -138,9 +138,9 @@ export class TranslatorService {
         onPartialResult,
         onProgress,
         () => {
-          completedSentences += batchResult.length();
+          completed += batch.length;
           if (onProgress) {
-            onProgress('translate', completedSentences, totalSentences);
+            onProgress('translate', completed, total);
           }
         }
       );
@@ -151,7 +151,7 @@ export class TranslatorService {
     await this.executeBatchesWithConcurrency(batchTasks, threadNum);
 
     logger.info(`\n全部完成: 流水线处理结束`);
-    if (onProgress) onProgress('complete', totalSentences, totalSentences);
+    if (onProgress) onProgress('complete', total, total);
   }
 
   /**
