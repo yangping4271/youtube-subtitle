@@ -1116,8 +1116,6 @@ class YouTubeSubtitleOverlay {
             videoId: currentVideoId,
             englishSubtitles: assResult.english,
             chineseSubtitles: assResult.chinese,
-            englishFileName: info.filename + ' (原语言)',
-            chineseFileName: info.filename + ` (${targetLangName})`,
           });
         }
       } else if (format === '.srt') {
@@ -1130,7 +1128,6 @@ class YouTubeSubtitleOverlay {
             action: 'saveVideoSubtitles',
             videoId: currentVideoId,
             subtitleData,
-            fileName: info.filename,
           });
         }
       }

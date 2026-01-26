@@ -83,10 +83,7 @@ interface ChromeMessage {
   };
   englishSubtitles?: SimpleSubtitleEntry[];
   chineseSubtitles?: SimpleSubtitleEntry[];
-  englishFileName?: string;
-  chineseFileName?: string;
   subtitleData?: SimpleSubtitleEntry[];
-  fileName?: string;
 }
 
 class SubtitleExtensionBackground {
@@ -116,8 +113,6 @@ class SubtitleExtensionBackground {
         subtitleData: [],
         englishSubtitles: [],
         chineseSubtitles: [],
-        englishFileName: '',
-        chineseFileName: '',
         englishSettings: getDefaultEnglishSettings(),
         chineseSettings: getDefaultChineseSettings(),
         autoLoadEnabled: false,
@@ -175,9 +170,7 @@ class SubtitleExtensionBackground {
         case 'saveBilingualSubtitles':
           await this.saveBilingualSubtitles(
             request.englishSubtitles || [],
-            request.chineseSubtitles || [],
-            request.englishFileName || '',
-            request.chineseFileName || ''
+            request.chineseSubtitles || []
           );
           await this.notifyContentScript('loadBilingualSubtitles', {
             englishSubtitles: request.englishSubtitles,
@@ -191,10 +184,7 @@ class SubtitleExtensionBackground {
             request.videoId || '',
             request.englishSubtitles,
             request.chineseSubtitles,
-            request.subtitleData,
-            request.englishFileName,
-            request.chineseFileName,
-            request.fileName
+            request.subtitleData
           );
           sendResponse({ success: true });
           break;
@@ -266,8 +256,6 @@ class SubtitleExtensionBackground {
     subtitleEnabled: boolean;
     englishSettings: SubtitleStyleSettings;
     chineseSettings: SubtitleStyleSettings;
-    englishFileName: string;
-    chineseFileName: string;
   }> {
     const result = await chrome.storage.local.get([
       'subtitleData',
@@ -276,8 +264,6 @@ class SubtitleExtensionBackground {
       'subtitleEnabled',
       'englishSettings',
       'chineseSettings',
-      'englishFileName',
-      'chineseFileName',
     ]);
     return {
       subtitleData: (result.subtitleData as SimpleSubtitleEntry[]) || [],
@@ -286,8 +272,6 @@ class SubtitleExtensionBackground {
       subtitleEnabled: (result.subtitleEnabled as boolean) || false,
       englishSettings: (result.englishSettings as SubtitleStyleSettings) || {},
       chineseSettings: (result.chineseSettings as SubtitleStyleSettings) || {},
-      englishFileName: (result.englishFileName as string) || '',
-      chineseFileName: (result.chineseFileName as string) || '',
     };
   }
 
@@ -312,10 +296,7 @@ class SubtitleExtensionBackground {
     videoId: string,
     englishSubtitles?: SimpleSubtitleEntry[],
     chineseSubtitles?: SimpleSubtitleEntry[],
-    subtitleData?: SimpleSubtitleEntry[],
-    englishFileName?: string,
-    chineseFileName?: string,
-    fileName?: string
+    subtitleData?: SimpleSubtitleEntry[]
   ): Promise<void> {
     if (!videoId) {
       console.error('❌ 保存字幕失败: 缺少视频ID');
@@ -331,13 +312,10 @@ class SubtitleExtensionBackground {
     if (englishSubtitles || chineseSubtitles) {
       videoSubtitleData.englishSubtitles = englishSubtitles || [];
       videoSubtitleData.chineseSubtitles = chineseSubtitles || [];
-      videoSubtitleData.englishFileName = englishFileName || '';
-      videoSubtitleData.chineseFileName = chineseFileName || '';
     }
 
     if (subtitleData) {
       videoSubtitleData.subtitleData = subtitleData;
-      videoSubtitleData.fileName = fileName || '';
     }
 
     await chrome.storage.local.set({ [subtitleKey]: videoSubtitleData });
@@ -352,15 +330,11 @@ class SubtitleExtensionBackground {
 
   async saveBilingualSubtitles(
     englishSubtitles: SimpleSubtitleEntry[],
-    chineseSubtitles: SimpleSubtitleEntry[],
-    englishFileName: string,
-    chineseFileName: string
+    chineseSubtitles: SimpleSubtitleEntry[]
   ): Promise<void> {
     await chrome.storage.local.set({
       englishSubtitles: englishSubtitles || [],
       chineseSubtitles: chineseSubtitles || [],
-      englishFileName: englishFileName || '',
-      chineseFileName: chineseFileName || '',
     });
   }
 
@@ -418,8 +392,6 @@ class SubtitleExtensionBackground {
       subtitleData: [],
       englishSubtitles: [],
       chineseSubtitles: [],
-      englishFileName: '',
-      chineseFileName: '',
     });
 
     if (videoSubtitleKeys.length > 0) {
@@ -437,8 +409,6 @@ class SubtitleExtensionBackground {
       subtitleData: [],
       englishSubtitles: [],
       chineseSubtitles: [],
-      englishFileName: '',
-      chineseFileName: '',
       englishSettings: getDefaultEnglishSettings(),
       chineseSettings: getDefaultChineseSettings(),
       autoLoadEnabled: false,
@@ -574,14 +544,10 @@ class SubtitleExtensionBackground {
       const finalChinese = allChineseSubtitles.length > 0 ? allChineseSubtitles : result.chinese;
 
       if (videoId && (finalEnglish.length > 0 || finalChinese.length > 0)) {
-        const targetLangName = getLanguageName(targetLanguage || 'zh');
         await this.saveVideoSubtitles(
           videoId,
           finalEnglish,
           finalChinese,
-          undefined,
-          'YouTube字幕 (原语言)',
-          `AI翻译 (${targetLangName})`,
           undefined
         );
       }

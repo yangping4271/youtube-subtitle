@@ -203,9 +203,6 @@ export interface VideoSubtitleData {
   englishSubtitles?: SimpleSubtitleEntry[];
   chineseSubtitles?: SimpleSubtitleEntry[];
   subtitleData?: SimpleSubtitleEntry[];
-  englishFileName?: string;
-  chineseFileName?: string;
-  fileName?: string;
 }
 
 /** 翻译进度状态 */
