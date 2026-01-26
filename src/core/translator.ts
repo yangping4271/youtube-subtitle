@@ -226,9 +226,10 @@ export class Translator {
       }
     }
 
+    // 标点符号规范化（跳过翻译失败的条目）
     for (const entry of results) {
       entry.optimized = normalizeEnglishPunctuation(entry.optimized);
-      if (isChinese(this.config.targetLanguage)) {
+      if (isChinese(this.config.targetLanguage) && !entry.translation.startsWith('[翻译失败]')) {
         entry.translation = normalizeChinesePunctuation(entry.translation);
       }
     }
