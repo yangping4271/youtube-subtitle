@@ -39,7 +39,7 @@ export class TranslatorService {
   ): Promise<BilingualSubtitles> {
     // 强制重置状态（开始新翻译前）
     this.isTranslating = true;
-    const { onProgress, onPartialResult, firstBatchSize = 10 } = options;
+    const { onProgress, onPartialResult } = options;
 
     try {
       const subtitleData = new SubtitleData(subtitles);
@@ -62,7 +62,6 @@ export class TranslatorService {
         processData,
         splitClient,
         options,
-        firstBatchSize,
         onPartialResult ?? (() => {}),
         onProgress
       );
@@ -92,7 +91,6 @@ export class TranslatorService {
     processData: SubtitleData,
     splitClient: OpenAIClient,
     options: TranslateOptions,
-    firstBatchSize: number,
     onPartialResult: (partial: BilingualSubtitles, isFirst: boolean) => void,
     onProgress?: ProgressCallback
   ): Promise<void> {
@@ -151,7 +149,6 @@ export class TranslatorService {
         options,
         batchNumber,
         onPartialResult,
-        onProgress,
         () => {
           completed += batch.length;
           if (onProgress) {
@@ -193,7 +190,6 @@ export class TranslatorService {
     options: TranslateOptions,
     batchNumber: number,
     onPartialResult: (partial: BilingualSubtitles, isFirst: boolean) => void,
-    onProgress?: ProgressCallback,
     onBatchComplete?: () => void
   ): Promise<void> {
     const batchLabel = `批次${batchNumber}`;

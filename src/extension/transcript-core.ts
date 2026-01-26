@@ -4,7 +4,7 @@
  */
 
 import type { VideoInfo } from '../types';
-import { getVideoDescription, getAISummary, debugVideoMetadata } from './video-metadata.js';
+import { getVideoDescription, getAISummary } from './video-metadata.js';
 
 interface TranscriptSegment {
   timeStr: string;

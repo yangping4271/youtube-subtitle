@@ -6,7 +6,6 @@
 import { getDefaultEnglishSettings, getDefaultChineseSettings } from './config';
 import { translatorService } from './translator';
 import type { SimpleSubtitleEntry, SubtitleStyleSettings, VideoSubtitleData, TranslationProgress } from '../types';
-import { getLanguageName } from '../utils/language';
 
 // 翻译任务的取消控制器
 let translationAbortController: AbortController | null = null;
@@ -519,7 +518,7 @@ class SubtitleExtensionBackground {
         aiSummary,
         videoTitle,
         // 渐进式结果回调
-        async (partial, isFirst) => {
+        async (partial) => {
           // 累积字幕
           allEnglishSubtitles.push(...partial.english);
           allChineseSubtitles.push(...partial.chinese);

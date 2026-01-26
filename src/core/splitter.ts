@@ -5,7 +5,7 @@
 import { setupLogger } from '../utils/logger.js';
 import { buildSplitPrompt } from './prompts.js';
 import { SubtitleData } from './subtitle-data.js';
-import { findBestMatch, preprocessText } from '../utils/similarity.js';
+import { findBestMatch } from '../utils/similarity.js';
 import type { TranslatorConfig, SplitStats, SubtitleEntry, PreSplitSentence } from '../types/index.js';
 import { calculateBatchSizes } from '../utils/batch-utils.js';
 

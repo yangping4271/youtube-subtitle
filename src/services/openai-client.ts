@@ -2,12 +2,9 @@
  * OpenAI API 客户端
  */
 
-import { setupLogger } from '../utils/logger.js';
 import { withRetry } from '../utils/retry.js';
 import { TranslationError } from '../utils/error-handler.js';
 import type { TranslatorConfig } from '../types/index.js';
-
-const logger = setupLogger('openai-client');
 
 /**
  * OpenAI API 客户端

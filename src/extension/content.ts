@@ -7,7 +7,6 @@ import { getDefaultEnglishSettings, getDefaultChineseSettings, getDefaultConfig 
 import { SubtitleParser } from './subtitle-parser';
 import { getVideoInfo } from './transcript-core';
 import type { SimpleSubtitleEntry, SubtitleStyleSettings, VideoSubtitleData, ASSParseResult } from '../types';
-import { getLanguageName } from '../utils/language';
 
 // Chrome API 类型声明
 declare const chrome: {
@@ -52,7 +51,6 @@ class YouTubeSubtitleOverlay {
 
   private autoLoadEnabled = false;
   private currentVideoId: string | null = null;
-  private autoLoadAttempted = false;
 
   private englishSettings: SubtitleStyleSettings;
   private chineseSettings: SubtitleStyleSettings;
@@ -469,7 +467,6 @@ class YouTubeSubtitleOverlay {
       this.englishSubtitles = [];
       this.chineseSubtitles = [];
       this.loadSubtitleData();
-      this.autoLoadAttempted = false;
 
       setTimeout(() => {
         this.attemptAutoLoad();
@@ -946,7 +943,6 @@ class YouTubeSubtitleOverlay {
     this.englishSubtitles = [];
     this.chineseSubtitles = [];
     this.currentVideo = null;
-    this.autoLoadAttempted = false;
 
     this.englishSettings = getDefaultEnglishSettings();
     this.chineseSettings = getDefaultChineseSettings();
@@ -1080,7 +1076,6 @@ class YouTubeSubtitleOverlay {
     if (!isNewVideo && hasExistingSubtitles) return;
 
     this.currentVideoId = videoId;
-    this.autoLoadAttempted = true;
 
     await this.loadSubtitleData();
   }
@@ -1097,12 +1092,6 @@ class YouTubeSubtitleOverlay {
         console.error('❌ 无法获取视频ID，跳过字幕保存');
         return;
       }
-
-      // 获取目标语言配置
-      const result = await chrome.storage.local.get(['apiConfig']);
-      const apiConfig = (result.apiConfig as Record<string, string>) || {};
-      const targetLang = apiConfig.targetLanguage || 'zh';
-      const targetLangName = getLanguageName(targetLang);
 
       if (format === '.ass') {
         const assResult: ASSParseResult = SubtitleParser.parseASS(content);
