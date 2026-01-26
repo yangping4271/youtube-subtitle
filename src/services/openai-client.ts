@@ -3,7 +3,6 @@
  */
 
 import { withRetry } from '../utils/retry.js';
-import { TranslationError } from '../utils/error-handler.js';
 import type { TranslatorConfig } from '../types/index.js';
 
 /**
@@ -41,10 +40,7 @@ export class OpenAIClient {
     const { temperature = 0.7, timeout = 80000, signal: externalSignal } = options;
 
     if (!this.apiKey) {
-      throw TranslationError.fromError(
-        new Error('API 密钥未配置'),
-        'OpenAI Client'
-      );
+      throw new Error('API 密钥未配置');
     }
 
     const url = `${this.baseUrl}/chat/completions`;
@@ -82,7 +78,7 @@ export class OpenAIClient {
             const errorData = await response.json().catch(() => ({}));
             const errorMessage = (errorData as { error?: { message?: string } })?.error?.message ||
               `API 请求失败: ${response.status}`;
-            throw TranslationError.fromError(new Error(errorMessage), 'API Request');
+            throw new Error(errorMessage);
           }
 
           const data = await response.json() as {
@@ -117,14 +113,4 @@ export class OpenAIClient {
       }
     );
   }
-}
-
-/**
- * 创建 OpenAI 客户端
- */
-export function createOpenAIClient(
-  config: TranslatorConfig,
-  modelType: 'split' | 'translation' = 'translation'
-): OpenAIClient {
-  return new OpenAIClient(config, modelType);
 }

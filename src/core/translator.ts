@@ -88,21 +88,13 @@ function formatDiff(original: string, optimized: string): string {
 
 /**
  * 清洗和截断上下文信息
- * @param text 原始文本
- * @param maxWords 最大单词数限制（按英文单词计算）
- * @returns 清洗后的文本
  */
 function sanitizeContext(text: string, maxWords = 500): string {
   if (!text) return '';
 
-  // 移除潜在的 prompt 注入字符
-  let cleaned = text
-    .replace(/[<>]/g, '')  // 移除尖括号
-    .replace(/```/g, '')   // 移除代码块标记
-    .trim();
+  let cleaned = text.replace(/[<>```]/g, '').trim();
+  const words = cleaned.split(/\s+/);
 
-  // 按英文单词数截断
-  const words = cleaned.split(/\s+/);  // 按空格分割
   if (words.length > maxWords) {
     cleaned = words.slice(0, maxWords).join(' ') + '...';
   }
@@ -271,18 +263,6 @@ export class Translator {
 
     const responseContent = this.normalizeResponse(parseLlmResponse(response), prefix || '批次');
 
-    if (batchLabel === '批次1' || !batchLabel) {
-      await this.saveDebugContext(`debugContext_batch1_${Date.now()}`, {
-        batchNum: 1,
-        systemPrompt,
-        userPrompt,
-        context,
-        subtitles: inputObj,
-        parsedResponse: responseContent,
-        timestamp: new Date().toISOString()
-      });
-    }
-
     const failedIds: number[] = [];
 
     const results = batch.map(([key, originalText]) => {
@@ -428,34 +408,4 @@ export class Translator {
     logger.info(`${prefix}优化统计: 格式优化 ${formatChanges} 项, 内容修改 ${contentChanges} 项, 总计 ${optimizationLogs.length} 项`);
   }
 
-  /**
-   * 保存调试上下文到 storage（用于排查翻译质量问题）
-   */
-  private async saveDebugContext(key: string, debugInfo: {
-    batchNum: number;
-    systemPrompt: string;
-    userPrompt: string;
-    context?: { videoDescription?: string; aiSummary?: string | null; videoTitle?: string };
-    subtitles: Record<string, string>;
-    parsedResponse: Record<string, { optimized_subtitle?: string; translation?: string }>;
-    timestamp: string;
-  }): Promise<void> {
-    try {
-      // 在浏览器环境中保存到 chrome.storage
-      const chromeGlobal = (globalThis as any).chrome;
-      if (typeof chromeGlobal !== 'undefined' && chromeGlobal?.storage) {
-        await chromeGlobal.storage.local.set({ [key]: debugInfo });
-        logger.info(`💾 已保存调试上下文: ${key}`);
-      }
-    } catch (error) {
-      logger.warn(`⚠️ 保存调试上下文失败: ${error}`);
-    }
-  }
-}
-
-/**
- * 创建翻译器实例
- */
-export function createTranslator(client: OpenAIClient, config: TranslatorConfig): Translator {
-  return new Translator(client, config);
 }

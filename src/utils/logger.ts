@@ -4,20 +4,6 @@
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-interface LogEntry {
-  level: LogLevel;
-  module: string;
-  message: string;
-  timestamp: string;
-  data?: unknown;
-}
-
-// 日志格式化
-function formatLog(entry: LogEntry): string {
-  const time = entry.timestamp.split('T')[1].split('.')[0]; // HH:MM:SS
-  return `${time} [${entry.module}] ${entry.message}`;
-}
-
 export class Logger {
   private module: string;
   private debugEnabled: boolean;
@@ -32,19 +18,10 @@ export class Logger {
   }
 
   private log(level: LogLevel, message: string, data?: unknown): void {
-    if (level === 'debug' && !this.debugEnabled) {
-      return;
-    }
+    if (level === 'debug' && !this.debugEnabled) return;
 
-    const entry: LogEntry = {
-      level,
-      module: this.module,
-      message,
-      timestamp: new Date().toISOString(),
-      data,
-    };
-
-    const formatted = formatLog(entry);
+    const time = new Date().toISOString().split('T')[1].split('.')[0];
+    const formatted = `${time} [${this.module}] ${message}`;
     const method = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log';
 
     if (data !== undefined) {
@@ -71,13 +48,8 @@ export class Logger {
   }
 }
 
-// 全局 logger 实例缓存
 const loggers = new Map<string, Logger>();
 
-/**
- * 获取或创建 Logger 实例
- * @param module 模块名称
- */
 export function setupLogger(module: string): Logger {
   if (!loggers.has(module)) {
     loggers.set(module, new Logger(module));
@@ -85,9 +57,6 @@ export function setupLogger(module: string): Logger {
   return loggers.get(module)!;
 }
 
-/**
- * 设置所有 logger 的 debug 模式
- */
 export function setGlobalDebug(enabled: boolean): void {
   loggers.forEach(logger => logger.setDebug(enabled));
 }

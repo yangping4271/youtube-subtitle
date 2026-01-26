@@ -28,12 +28,6 @@ export interface BilingualSubtitles {
   chinese: SubtitleEntry[];
 }
 
-/** 断句结果 */
-export interface SplitResult {
-  segments: string[];
-  stats: SplitStats;
-}
-
 /** 断句统计 */
 export interface SplitStats {
   normal: number;      // ≤ target
@@ -110,19 +104,6 @@ export interface LLMResponse {
       content: string;
     };
   }>;
-}
-
-/** 批次翻译结果 */
-export interface BatchTranslateResult {
-  optimized_subtitles: Record<string, string>;
-  translated_subtitles: Record<string, string | TranslationDetail>;
-}
-
-/** 翻译详情（包含修订） */
-export interface TranslationDetail {
-  translation: string;
-  revised_translation?: string;
-  revise_suggestions?: string;
 }
 
 // ========================================

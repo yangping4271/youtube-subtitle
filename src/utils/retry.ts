@@ -123,36 +123,3 @@ export async function withRetry<T>(
   throw lastError || new Error(`${operationName} 失败`);
 }
 
-/**
- * 创建一个带重试功能的函数
- */
-export function createRetryableFn<Args extends unknown[], Result>(
-  fn: (...args: Args) => Promise<Result>,
-  options: RetryOptions = {}
-): (...args: Args) => Promise<Result> {
-  return (...args: Args) => withRetry(() => fn(...args), options);
-}
-
-/**
- * 批量执行带重试的任务，支持并发控制
- */
-export async function retryBatch<T>(
-  tasks: Array<() => Promise<T>>,
-  options: RetryOptions = {},
-  concurrency?: number
-): Promise<T[]> {
-  if (!concurrency || concurrency >= tasks.length) {
-    return Promise.all(tasks.map(task => withRetry(task, options)));
-  }
-
-  const results: T[] = [];
-  for (let i = 0; i < tasks.length; i += concurrency) {
-    const batch = tasks.slice(i, i + concurrency);
-    const batchResults = await Promise.all(
-      batch.map(task => withRetry(task, options))
-    );
-    results.push(...batchResults);
-  }
-
-  return results;
-}

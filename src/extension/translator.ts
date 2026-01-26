@@ -3,7 +3,7 @@
  * 保持与现有 translator.js 相同的全局接口
  */
 
-import { TranslatorService, createTranslatorService } from '../services/translator-service.js';
+import { TranslatorService } from '../services/translator-service.js';
 import { loadConfig } from './config.js';
 import { getLanguageName, LANGUAGE_MAPPING } from '../utils/language.js';
 import type { TranslatorConfig, SubtitleEntry, BilingualSubtitles } from '../types/index.js';
@@ -41,7 +41,7 @@ class TranslatorServiceWrapper {
    */
   async loadConfig(): Promise<TranslatorConfig> {
     this.config = await loadConfig();
-    this.service = createTranslatorService(this.config);
+    this.service = new TranslatorService(this.config);
     return this.config;
   }
 
@@ -100,7 +100,7 @@ class TranslatorServiceWrapper {
 
       // 更新目标语言
       this.config!.targetLanguage = targetLang;
-      this.service = createTranslatorService(this.config!);
+      this.service = new TranslatorService(this.config!);
 
       // 转换字幕格式，同时将秒转换为毫秒
       const entries: SubtitleEntry[] = subtitles.map((sub, idx) => ({

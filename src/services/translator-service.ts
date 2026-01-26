@@ -4,10 +4,10 @@
  */
 
 import { setupLogger } from '../utils/logger.js';
-import { createOpenAIClient, OpenAIClient } from './openai-client.js';
+import { OpenAIClient } from './openai-client.js';
 import { presplitByPunctuation, batchBySentenceCount, mergeSegmentsWithinBatch } from '../core/splitter.js';
 import { SubtitleData } from '../core/subtitle-data.js';
-import { createTranslator } from '../core/translator.js';
+import { Translator } from '../core/translator.js';
 import type {
   TranslatorConfig,
   SubtitleEntry,
@@ -56,7 +56,7 @@ export class TranslatorService {
       logger.info(`转换为单词: ${processData.length()} 个单词`);
       logger.info(`使用模型: ${this.config.splitModel}`);
 
-      const splitClient = createOpenAIClient(this.config, 'split');
+      const splitClient = new OpenAIClient(this.config, 'split');
 
       await this.translateWithPipeline(
         processData,
@@ -115,8 +115,8 @@ export class TranslatorService {
 
     this.checkAborted(signal);
 
-    const translationClient = createOpenAIClient(this.config, 'translation');
-    const translator = createTranslator(translationClient, this.config);
+    const translationClient = new OpenAIClient(this.config, 'translation');
+    const translator = new Translator(translationClient, this.config);
 
     const { threadNum } = this.config;
     logger.info(`并发控制: 最多同时处理 ${threadNum} 个批次`);
@@ -186,7 +186,7 @@ export class TranslatorService {
    */
   private async translateBatch(
     segments: SubtitleEntry[],
-    translator: ReturnType<typeof createTranslator>,
+    translator: Translator,
     options: TranslateOptions,
     batchNumber: number,
     onPartialResult: (partial: BilingualSubtitles, isFirst: boolean) => void,
@@ -267,11 +267,4 @@ export class TranslatorService {
   get translating(): boolean {
     return this.isTranslating;
   }
-}
-
-/**
- * 创建翻译服务实例
- */
-export function createTranslatorService(config: TranslatorConfig): TranslatorService {
-  return new TranslatorService(config);
 }

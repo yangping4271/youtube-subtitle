@@ -39,8 +39,3 @@ export function getLanguageName(langCode: string): string {
   const code = langCode.toLowerCase().trim();
   return LANGUAGE_MAPPING[code] || langCode;
 }
-
-/**
- * 支持的目标语言列表
- */
-export const SUPPORTED_LANGUAGES = Object.keys(LANGUAGE_MAPPING);
