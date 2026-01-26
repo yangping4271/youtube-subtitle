@@ -61,8 +61,8 @@ export function presplitByPunctuation(wordSegments: SubtitleEntry[]): PreSplitSe
 export function batchBySentenceCount(
   sentences: PreSplitSentence[],
   firstBatchSize: number = 5,
-  minSize: number = 5,
-  maxSize: number = 10
+  minSize: number = 15,
+  maxSize: number = 25
 ): PreSplitSentence[][] {
   if (sentences.length === 0) return [];
 

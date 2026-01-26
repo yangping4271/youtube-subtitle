@@ -107,7 +107,7 @@ export class TranslatorService {
     const preSplitSentences = presplitByPunctuation(wordSegments);
     logger.info(`预分句: ${preSplitSentences.length} 个句子`);
 
-    const batches = batchBySentenceCount(preSplitSentences, 5, 5, 10);
+    const batches = batchBySentenceCount(preSplitSentences, 5, 15, 25);
     logger.info(`预分句 ${preSplitSentences.length} 个句子，分为 ${batches.length} 批`);
 
     if (batches.length === 0) {
