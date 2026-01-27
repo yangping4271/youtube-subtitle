@@ -17,3 +17,7 @@ window.addEventListener('YTSP_OpenTranscript', () => {
     console.warn('YouTube SubtitlePlus: Engagement panel not found in Main World.');
   }
 });
+
+window.addEventListener('YTSP_StartTranslation', () => {
+  window.postMessage({ type: 'YTSP_StartTranslation' }, '*');
+});

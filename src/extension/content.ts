@@ -89,7 +89,7 @@ class YouTubeSubtitleOverlay {
     this.observeVideoChanges();
     this.loadSubtitleData();
     this.bindMessageListener();
-
+    this.bindWindowMessageListener();
   }
 
   private async startTranslationFromPage(): Promise<void> {
@@ -213,6 +213,15 @@ class YouTubeSubtitleOverlay {
         case 'startTranslationFromPage':
           this.startTranslationFromPage();
           break;
+      }
+    });
+  }
+
+  private bindWindowMessageListener(): void {
+    window.addEventListener('message', (event) => {
+      if (event.source !== window) return;
+      if (event.data.type === 'YTSP_StartTranslation') {
+        this.startTranslationFromPage();
       }
     });
   }
