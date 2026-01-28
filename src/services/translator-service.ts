@@ -209,7 +209,8 @@ export class TranslatorService {
         aiSummary: options.aiSummary,
       },
       batchLabel,
-      options.signal // 传递 signal
+      options.signal, // 传递 signal
+      this.config.threadNum // 传递 threadNum 用于单条并发翻译
     );
 
     const result = this.buildBilingualResult(segments, translated);

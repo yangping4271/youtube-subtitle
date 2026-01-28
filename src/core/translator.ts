@@ -148,75 +148,101 @@ export class Translator {
   }
 
   /**
-   * 批量翻译字幕（优化版：一次 API 调用翻译整批）
+   * 批量翻译字幕（三级降级策略）
    * @param subtitles 字幕数据 {index: text}
    * @param context 上下文信息（视频标题、说明、AI 摘要等）
    * @param batchLabel 批次标签用于日志
+   * @param threadNum 单条并发翻译的并发数
    */
   async translate(
     subtitles: Record<string, string>,
     context?: { videoTitle?: string; videoDescription?: string; aiSummary?: string | null },
     batchLabel?: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    threadNum?: number
   ): Promise<TranslatedEntry[]> {
     const currentBatchLabel = batchLabel || '';
     const targetLanguage = getLanguageName(this.config.targetLanguage);
     const items = Object.entries(subtitles);
     const batchStartTime = Date.now();
+    const prefix = currentBatchLabel ? `[${currentBatchLabel}] ` : '';
 
-    const results = await this.translateBatchInternal(
+    // Level 1: 批量翻译
+    logger.info(`${prefix}Level 1: 批量翻译 ${items.length} 条字幕`);
+    let results = await this.translateBatchInternal(
       items,
       targetLanguage,
       context,
       currentBatchLabel,
       signal
     ).catch(error => {
-      const prefix = currentBatchLabel ? `[${currentBatchLabel}] ` : '';
-      logger.error(`${prefix}翻译失败: ${error}`);
-      return this.translateSingle(items, targetLanguage, signal);
+      logger.error(`${prefix}Level 1 失败: ${error}`);
+      return null;
     });
 
+    // 检查是否需要重试（API 失败或有翻译失败条目）
+    const hasFailures = !results || results.some(r => r.translation.startsWith('[翻译失败]'));
+
+    if (hasFailures) {
+      // Level 2: 批次整体重试（1次）
+      logger.info(`${prefix}Level 2: 批次整体重试`);
+      const retryResults = await this.translateBatchInternal(
+        items,
+        targetLanguage,
+        context,
+        `${currentBatchLabel}-重试`,
+        signal
+      ).catch(error => {
+        logger.error(`${prefix}Level 2 失败: ${error}`);
+        return null;
+      });
+
+      if (retryResults) {
+        results = retryResults;
+      }
+    }
+
+    // 检查是否还有失败的条目
+    const failedEntries = results?.filter(r => r.translation.startsWith('[翻译失败]')) || [];
+    const needSingleTranslation = !results || failedEntries.length > 0;
+
+    if (needSingleTranslation) {
+      // Level 3: 单条并发翻译
+      const failedSubtitles: [string, string][] = !results
+        ? items  // 如果整个批次都失败，翻译所有字幕
+        : failedEntries.map(entry => [String(entry.index), entry.original]);
+
+      logger.info(`${prefix}Level 3: 单条并发翻译 ${failedSubtitles.length} 条字幕`);
+      const singleResults = await this.translateSingleConcurrent(
+        failedSubtitles,
+        targetLanguage,
+        threadNum || this.config.threadNum,
+        signal
+      );
+
+      // 合并结果
+      if (!results) {
+        results = singleResults;
+      } else {
+        // 替换失败的条目
+        for (const singleResult of singleResults) {
+          const idx = results.findIndex(r => r.index === singleResult.index);
+          if (idx >= 0) {
+            results[idx] = singleResult;
+          }
+        }
+      }
+    }
+
+    // 确保 results 不为 null
+    if (!results) {
+      throw new Error('翻译失败：所有降级策略都未能成功');
+    }
+
     const batchDuration = Date.now() - batchStartTime;
-    const prefix = currentBatchLabel ? `[${currentBatchLabel}] ` : '';
     logger.info(`${prefix}翻译耗时: ${(batchDuration / 1000).toFixed(1)}s`);
 
     results.sort((a, b) => a.index - b.index);
-
-    // 检测翻译失败的字幕并重试
-    const failedEntries = results.filter(r => r.translation.startsWith('[翻译失败]'));
-    if (failedEntries.length > 0) {
-      logger.info(`${prefix}发现 ${failedEntries.length} 个字幕翻译失败，重新发起请求`);
-
-      const failedSubtitles: [string, string][] = failedEntries.map(
-        entry => [String(entry.index), entry.original]
-      );
-
-      try {
-        const retryResults = await this.translateBatchInternal(
-          failedSubtitles,
-          targetLanguage,
-          context,
-          `${currentBatchLabel}-重试`,
-          signal
-        );
-
-        const successfulRetries = retryResults.filter(
-          r => !r.translation.startsWith('[翻译失败]')
-        );
-
-        for (const retryResult of successfulRetries) {
-          const idx = results.findIndex(r => r.index === retryResult.index);
-          if (idx >= 0) {
-            results[idx] = retryResult;
-          }
-        }
-
-        logger.info(`${prefix}重试结果: ${successfulRetries.length}/${failedEntries.length} 条字幕成功翻译`);
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        logger.info(`${prefix}⚠️ 重试失败: ${errorMsg}`);
-      }
-    }
 
     // 标点符号规范化（跳过翻译失败的条目）
     for (const entry of results) {
@@ -333,7 +359,62 @@ export class Translator {
   }
 
   /**
-   * 单条翻译（降级处理）
+   * 单条并发翻译（Level 3 降级处理）
+   */
+  private async translateSingleConcurrent(
+    batch: [string, string][],
+    targetLanguage: string,
+    concurrency: number,
+    signal?: AbortSignal
+  ): Promise<TranslatedEntry[]> {
+    logger.info(`单条并发翻译: 共 ${batch.length} 条字幕，并发数 ${concurrency}`);
+
+    const systemPrompt = buildSingleTranslatePrompt({ targetLanguage });
+    const results: TranslatedEntry[] = [];
+
+    // 创建翻译任务
+    const tasks = batch.map(([key, value]) => async () => {
+      let translation: string;
+
+      try {
+        logger.info(`正在翻译字幕ID: ${key}`);
+
+        const response = await this.client.callChat(systemPrompt, value, {
+          temperature: 0.7,
+          timeout: 80000,
+          signal,
+        });
+
+        translation = response.trim();
+        logger.info(`单条翻译成功 ID ${key}: ${value} -> ${translation}`);
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logger.error(`字幕 ID ${key} 单条翻译失败: ${errorMsg}`);
+        translation = `[翻译失败] ${value}`;
+      }
+
+      return {
+        index: parseInt(key, 10),
+        startTime: 0,
+        endTime: 0,
+        original: value,
+        optimized: value,
+        translation,
+      };
+    });
+
+    // 并发执行任务
+    for (let i = 0; i < tasks.length; i += concurrency) {
+      const chunk = tasks.slice(i, i + concurrency);
+      const chunkResults = await Promise.all(chunk.map(task => task()));
+      results.push(...chunkResults);
+    }
+
+    return results;
+  }
+
+  /**
+   * 单条翻译（已废弃，保留用于兼容）
    */
   private async translateSingle(
     batch: [string, string][],
