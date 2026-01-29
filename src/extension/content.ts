@@ -6,7 +6,7 @@
 import { getDefaultEnglishSettings, getDefaultChineseSettings, getDefaultConfig } from './config';
 import { SubtitleParser } from './subtitle-parser';
 import { getVideoInfo } from './transcript-core';
-import type { SimpleSubtitleEntry, SubtitleStyleSettings, VideoSubtitleData, ASSParseResult } from '../types';
+import type { SimpleSubtitleEntry, SubtitleStyleSettings, VideoSubtitleData, ASSParseResult, TranslationProgress } from '../types';
 
 // Chrome API 类型声明
 declare const chrome: {
@@ -26,6 +26,7 @@ declare const chrome: {
   storage: {
     local: {
       get: (keys: string | string[]) => Promise<Record<string, unknown>>;
+      remove: (keys: string | string[]) => Promise<void>;
     };
   };
 };
@@ -100,13 +101,48 @@ class YouTubeSubtitleOverlay {
         return;
       }
 
-      const subtitles = await this.fetchYouTubeOfficialSubtitles();
-      if (!subtitles || subtitles.length === 0) {
-        console.error('无法获取字幕');
+      // 检查是否正在翻译
+      const progressResult = await chrome.storage.local.get(['translationProgress']);
+      const progress = progressResult.translationProgress as TranslationProgress | undefined;
+
+      if (progress && progress.isTranslating) {
+        const elapsed = Date.now() - (progress.timestamp || 0);
+        if (elapsed > 10 * 60 * 1000) {
+          // 超时，清除状态
+          await chrome.storage.local.remove('translationProgress');
+        } else {
+          // 正在翻译中，取消翻译（与 popup 行为一致）
+          console.log('翻译正在进行中，取消当前翻译');
+          await chrome.runtime.sendMessage({ action: 'cancelTranslation' });
+          return;
+        }
+      }
+
+      // 获取视频ID
+      const videoId = this.getVideoId();
+      if (!videoId) {
+        this.showErrorNotification('无法获取视频ID');
         return;
       }
 
-      const videoId = this.getVideoId();
+      // 检查缓存（与 popup 行为一致：有缓存则重新翻译）
+      const cacheKey = `videoSubtitles_${videoId}`;
+      const cacheResult = await chrome.storage.local.get([cacheKey]);
+      const cached = cacheResult[cacheKey] as VideoSubtitleData | undefined;
+
+      if (cached && (cached.englishSubtitles?.length || cached.chineseSubtitles?.length)) {
+        // 有缓存，清除缓存并重新翻译（与 popup 行为一致）
+        console.log('发现缓存，清除并重新翻译');
+        await chrome.storage.local.remove([cacheKey]);
+        await chrome.runtime.sendMessage({ action: 'clearSubtitleData' });
+      }
+
+      // 获取字幕
+      const subtitles = await this.fetchYouTubeOfficialSubtitles();
+      if (!subtitles || subtitles.length === 0) {
+        this.showErrorNotification('无法获取字幕');
+        return;
+      }
 
       // 获取完整的视频信息（包括说明和 AI 摘要）
       const videoInfo = getVideoInfo();

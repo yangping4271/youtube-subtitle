@@ -180,6 +180,9 @@ class PopupController {
         // 检查是否有正在进行的翻译
         this.checkTranslationProgress();
 
+        // 始终监听翻译进度（无论翻译从哪里触发）
+        this.startProgressListener();
+
         // 更新翻译按钮文案
         await this.updateTranslateButton();
     }
