@@ -2379,18 +2379,18 @@ class PopupController {
             // 处理翻译结果
             batch.forEach((sub, idx) => {
                 const key = String(i + idx + 1);
-                const result = translations[key] || {};
+                const translation = translations[key] || '';
 
                 englishSubtitles.push({
                     start: sub.start,
                     end: sub.end,
-                    text: result.optimized_subtitle || sub.text
+                    text: sub.text
                 });
 
                 chineseSubtitles.push({
                     start: sub.start,
                     end: sub.end,
-                    text: result.translation || ''
+                    text: translation
                 });
             });
 
@@ -2411,11 +2411,13 @@ class PopupController {
     async callTranslateApi(batchObj, targetLanguage) {
         const systemPrompt = `You are an expert subtitle translator. Translate the following subtitles into ${targetLanguage}.
 
-Return a valid JSON object where each key from the input maps to an object with:
-- "optimized_subtitle": cleaned original text
-- "translation": translated text
+Return translations using XML-style numbered tags. Each tag number must match the input subtitle key exactly.
 
-Return ONLY valid JSON, no other text.`;
+Example:
+<1>翻译内容</1>
+<2>翻译内容</2>
+
+Return ONLY the XML tags, no other text.`;
 
         const response = await fetch(`${this.apiConfig.openaiBaseUrl}/chat/completions`, {
             method: 'POST',
@@ -2439,19 +2441,16 @@ Return ONLY valid JSON, no other text.`;
         }
 
         const data = await response.json();
-        const content = data.choices[0]?.message?.content || '{}';
+        const content = data.choices[0]?.message?.content || '';
 
-        try {
-            // 尝试提取JSON
-            const jsonMatch = content.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                return JSON.parse(jsonMatch[0]);
-            }
-            return JSON.parse(content);
-        } catch (e) {
-            console.error('解析翻译响应失败:', content);
-            return {};
+        // 用正则解析 XML 标签格式: <1>翻译内容</1>
+        const result = {};
+        const xmlRegex = /<(\d+)>([\s\S]*?)<\/\1>/g;
+        let match;
+        while ((match = xmlRegex.exec(content)) !== null) {
+            result[match[1]] = match[2].trim();
         }
+        return result;
     }
 
     getTargetLanguageName(langCode) {

@@ -105,7 +105,7 @@ export class TranslatorService {
     const preSplitSentences = presplitByPunctuation(wordSegments);
     logger.info(`预分句: ${preSplitSentences.length} 个句子`);
 
-    const batches = batchBySentenceCount(preSplitSentences, 5, 15, 25);
+    const batches = batchBySentenceCount(preSplitSentences, 150, 500);
     logger.info(`预分句 ${preSplitSentences.length} 个句子，分为 ${batches.length} 批`);
 
     if (batches.length === 0) {
@@ -196,13 +196,13 @@ export class TranslatorService {
 
     logger.info(`[${batchLabel}] 翻译开始: ${segments.length}条字幕`);
 
-    const optimizedSubtitles: Record<string, string> = {};
+    const subtitleMap: Record<string, string> = {};
     for (let i = 0; i < segments.length; i++) {
-      optimizedSubtitles[String(i + 1)] = segments[i].text;
+      subtitleMap[String(i + 1)] = segments[i].text;
     }
 
     const translated = await translator.translate(
-      optimizedSubtitles,
+      subtitleMap,
       {
         videoTitle: options.videoTitle,
         videoDescription: options.videoDescription,
@@ -241,7 +241,7 @@ export class TranslatorService {
         index: i + 1,
         startTime: segment.startTime,
         endTime: segment.endTime,
-        text: entry.optimized,
+        text: entry.original,
       });
 
       chinese.push({

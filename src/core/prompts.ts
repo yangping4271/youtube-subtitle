@@ -86,54 +86,31 @@ After segmenting and applying punctuation corrections, reread your output once t
  * 用于校对和翻译字幕
  */
 export const TRANSLATE_PROMPT = `
-You are an expert specializing in subtitle proofreading and translation. Your role is to process subtitles generated through speech recognition and translate them into [TargetLanguage].
+You are an expert specializing in subtitle proofreading and translation. Your role is to translate subtitles generated through speech recognition into [TargetLanguage].
 
 ## Reference Materials
 If provided, use the following reference data to guide your translation:
 - Video context: Information about the video (title, description, etc.) to understand the topic and terminology
 
-## Processing Workflow
-
-### 1. Subtitle Text Optimization
-- Ensure subtitle numbering fully matches the input; do not combine, remove, or split subtitles.
-- All optimizations must be performed in the source language (from the original subtitles).
-- Do NOT translate or paraphrase to [TargetLanguage] when preparing the "optimized_subtitle" field; this field must remain in the source language. Translation is exclusively in the "translation" field.
-- Only correct OBVIOUS speech recognition errors (clear typos, garbled words, incomplete words).
-- CRITICAL: Do NOT "correct" technical terms, product names, or version numbers, even if they seem factually incorrect. Only fix them if they are clearly garbled (e.g., "Gem1ni" → "Gemini"). Preserve the original text exactly as spoken, including version numbers like "Gemini 3", "GPT-5", etc. When in doubt, always keep the original.
-- Remove filler words (e.g., "um," "uh," "like"), non-speech sound tags (e.g., [Music], [Applause]), reaction markers (e.g., (laugh), (cough)), and musical symbols (e.g., ♪). If nothing remains after cleaning, set "optimized_subtitle" to an empty string.
-- Remove repeated words or phrases only if they are clearly unintentional stutters.
-
-### 2. Translation Procedures
-- Using the cleaned and corrected original text, translate each subtitle into [TargetLanguage].
-- Ensure contextual and technical accuracy in the translation, keeping the content natural and faithful to the meaning and structure.
+## Translation Rules
+- Translate each subtitle into [TargetLanguage], ensuring contextual and technical accuracy.
+- Keep the translation natural and faithful to the meaning and structure.
 - Preserve formatting, numbers, and symbols exactly.
-- For technical/professional terminology: If translation exists, translate and keep original in parentheses; otherwise keep original only
-- For proper nouns: Translate naturally without parentheses
-- For all other content: Translate naturally
+- For technical/professional terminology: If translation exists, translate and keep original in parentheses; otherwise keep original only.
+- For proper nouns: Translate naturally without parentheses.
+- For all other content: Translate naturally.
 - Always translate each segment individually without attempting to complete incomplete sentences. Maintain proper flow and context with adjacent subtitles as appropriate.
 
 ## Output Format
-Return a valid JSON object where each key (e.g., "1", "01") from the input maps to an object with the following structure:
+Return translations using XML-style numbered tags. Each tag number must match the input subtitle key exactly.
 
-\`\`\`json
-{
-  "subtitle_key": {
-    "optimized_subtitle": "Cleaned and processed original text",
-    "translation": "Translated text in [TargetLanguage]"
-  }
-}
-\`\`\`
+Example:
+<1>翻译内容</1>
+<2>翻译内容</2>
 
-- Ensure the output key order matches that of the input and uses the exact string values.
-- If the input is empty or contains only non-speech elements after cleaning, set "optimized_subtitle" to an empty string and translate accordingly.
-- Do not add, omit, or renumber keys for any reason. Retain any non-sequential or duplicate keys.
-- Return strictly valid JSON with no extra fields, comments, or trailing commas.
-
-After producing the output, validate that:
-- Output keys and their order exactly match the input.
-- JSON is valid and contains no extra fields or comments.
-- All required fields per subtitle are present.
-If validation fails, self-correct and re-output strictly to specification.
+- Output tag numbers and their order must exactly match the input keys.
+- Do not add, omit, or renumber tags for any reason.
+- Return ONLY the XML tags, no other text, no code blocks, no explanations.
 
 ${STANDARD_TERMINOLOGY}
 `;

@@ -18,7 +18,6 @@ export interface TranslatedEntry {
   startTime: number;  // 毫秒（整数）
   endTime: number;    // 毫秒（整数）
   original: string;
-  optimized: string;
   translation: string;
 }
 
