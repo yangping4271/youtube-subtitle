@@ -7,12 +7,12 @@ import { buildSplitPrompt } from './prompts.js';
 import { SubtitleData } from './subtitle-data.js';
 import { findBestMatch } from '../utils/similarity.js';
 import type { TranslatorConfig, SplitStats, SubtitleEntry, PreSplitSentence } from '../types/index.js';
-import { calculateBatchSizes } from '../utils/batch-utils.js';
 
 const logger = setupLogger('splitter');
 
 // 时间间隔阈值（毫秒）
 const MAX_GAP = 1500; // 1.5秒
+const MAX_WORDS_PER_PRESPLIT = 80;
 
 /**
  * 基于标点预分句，返回句子列表及其对应的单词索引范围
@@ -52,37 +52,127 @@ export function presplitByPunctuation(wordSegments: SubtitleEntry[]): PreSplitSe
     currentWordIndex = wordEndIndex;
   }
 
-  return preSplitSentences;
+  const finalSentences: PreSplitSentence[] = [];
+  for (const sentence of preSplitSentences) {
+    if (countWords(sentence.text) > MAX_WORDS_PER_PRESPLIT) {
+      const splitSentences = splitLongSentenceByTimeGaps(
+        sentence,
+        wordSegments,
+        MAX_WORDS_PER_PRESPLIT
+      );
+      finalSentences.push(...splitSentences);
+    } else {
+      finalSentences.push(sentence);
+    }
+  }
+
+  return finalSentences;
+}
+
+function splitLongSentenceByTimeGaps(
+  sentence: PreSplitSentence,
+  wordSegments: SubtitleEntry[],
+  maxWordsPerSplit: number
+): PreSplitSentence[] {
+  const wordCount = countWords(sentence.text);
+  if (wordCount <= maxWordsPerSplit) {
+    return [sentence];
+  }
+
+  const startIndex = sentence.wordStartIndex;
+  const endIndex = Math.min(sentence.wordEndIndex, wordSegments.length);
+  if (startIndex < 0 || startIndex >= endIndex) {
+    return [sentence];
+  }
+
+  const sentenceSegments = wordSegments.slice(startIndex, endIndex);
+  if (sentenceSegments.length === 0) {
+    return [sentence];
+  }
+
+  const gaps: Array<{ index: number; gap: number }> = [];
+  for (let i = 0; i < sentenceSegments.length - 1; i++) {
+    const gap = sentenceSegments[i + 1].startTime - sentenceSegments[i].endTime;
+    gaps.push({ index: i + 1, gap });
+  }
+
+  let splitPositions: number[] = [];
+  const largeGaps = gaps.filter(item => item.gap > MAX_GAP);
+  if (largeGaps.length > 0) {
+    splitPositions = largeGaps.map(item => item.index);
+  } else {
+    const targetSplits = Math.max(Math.ceil(wordCount / maxWordsPerSplit) - 1, 0);
+    if (targetSplits > 0) {
+      const sortedGaps = gaps.slice().sort((a, b) => b.gap - a.gap);
+      splitPositions = sortedGaps.slice(0, targetSplits).map(item => item.index);
+    }
+  }
+
+  if (splitPositions.length === 0) {
+    return [sentence];
+  }
+
+  splitPositions = Array.from(new Set(splitPositions)).sort((a, b) => a - b);
+
+  const results: PreSplitSentence[] = [];
+  let prevIndex = 0;
+
+  const pushSegment = (from: number, to: number): void => {
+    if (to <= from) return;
+    const segs = sentenceSegments.slice(from, to);
+    if (segs.length === 0) return;
+    results.push({
+      text: segs.map(seg => seg.text).join(' '),
+      wordStartIndex: startIndex + from,
+      wordEndIndex: startIndex + to,
+      startTime: segs[0].startTime || 0,
+      endTime: segs[segs.length - 1].endTime || 0,
+    });
+  };
+
+  for (const pos of splitPositions) {
+    if (pos <= prevIndex || pos >= sentenceSegments.length) continue;
+    pushSegment(prevIndex, pos);
+    prevIndex = pos;
+  }
+
+  pushSegment(prevIndex, sentenceSegments.length);
+
+  return results.length > 0 ? results : [sentence];
 }
 
 /**
- * 按句子数分批
+ * 按词数分批，保持预分句完整不切割
  */
 export function batchBySentenceCount(
   sentences: PreSplitSentence[],
-  firstBatchSize: number = 5,
-  minSize: number = 15,
-  maxSize: number = 25
+  firstBatchMaxWords: number = 150,
+  batchMaxWords: number = 500
 ): PreSplitSentence[][] {
   if (sentences.length === 0) return [];
 
   const batches: PreSplitSentence[][] = [];
+  let currentBatch: PreSplitSentence[] = [];
+  let currentWords = 0;
+  let isFirstBatch = true;
 
-  // 首批
-  const firstBatch = sentences.slice(0, Math.min(firstBatchSize, sentences.length));
-  batches.push(firstBatch);
+  for (const sentence of sentences) {
+    const words = countWords(sentence.text);
+    const maxWords = isFirstBatch ? firstBatchMaxWords : batchMaxWords;
 
-  // 剩余部分
-  const remaining = sentences.slice(firstBatch.length);
-  if (remaining.length > 0) {
-    // 使用 calculateBatchSizes 灵活分配
-    const batchSizes = calculateBatchSizes(remaining.length, (minSize + maxSize) / 2, minSize, maxSize);
-
-    let startIndex = 0;
-    for (const size of batchSizes) {
-      batches.push(remaining.slice(startIndex, startIndex + size));
-      startIndex += size;
+    if (currentBatch.length > 0 && currentWords + words > maxWords) {
+      batches.push(currentBatch);
+      currentBatch = [sentence];
+      currentWords = words;
+      isFirstBatch = false;
+    } else {
+      currentBatch.push(sentence);
+      currentWords += words;
     }
+  }
+
+  if (currentBatch.length > 0) {
+    batches.push(currentBatch);
   }
 
   return batches;
