@@ -229,27 +229,37 @@ export class TranslatorService {
     splitSegments: SubtitleEntry[],
     translatedEntries: TranslatedEntry[]
   ): BilingualSubtitles {
-    const length = Math.min(translatedEntries.length, splitSegments.length);
     const english: SubtitleEntry[] = [];
     const chinese: SubtitleEntry[] = [];
+    let emptyTranslationCount = 0;
 
-    for (let i = 0; i < length; i++) {
-      const entry = translatedEntries[i];
+    // 以 splitSegments 为准全量遍历，避免 translatedEntries 不完整时截断字幕
+    for (let i = 0; i < splitSegments.length; i++) {
       const segment = splitSegments[i];
+      const entry = translatedEntries[i];
 
       english.push({
         index: i + 1,
         startTime: segment.startTime,
         endTime: segment.endTime,
-        text: entry.original,
+        text: entry?.original || segment.text,
       });
+
+      const translationText = entry?.translation?.trim() || '';
+      if (!translationText) {
+        emptyTranslationCount++;
+      }
 
       chinese.push({
         index: i + 1,
         startTime: segment.startTime,
         endTime: segment.endTime,
-        text: entry.translation,
+        text: translationText,
       });
+    }
+
+    if (emptyTranslationCount > 0) {
+      logger.info(`空翻译字幕数: ${emptyTranslationCount}`);
     }
 
     return { english, chinese };

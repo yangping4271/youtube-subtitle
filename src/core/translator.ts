@@ -129,7 +129,7 @@ export class Translator {
     });
 
     // 检查是否需要重试（API 失败或有翻译失败条目）
-    const hasFailures = !results || results.some(r => r.translation.startsWith('[翻译失败]'));
+    const hasFailures = !results || results.some(r => !r.translation.trim());
 
     if (hasFailures) {
       // Level 2: 批次整体重试（1次）
@@ -146,12 +146,22 @@ export class Translator {
       });
 
       if (retryResults) {
-        results = retryResults;
+        // 只用重试结果补充失败项，保留第一轮已成功的翻译
+        if (results) {
+          for (const retryResult of retryResults) {
+            const idx = results.findIndex(r => r.index === retryResult.index);
+            if (idx >= 0 && !results[idx].translation.trim()) {
+              results[idx] = retryResult;
+            }
+          }
+        } else {
+          results = retryResults;
+        }
       }
     }
 
     // 检查是否还有失败的条目
-    const failedEntries = results?.filter(r => r.translation.startsWith('[翻译失败]')) || [];
+    const failedEntries = results?.filter(r => !r.translation.trim()) || [];
     const needSingleTranslation = !results || failedEntries.length > 0;
 
     if (needSingleTranslation) {
@@ -192,9 +202,9 @@ export class Translator {
 
     results.sort((a, b) => a.index - b.index);
 
-    // 标点符号规范化（跳过翻译失败的条目）
+    // 标点符号规范化（跳过翻译为空的条目）
     for (const entry of results) {
-      if (isChinese(this.config.targetLanguage) && !entry.translation.startsWith('[翻译失败]')) {
+      if (isChinese(this.config.targetLanguage) && entry.translation.trim()) {
         entry.translation = normalizeChinesePunctuation(entry.translation);
       }
     }
@@ -239,7 +249,7 @@ export class Translator {
 
     const results = batch.map(([key, originalText]) => {
       const id = parseInt(key, 10);
-      const translation = xmlMap[key] ?? `[翻译失败] ${originalText}`;
+      const translation = xmlMap[key] ?? '';
       const isFailed = xmlMap[key] === undefined;
 
       if (isFailed) {
@@ -294,7 +304,7 @@ export class Translator {
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         logger.error(`字幕 ID ${key} 单条翻译失败: ${errorMsg}`);
-        translation = `[翻译失败] ${value}`;
+        translation = '';
       }
 
       return {

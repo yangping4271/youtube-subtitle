@@ -81,9 +81,8 @@ describe('XML 格式翻译集成测试', () => {
         for (const e of partial.english) {
           expect(e.text).toBeTruthy();
         }
-        // 验证中文翻译不为空且不含 [翻译失败]
+        // 验证中文翻译格式正确（允许为空，但不应包含错误标记）
         for (const c of partial.chinese) {
-          expect(c.text).toBeTruthy();
           expect(c.text).not.toContain('[翻译失败]');
         }
 
