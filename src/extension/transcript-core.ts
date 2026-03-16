@@ -11,6 +11,19 @@ interface TranscriptSegment {
   text: string;
 }
 
+interface YouTubeCaptionTrack {
+  baseUrl?: string;
+  languageCode?: string;
+}
+
+interface YouTubePlayerResponse {
+  captions?: {
+    playerCaptionsTracklistRenderer?: {
+      captionTracks?: YouTubeCaptionTrack[];
+    };
+  };
+}
+
 interface UserConfig {
   buttonIcons: {
     download: string;
@@ -183,6 +196,92 @@ function getTranscriptSRT(): string {
   return srtOutput;
 }
 
+async function fetchYouTubePlayerResponse(videoId: string): Promise<YouTubePlayerResponse> {
+  const response = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      context: {
+        client: {
+          clientName: 'ANDROID',
+          clientVersion: '20.10.38',
+        },
+      },
+      videoId,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`player 接口请求失败: ${response.status}`);
+  }
+
+  return response.json() as Promise<YouTubePlayerResponse>;
+}
+
+function pickPreferredCaptionTrack(tracks: YouTubeCaptionTrack[]): YouTubeCaptionTrack | undefined {
+  return tracks.find((track) => track.languageCode === 'en') || tracks[0];
+}
+
+async function getTranscriptTextFromCaptionTracks(videoId: string): Promise<string> {
+  const playerResponse = await fetchYouTubePlayerResponse(videoId);
+  const tracks = playerResponse.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+  if (tracks.length === 0) {
+    return '';
+  }
+
+  const track = pickPreferredCaptionTrack(tracks);
+  if (!track?.baseUrl) {
+    return '';
+  }
+
+  const captionUrl = new URL(track.baseUrl);
+  const isYouTubeHost = captionUrl.hostname === 'www.youtube.com' || captionUrl.hostname.endsWith('.youtube.com');
+  if (!isYouTubeHost) {
+    return '';
+  }
+
+  const response = await fetch(track.baseUrl);
+  if (!response.ok) {
+    throw new Error(`字幕轨请求失败: ${response.status}`);
+  }
+
+  const xml = await response.text();
+  if (!xml.trim()) {
+    return '';
+  }
+
+  return extractTranscriptTextFromXml(xml);
+}
+
+function extractTranscriptTextFromXml(xml: string): string {
+  const doc = new DOMParser().parseFromString(xml, 'text/xml');
+  if (doc.querySelector('parsererror')) {
+    throw new Error('字幕 XML 解析失败');
+  }
+
+  const srv3Lines = Array.from(doc.querySelectorAll('p'))
+    .map((segment) => {
+      const textParts = Array.from(segment.querySelectorAll('s'))
+        .map((part) => part.textContent || '')
+        .join('');
+      const rawText = textParts || segment.textContent || '';
+      return rawText.replace(/\s+/g, ' ').trim();
+    })
+    .filter((line) => line.length > 0);
+
+  if (srv3Lines.length > 0) {
+    return srv3Lines.join('\n');
+  }
+
+  const timedTextLines = Array.from(doc.querySelectorAll('text'))
+    .map((segment) => (segment.textContent || '').replace(/\s+/g, ' ').trim())
+    .filter((line) => line.length > 0);
+
+  return timedTextLines.join('\n');
+}
+
 function downloadTranscriptAsSRT(): void {
   const srtContent = getTranscriptSRT();
   if (!srtContent) {
@@ -208,26 +307,78 @@ function downloadTranscriptAsSRT(): void {
   showNotification('SRT 文件已下载');
 }
 
-function selectAndCopyTranscript(): void {
-  const finalText = getTranscriptTextOnly();
+async function copyTranscriptText(finalText: string): Promise<void> {
+  const { ytTitle, channelName, uploadDate, videoURL } = getVideoInfo();
+  const fullContent = `Information about the YouTube Video:\nTitle: ${ytTitle}\nChannel: ${channelName}\nUpload Date: ${uploadDate}\nURL: ${videoURL}\n\n\nYouTube Transcript:\n${finalText.trimStart()}`;
+
+  try {
+    await navigator.clipboard.writeText(fullContent);
+    showNotification('字幕已复制');
+  } catch (err) {
+    console.error('Failed to copy: ', err);
+    showNotification('复制失败');
+  }
+}
+
+function waitForTranscriptContent(retries = 0): Promise<boolean> {
+  const maxRetries = 20;
+  const interval = 500;
+
+  return new Promise((resolve) => {
+    const transcriptContainer = getWatchFlexyElement()?.querySelector(
+      'ytd-transcript-segment-list-renderer #segments-container'
+    );
+
+    if (transcriptContainer && transcriptContainer.children.length > 0) {
+      resolve(true);
+    } else if (retries < maxRetries) {
+      setTimeout(() => {
+        void waitForTranscriptContent(retries + 1).then(resolve);
+      }, interval);
+    } else {
+      resolve(false);
+    }
+  });
+}
+
+async function selectAndCopyTranscript(): Promise<void> {
+  const { videoId } = getVideoInfo();
+
+  if (videoId) {
+    try {
+      const trackText = await getTranscriptTextFromCaptionTracks(videoId);
+      if (trackText) {
+        await copyTranscriptText(trackText);
+        return;
+      }
+    } catch (error) {
+      console.warn('通过字幕轨接口复制字幕失败，回退到 transcript 面板:', error);
+    }
+  }
+
+  let finalText = getTranscriptTextOnly();
+  if (!finalText) {
+    if (!openTranscript()) {
+      showNotification('Transcript is empty or not loaded.');
+      return;
+    }
+
+    showNotification('正在打开文字记录...');
+    const loaded = await waitForTranscriptContent();
+    if (!loaded) {
+      showNotification('加载失败');
+      return;
+    }
+
+    finalText = getTranscriptTextOnly();
+  }
 
   if (!finalText) {
     showNotification('Transcript is empty or not loaded.');
     return;
   }
 
-  const { ytTitle, channelName, uploadDate, videoURL } = getVideoInfo();
-  const fullContent = `Information about the YouTube Video:\nTitle: ${ytTitle}\nChannel: ${channelName}\nUpload Date: ${uploadDate}\nURL: ${videoURL}\n\n\nYouTube Transcript:\n${finalText.trimStart()}`;
-
-  navigator.clipboard
-    .writeText(fullContent)
-    .then(() => {
-      showNotification('字幕已复制');
-    })
-    .catch((err) => {
-      console.error('Failed to copy: ', err);
-      showNotification('复制失败');
-    });
+  await copyTranscriptText(finalText);
 }
 
 function openTranscript(): boolean {
@@ -295,7 +446,7 @@ function handleDownloadClick(): void {
 }
 
 function handleCopyClick(): void {
-  handleTranscriptAction(selectAndCopyTranscript);
+  void selectAndCopyTranscript();
 }
 
 function handleTranslateClick(): void {
