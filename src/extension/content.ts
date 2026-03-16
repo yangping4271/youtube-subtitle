@@ -42,6 +42,20 @@ interface ChromeMessage {
   videoId?: string;
 }
 
+interface YouTubeCaptionTrack {
+  baseUrl?: string;
+  languageCode?: string;
+  kind?: string;
+}
+
+interface YouTubePlayerResponse {
+  captions?: {
+    playerCaptionsTracklistRenderer?: {
+      captionTracks?: YouTubeCaptionTrack[];
+    };
+  };
+}
+
 class YouTubeSubtitleOverlay {
   private subtitleData: SimpleSubtitleEntry[] = [];
   private englishSubtitles: SimpleSubtitleEntry[] = [];
@@ -268,12 +282,194 @@ class YouTubeSubtitleOverlay {
       throw new Error('无法获取视频ID');
     }
 
-    const subtitles = await this.getSubtitlesFromTranscriptPanel();
-    if (subtitles && subtitles.length > 0) {
-      return subtitles;
+    try {
+      const subtitles = await this.getSubtitlesFromCaptionTracks(videoId);
+      if (subtitles.length > 0) {
+        this.logSubtitleFetchSource('caption-tracks', subtitles.length);
+        return subtitles;
+      }
+    } catch (error) {
+      console.warn('通过字幕轨接口获取字幕失败，回退到 transcript 面板:', error);
     }
 
-    throw new Error('无法获取YouTube字幕，请确保视频有可用的字幕并打开文字记录面板');
+    const panelSubtitles = await this.getSubtitlesFromTranscriptPanel();
+    if (panelSubtitles.length > 0) {
+      this.logSubtitleFetchSource('transcript-panel', panelSubtitles.length);
+      return panelSubtitles;
+    }
+
+    this.logSubtitleFetchSource('unavailable', 0);
+    throw new Error('无法获取 YouTube 字幕，请确保视频有可用字幕');
+  }
+
+  private logSubtitleFetchSource(source: 'caption-tracks' | 'transcript-panel' | 'unavailable', subtitleCount: number): void {
+    const videoId = this.getVideoId();
+    if (!chrome.runtime?.id || !videoId) {
+      return;
+    }
+
+    void chrome.runtime.sendMessage({
+      action: 'logSubtitleFetchSource',
+      videoId,
+      data: {
+        source,
+        subtitleCount,
+      },
+    }).catch((error) => {
+      console.warn('发送字幕来源日志失败:', error);
+    });
+  }
+
+  private async getSubtitlesFromCaptionTracks(videoId: string): Promise<SimpleSubtitleEntry[]> {
+    const playerResponse = await this.fetchYouTubePlayerResponse(videoId);
+    const tracks = playerResponse.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+    if (tracks.length === 0) {
+      return [];
+    }
+
+    const track = this.pickPreferredCaptionTrack(tracks);
+    if (!track?.baseUrl) {
+      return [];
+    }
+
+    const captionUrl = new URL(track.baseUrl);
+    const isYouTubeHost = captionUrl.hostname === 'www.youtube.com' || captionUrl.hostname.endsWith('.youtube.com');
+    if (!isYouTubeHost) {
+      console.warn('字幕轨地址不是 YouTube 域名，已忽略:', captionUrl.hostname);
+      return [];
+    }
+
+    const response = await fetch(track.baseUrl);
+    if (!response.ok) {
+      throw new Error(`字幕轨请求失败: ${response.status}`);
+    }
+
+    const xml = await response.text();
+    if (!xml.trim()) {
+      return [];
+    }
+
+    return this.parseTimedTextXml(xml);
+  }
+
+  private async fetchYouTubePlayerResponse(videoId: string): Promise<YouTubePlayerResponse> {
+    const response = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        context: {
+          client: {
+            clientName: 'ANDROID',
+            clientVersion: '20.10.38',
+          },
+        },
+        videoId,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`player 接口请求失败: ${response.status}`);
+    }
+
+    return response.json() as Promise<YouTubePlayerResponse>;
+  }
+
+  private pickPreferredCaptionTrack(tracks: YouTubeCaptionTrack[]): YouTubeCaptionTrack | undefined {
+    return tracks.find((track) => track.languageCode === 'en') || tracks[0];
+  }
+
+  private parseTimedTextXml(xml: string): SimpleSubtitleEntry[] {
+    const doc = new DOMParser().parseFromString(xml, 'text/xml');
+    if (doc.querySelector('parsererror')) {
+      throw new Error('字幕 XML 解析失败');
+    }
+
+    const subtitles = this.parseSrv3Subtitles(doc);
+    if (subtitles.length > 0) {
+      return this.normalizeSubtitleTiming(subtitles);
+    }
+
+    return this.normalizeSubtitleTiming(this.parseTimedTextSubtitles(doc));
+  }
+
+  private parseSrv3Subtitles(doc: Document): SimpleSubtitleEntry[] {
+    const subtitles: SimpleSubtitleEntry[] = [];
+
+    doc.querySelectorAll('p').forEach((segment) => {
+      const startMs = Number(segment.getAttribute('t'));
+      if (Number.isNaN(startMs)) {
+        return;
+      }
+
+      const durationMs = Number(segment.getAttribute('d'));
+      const textParts = Array.from(segment.querySelectorAll('s'))
+        .map((part) => part.textContent || '')
+        .join('');
+      const rawText = textParts || segment.textContent || '';
+      const text = rawText.replace(/\s+/g, ' ').trim();
+
+      if (!text) {
+        return;
+      }
+
+      subtitles.push({
+        startTime: startMs / 1000,
+        endTime: Number.isNaN(durationMs) ? startMs / 1000 : (startMs + durationMs) / 1000,
+        text,
+      });
+    });
+
+    return subtitles;
+  }
+
+  private parseTimedTextSubtitles(doc: Document): SimpleSubtitleEntry[] {
+    const subtitles: SimpleSubtitleEntry[] = [];
+
+    doc.querySelectorAll('text').forEach((segment) => {
+      const start = Number(segment.getAttribute('start'));
+      if (Number.isNaN(start)) {
+        return;
+      }
+
+      const duration = Number(segment.getAttribute('dur'));
+      const text = (segment.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!text) {
+        return;
+      }
+
+      subtitles.push({
+        startTime: start,
+        endTime: Number.isNaN(duration) ? start : start + duration,
+        text,
+      });
+    });
+
+    return subtitles;
+  }
+
+  private normalizeSubtitleTiming(subtitles: SimpleSubtitleEntry[]): SimpleSubtitleEntry[] {
+    if (subtitles.length === 0) {
+      return [];
+    }
+
+    return subtitles.map((subtitle, index) => {
+      const next = subtitles[index + 1];
+      let endTime = subtitle.endTime;
+
+      if (!Number.isFinite(endTime) || endTime <= subtitle.startTime) {
+        endTime = next && next.startTime > subtitle.startTime
+          ? next.startTime
+          : subtitle.startTime + 5;
+      }
+
+      return {
+        startTime: subtitle.startTime,
+        endTime,
+        text: subtitle.text,
+      };
+    });
   }
 
   private async getSubtitlesFromTranscriptPanel(): Promise<SimpleSubtitleEntry[]> {

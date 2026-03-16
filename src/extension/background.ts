@@ -83,6 +83,7 @@ interface ChromeMessage {
   englishSubtitles?: SimpleSubtitleEntry[];
   chineseSubtitles?: SimpleSubtitleEntry[];
   subtitleData?: SimpleSubtitleEntry[];
+  source?: string;
 }
 
 class SubtitleExtensionBackground {
@@ -219,6 +220,11 @@ class SubtitleExtensionBackground {
         case 'autoLoadError':
           break;
 
+        case 'logSubtitleFetchSource':
+          this.logSubtitleFetchSource(request, sender);
+          sendResponse({ success: true });
+          break;
+
         case 'startTranslation':
           void this.startBackgroundTranslation(request, sendResponse).catch((error) => {
             console.error('后台翻译启动失败:', error);
@@ -289,6 +295,21 @@ class SubtitleExtensionBackground {
       subtitleEnabled: (result.subtitleEnabled as boolean) || false,
       subtitleSettings: (result.subtitleSettings as Record<string, unknown>) || {},
     };
+  }
+
+  logSubtitleFetchSource(request: ChromeMessage, sender: chrome.runtime.MessageSender): void {
+    const source = typeof request.data === 'object' && request.data !== null
+      ? (request.data as { source?: string }).source || 'unknown'
+      : 'unknown';
+    const subtitleCount = typeof request.data === 'object' && request.data !== null
+      ? (request.data as { subtitleCount?: number }).subtitleCount || 0
+      : 0;
+    const pageUrl = sender.tab?.url || 'unknown-url';
+    const videoId = request.videoId || 'unknown-video';
+
+    console.info(
+      `[SubtitleFetch] source=${source} subtitles=${subtitleCount} videoId=${videoId} url=${pageUrl}`
+    );
   }
 
   async saveVideoSubtitles(

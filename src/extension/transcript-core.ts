@@ -21,7 +21,6 @@ interface UserConfig {
   includeTimestamps: boolean;
   includeChapterHeaders: boolean;
   settingsGuide: boolean;
-  autoOpenTranscript: boolean;
 }
 
 const USER_CONFIG: UserConfig = {
@@ -34,7 +33,6 @@ const USER_CONFIG: UserConfig = {
   includeTimestamps: true,
   includeChapterHeaders: true,
   settingsGuide: false,
-  autoOpenTranscript: true,
 };
 
 function getWatchFlexyElement(): HTMLElement | null {
@@ -274,23 +272,6 @@ function handleTranscriptAction(callback: () => void): void {
   }
 }
 
-function checkAndOpenTranscript(): void {
-  if (!USER_CONFIG.autoOpenTranscript) return;
-  if (!location.href.includes('/watch')) return;
-
-  const watchFlexyElement = getWatchFlexyElement();
-  if (!watchFlexyElement) return;
-
-  const transcriptContainer = watchFlexyElement.querySelector(
-    'ytd-transcript-segment-list-renderer #segments-container'
-  );
-  if (transcriptContainer && transcriptContainer.children.length > 0) {
-    return;
-  }
-
-  openTranscript();
-}
-
 function waitForTranscript(callback: () => void, retries = 0): void {
   const maxRetries = 20;
   const interval = 500;
@@ -415,8 +396,6 @@ function createButtons(): void {
 function init(): void {
   createButtons();
 
-  setTimeout(checkAndOpenTranscript, 2000);
-
   const observer = new MutationObserver(() => {
     if (!document.getElementById('transcript-download-button') && document.querySelector('#end')) {
       createButtons();
@@ -428,9 +407,6 @@ function init(): void {
   new MutationObserver(() => {
     if (location.href !== lastUrl) {
       lastUrl = location.href;
-      if (location.href.includes('/watch')) {
-        setTimeout(checkAndOpenTranscript, 2500);
-      }
     }
   }).observe(document.body, { childList: true, subtree: true });
 }

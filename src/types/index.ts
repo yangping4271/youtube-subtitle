@@ -219,4 +219,5 @@ export type ChromeMessageAction =
   | 'printEnglishSubtitles'
   | 'toggleAutoLoad'
   | 'autoLoadSuccess'
-  | 'autoLoadError';
+  | 'autoLoadError'
+  | 'logSubtitleFetchSource';
