@@ -48,6 +48,20 @@ npm run test          # 运行默认测试（不含 manual）
 npm run test:manual   # 运行手动测试
 ```
 
+## 版本与发布
+
+- 版本号保持一致：`package.json`、`public/extension/manifest.json`、`public/extension/popup.html`
+- Git tag 使用 `vX.Y.Z`
+- GitHub Release 附件使用 `youtube-subtitle-vX.Y.Z.zip`
+
+示例打包命令：
+
+```bash
+npm run build
+cd dist/extension
+zip -r ../../youtube-subtitle-v1.1.0.zip .
+```
+
 ## 加载扩展
 
 1. 执行 `npm run build`
