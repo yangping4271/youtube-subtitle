@@ -57,9 +57,10 @@ npm run test:manual   # 运行手动测试
 示例打包命令：
 
 ```bash
+VERSION=$(node -p "require('./public/extension/manifest.json').version")
 npm run build
 cd dist/extension
-zip -r ../../youtube-subtitle-v1.1.0.zip .
+zip -r "../../youtube-subtitle-v${VERSION}.zip" .
 ```
 
 ## 加载扩展
