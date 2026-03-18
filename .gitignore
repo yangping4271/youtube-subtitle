@@ -1,13 +1,13 @@
 # Dependencies
 node_modules/
 
-# Extension 构建产物（保留静态文件）
-extension/*.js
-extension/*.js.map
-!extension/popup.js
+# Build output
+dist/
+coverage/
 
-# Log files
+# Logs
 log/
+*.log
 
 # Environment
 .env
@@ -22,12 +22,6 @@ log/
 # TypeScript cache
 *.tsbuildinfo
 
-# Personal TODO
+# Local notes
 TODO.md
 AGENTS.md
-
-# Test files
-jest.config.js
-test-real-srt.js
-src/**/*.test.ts
-src/tests/

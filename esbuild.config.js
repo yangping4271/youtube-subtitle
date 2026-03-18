@@ -4,8 +4,9 @@ import * as path from 'path';
 
 const isProduction = process.env.NODE_ENV === 'production';
 const isWatch = process.argv.includes('--watch');
+const staticDir = 'public/extension';
+const outDir = 'dist/extension';
 
-// 通用浏览器配置
 const browserConfig = {
   bundle: true,
   platform: 'browser',
@@ -15,52 +16,43 @@ const browserConfig = {
   sourcemap: !isProduction,
 };
 
-// 扩展各入口文件配置
 const extensionEntries = [
   {
     entryPoints: ['src/extension/translator.ts'],
-    outfile: 'extension/translator.js',
+    outfile: `${outDir}/translator.js`,
     globalName: 'TranslatorModule',
   },
   {
     entryPoints: ['src/extension/config.ts'],
-    outfile: 'extension/config.js',
+    outfile: `${outDir}/config.js`,
     globalName: 'ConfigModule',
   },
   {
     entryPoints: ['src/extension/inject.ts'],
-    outfile: 'extension/inject.js',
+    outfile: `${outDir}/inject.js`,
   },
   {
     entryPoints: ['src/extension/subtitle-parser.ts'],
-    outfile: 'extension/subtitle-parser.js',
+    outfile: `${outDir}/subtitle-parser.js`,
     globalName: 'SubtitleParserModule',
   },
   {
     entryPoints: ['src/extension/transcript-core.ts'],
-    outfile: 'extension/transcript-core.js',
+    outfile: `${outDir}/transcript-core.js`,
   },
   {
     entryPoints: ['src/extension/background.ts'],
-    outfile: 'extension/background.js',
+    outfile: `${outDir}/background.js`,
     globalName: 'BackgroundModule',
   },
   {
     entryPoints: ['src/extension/content.ts'],
-    outfile: 'extension/content.js',
+    outfile: `${outDir}/content.js`,
     globalName: 'ContentModule',
   },
 ];
 
-// 检查静态文件是否存在
-function checkStaticFiles() {
-  // 确保 extension 目录存在
-  if (!fs.existsSync('extension')) {
-    fs.mkdirSync('extension', { recursive: true });
-  }
-
-  // 静态文件已经在 extension/ 目录中
-  // 但为了支持 CI 或清理后重建，确保这些文件存在的提示
+function ensureStaticFiles() {
   const requiredFiles = [
     'manifest.json',
     'popup.html',
@@ -69,52 +61,43 @@ function checkStaticFiles() {
     'subtitle-overlay.css',
   ];
 
-  const missingFiles = requiredFiles.filter(file => !fs.existsSync(path.join('extension', file)));
+  const missingFiles = requiredFiles.filter((file) => !fs.existsSync(path.join(staticDir, file)));
 
   if (missingFiles.length > 0) {
-    console.warn('⚠️  警告：以下静态文件缺失：');
-    missingFiles.forEach(file => console.warn(`   - extension/${file}`));
-    console.warn('   请确保这些文件存在于 extension/ 目录中');
+    console.warn('Missing static files:');
+    missingFiles.forEach((file) => console.warn(`  - ${path.join(staticDir, file)}`));
   }
+}
 
-  console.log('📁 Extension directory ready');
+function prepareOutDir() {
+  fs.rmSync(outDir, { recursive: true, force: true });
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.cpSync(staticDir, outDir, { recursive: true });
 }
 
 async function build() {
   try {
-    // 检查静态文件
-    checkStaticFiles();
+    ensureStaticFiles();
+    prepareOutDir();
 
-    // 构建所有扩展入口
-    const extensionConfigs = extensionEntries.map(entry => ({
+    const extensionConfigs = extensionEntries.map((entry) => ({
       ...browserConfig,
       ...entry,
     }));
 
     if (isWatch) {
-      // 开发模式：监听文件变化
-      const contexts = await Promise.all(
-        extensionConfigs.map(config => esbuild.context(config))
-      );
-
-      await Promise.all(contexts.map(ctx => ctx.watch()));
-      console.log('👀 Watching for changes...');
-    } else {
-      // 一次性构建
-      console.log('🔨 Building...');
-
-      await Promise.all(
-        extensionConfigs.map(config => esbuild.build(config))
-      );
-
-      console.log('✅ Build complete');
-      console.log('   📦 Extension files:');
-      extensionEntries.forEach(entry => {
-        console.log(`      - ${entry.outfile}`);
-      });
+      const contexts = await Promise.all(extensionConfigs.map((config) => esbuild.context(config)));
+      await Promise.all(contexts.map((context) => context.watch()));
+      console.log('Watching for changes...');
+      console.log(`Extension output: ${outDir}`);
+      return;
     }
+
+    console.log('Building extension...');
+    await Promise.all(extensionConfigs.map((config) => esbuild.build(config)));
+    console.log(`Build complete: ${outDir}`);
   } catch (error) {
-    console.error('❌ Build failed:', error);
+    console.error('Build failed:', error);
     process.exit(1);
   }
 }

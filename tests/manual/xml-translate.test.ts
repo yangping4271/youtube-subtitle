@@ -6,8 +6,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { config as loadDotenv } from 'dotenv';
-import { TranslatorService } from '../src/services/translator-service.js';
-import type { SubtitleEntry, TranslatorConfig } from '../src/types/index.js';
+import { TranslatorService } from '../../src/services/translator-service.js';
+import type { SubtitleEntry, TranslatorConfig } from '../../src/types/index.js';
 
 loadDotenv();
 
@@ -62,7 +62,7 @@ describe('XML 格式翻译集成测试', () => {
       return;
     }
 
-    const srtPath = join(process.cwd(), 'Learn tRPC in 5 minutes - Matt Pocock_S6rcrkbsDI0.srt');
+    const srtPath = join(process.cwd(), 'tests', 'fixtures', 'sample.srt');
     const srtContent = readFileSync(srtPath, 'utf-8');
     const subtitles = parseSRT(srtContent);
 

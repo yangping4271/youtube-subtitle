@@ -1,26 +1,24 @@
 {
   "name": "subtitle-translator-extension",
   "version": "1.0.0",
-  "description": "YouTube 字幕翻译 Chrome 扩展 - TypeScript 版本",
+  "description": "YouTube 字幕翻译 Chrome 扩展",
   "type": "module",
+  "license": "MIT",
   "scripts": {
     "build": "node esbuild.config.js",
     "build:prod": "NODE_ENV=production node esbuild.config.js",
     "watch": "node esbuild.config.js --watch",
     "typecheck": "tsc --noEmit",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
-    "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
-    "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:manual": "vitest run tests/manual"
   },
   "devDependencies": {
-    "@types/jest": "^30.0.0",
     "@types/node": "^20.10.0",
     "@vitest/coverage-v8": "^4.0.18",
     "dotenv": "^17.2.4",
     "esbuild": "^0.19.8",
-    "jest": "^30.2.0",
-    "ts-jest": "^29.4.6",
-    "ts-node": "^10.9.2",
     "typescript": "^5.3.2",
     "vitest": "^4.0.18"
   }

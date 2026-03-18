@@ -4,6 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "node",
     "strict": true,
+    "types": ["node", "vitest/globals"],
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
@@ -11,6 +12,6 @@
     "resolveJsonModule": true,
     "lib": ["ES2020", "DOM"]
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*.ts", "tests/**/*.ts", "*.config.*"],
   "exclude": ["node_modules", "dist"]
 }

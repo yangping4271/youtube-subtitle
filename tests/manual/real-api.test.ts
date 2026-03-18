@@ -6,8 +6,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { createTranslatorService } from '../src/services/translator-service.js';
-import type { SubtitleEntry, BilingualSubtitles, TranslatorConfig } from '../src/types/index.js';
+import { TranslatorService } from '../../src/services/translator-service.js';
+import type { BilingualSubtitles, SubtitleEntry, TranslatorConfig } from '../../src/types/index.js';
 
 // 从 .env 文件加载配置
 function loadEnvConfig(): TranslatorConfig {
@@ -97,7 +97,9 @@ describe('真实字幕文件集成测试', () => {
     // 读取真实字幕文件
     const srtPath = join(
       process.cwd(),
-      'Short course on Gemini CLI Code & Create with an Open-Source Agent - DeepLearningAI_BQf0ASq573A.srt'
+      'tests',
+      'fixtures',
+      'sample.srt'
     );
     const srtContent = readFileSync(srtPath, 'utf-8');
     const subtitles = parseSRT(srtContent);
@@ -121,7 +123,7 @@ describe('真实字幕文件集成测试', () => {
       return;
     }
 
-    const service = createTranslatorService(config);
+    const service = new TranslatorService(config);
 
     // 记录回调结果
     const partialResults: Array<{ isFirst: boolean; count: number }> = [];
@@ -132,7 +134,7 @@ describe('真实字幕文件集成测试', () => {
 
     const result = await service.translateFull(subtitles, {
       firstBatchSize: 10,
-      onPartialResult: (partial, isFirst) => {
+      onPartialResult: (partial: BilingualSubtitles, isFirst: boolean) => {
         partialResults.push({
           isFirst,
           count: partial.english.length,

@@ -1,10 +1,9 @@
 /**
- * 临时测试文件 - 验证渐进式字幕翻译逻辑
- * 测试完成后删除
+ * 集成测试 - 验证渐进式字幕翻译逻辑
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import type { SubtitleEntry, BilingualSubtitles } from '../src/types/index.js';
+import type { SubtitleEntry, BilingualSubtitles } from '../../src/types/index.js';
 
 describe('渐进式字幕翻译逻辑', () => {
   // 模拟字幕数据生成器
