@@ -4,9 +4,14 @@
  */
 
 import { TranslatorService } from '../services/translator-service.js';
-import { loadConfig } from './config.js';
+import { buildTranslatorConfig, loadConfig } from './config.js';
 import { getLanguageName, LANGUAGE_MAPPING } from '../utils/language.js';
-import type { TranslatorConfig, SubtitleEntry, BilingualSubtitles } from '../types/index.js';
+import type {
+  TranslatorConfig,
+  SubtitleEntry,
+  BilingualSubtitles,
+  ApiConfig,
+} from '../types/index.js';
 
 // Chrome API 类型声明
 declare const chrome: {
@@ -39,8 +44,8 @@ class TranslatorServiceWrapper {
   /**
    * 加载 API 配置
    */
-  async loadConfig(): Promise<TranslatorConfig> {
-    this.config = await loadConfig();
+  async loadConfig(apiConfigOverride?: Partial<ApiConfig>): Promise<TranslatorConfig> {
+    this.config = apiConfigOverride ? buildTranslatorConfig(apiConfigOverride) : await loadConfig();
     this.service = new TranslatorService(this.config);
     return this.config;
   }
@@ -71,7 +76,8 @@ class TranslatorServiceWrapper {
     aiSummary?: string | null,
     videoTitle?: string,
     onPartialResult?: (partial: BilingualSubtitles, isFirst: boolean) => void,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    apiConfigOverride?: Partial<ApiConfig>
   ): Promise<BilingualSubtitles> {
     // 强制重置状态（开始新翻译前）
     this.isTranslating = true;
@@ -93,10 +99,8 @@ class TranslatorServiceWrapper {
     };
 
     try {
-      // 加载配置
-      if (!this.config) {
-        await this.loadConfig();
-      }
+      // 每次翻译前都重新加载配置，确保 popup 中刚保存的模型立即生效
+      await this.loadConfig(apiConfigOverride);
 
       // 更新目标语言
       this.config!.targetLanguage = targetLang;
@@ -157,7 +161,6 @@ class TranslatorServiceWrapper {
 
     } finally {
       this.isTranslating = false;
-      // 清除翻译进度状态
       if (typeof chrome !== 'undefined' && chrome.storage) {
         chrome.storage.local.remove('translationProgress');
       }

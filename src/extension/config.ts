@@ -45,6 +45,20 @@ const DEFAULT_TRANSLATOR_CONFIG: TranslatorConfig = {
   maxMultiplier: 2.0,
 };
 
+export function buildTranslatorConfig(
+  apiConfig: Partial<ApiConfig> | null | undefined
+): TranslatorConfig {
+  return {
+    ...DEFAULT_TRANSLATOR_CONFIG,
+    openaiBaseUrl: apiConfig?.openaiBaseUrl || DEFAULT_TRANSLATOR_CONFIG.openaiBaseUrl,
+    openaiApiKey: apiConfig?.openaiApiKey || '',
+    splitModel: apiConfig?.llmModel || DEFAULT_TRANSLATOR_CONFIG.splitModel,
+    translationModel: apiConfig?.llmModel || DEFAULT_TRANSLATOR_CONFIG.translationModel,
+    targetLanguage: apiConfig?.targetLanguage || DEFAULT_TRANSLATOR_CONFIG.targetLanguage,
+    threadNum: apiConfig?.threadNum || DEFAULT_TRANSLATOR_CONFIG.threadNum,
+  };
+}
+
 /** 支持的 LLM 模型列表 */
 export const SUPPORTED_MODELS: ModelOption[] = [
   { value: 'gpt-4o-mini', text: 'GPT-4o Mini (推荐)' },
@@ -156,15 +170,7 @@ export async function loadConfig(): Promise<TranslatorConfig> {
     if (typeof chrome !== 'undefined' && chrome.storage) {
       chrome.storage.local.get(['apiConfig'], (result: Record<string, unknown>) => {
         const apiConfig: ApiConfig = (result.apiConfig as ApiConfig) || {};
-        resolve({
-          ...DEFAULT_TRANSLATOR_CONFIG,
-          openaiBaseUrl: apiConfig.openaiBaseUrl || DEFAULT_TRANSLATOR_CONFIG.openaiBaseUrl,
-          openaiApiKey: apiConfig.openaiApiKey || '',
-          splitModel: apiConfig.llmModel || DEFAULT_TRANSLATOR_CONFIG.splitModel,
-          translationModel: apiConfig.llmModel || DEFAULT_TRANSLATOR_CONFIG.translationModel,
-          targetLanguage: apiConfig.targetLanguage || DEFAULT_TRANSLATOR_CONFIG.targetLanguage,
-          threadNum: apiConfig.threadNum || DEFAULT_TRANSLATOR_CONFIG.threadNum,
-        });
+        resolve(buildTranslatorConfig(apiConfig));
       });
     } else {
       resolve(DEFAULT_TRANSLATOR_CONFIG);

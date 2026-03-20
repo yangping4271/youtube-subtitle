@@ -5,7 +5,13 @@
 
 import { getDefaultEnglishSettings, getDefaultChineseSettings } from './config';
 import { translatorService } from './translator';
-import type { SimpleSubtitleEntry, SubtitleStyleSettings, VideoSubtitleData, TranslationProgress } from '../types';
+import type {
+  SimpleSubtitleEntry,
+  SubtitleStyleSettings,
+  VideoSubtitleData,
+  TranslationProgress,
+  ApiConfig,
+} from '../types';
 
 // 翻译任务的取消控制器
 let translationAbortController: AbortController | null = null;
@@ -70,6 +76,7 @@ interface ChromeMessage {
     openaiApiKey?: string;
     llmModel?: string;
     targetLanguage?: string;
+    threadNum?: number;
   };
   videoInfo?: {
     ytTitle: string;
@@ -556,7 +563,8 @@ class SubtitleExtensionBackground {
             }
           }
         },
-        translationAbortController.signal
+        translationAbortController.signal,
+        apiConfig as Partial<ApiConfig> | undefined
       );
 
       // 使用累积的结果或返回的结果
