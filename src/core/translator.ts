@@ -34,6 +34,52 @@ function parseXmlTags(response: string): Record<string, string> {
   return result;
 }
 
+function repairMalformedXml(response: string): { text: string; repairedCount: number } {
+  const openTagRegex = /<(\d+)>/g;
+  const openTags = Array.from(response.matchAll(openTagRegex));
+
+  if (openTags.length === 0) {
+    return { text: response, repairedCount: 0 };
+  }
+
+  let repairedCount = 0;
+  let repaired = '';
+  let cursor = 0;
+
+  for (let i = 0; i < openTags.length; i++) {
+    const openTag = openTags[i];
+    const id = openTag[1];
+    const start = openTag.index ?? 0;
+    const openTagText = openTag[0];
+    const contentStart = start + openTagText.length;
+    const nextStart = i + 1 < openTags.length
+      ? (openTags[i + 1].index ?? response.length)
+      : response.length;
+    const segment = response.slice(contentStart, nextStart);
+    const closeMatch = segment.match(/<\/(\d+)>?/);
+
+    repaired += response.slice(cursor, start);
+
+    if (closeMatch && closeMatch.index !== undefined) {
+      const content = segment.slice(0, closeMatch.index);
+      const expectedCloseTag = `</${id}>`;
+      if (closeMatch[0] !== expectedCloseTag) {
+        repairedCount++;
+      }
+      repaired += `<${id}>${content}${expectedCloseTag}`;
+    } else {
+      repairedCount++;
+      repaired += `<${id}>${segment}</${id}>`;
+    }
+
+    cursor = nextStart;
+  }
+
+  repaired += response.slice(cursor);
+
+  return { text: repaired, repairedCount };
+}
+
 /**
  * 清洗和截断上下文信息
  */
@@ -145,6 +191,7 @@ export class Translator {
         return null;
       });
 
+      let recoveredCount = 0;
       if (retryResults) {
         // 只用重试结果补充失败项，保留第一轮已成功的翻译
         if (results) {
@@ -152,10 +199,22 @@ export class Translator {
             const idx = results.findIndex(r => r.index === retryResult.index);
             if (idx >= 0 && !results[idx].translation.trim()) {
               results[idx] = retryResult;
+              if (retryResult.translation.trim()) {
+                recoveredCount++;
+              }
             }
           }
         } else {
           results = retryResults;
+          recoveredCount = retryResults.filter(r => r.translation.trim()).length;
+        }
+
+        const remainingFailedAfterRetry = results?.filter(r => !r.translation.trim()) || [];
+        logger.info(
+          `${prefix}Level 2 合并结果: 补回 ${recoveredCount} 条，仍失败 ${remainingFailedAfterRetry.length} 条；首轮成功条目保留`
+        );
+        if (remainingFailedAfterRetry.length === 0) {
+          logger.info(`${prefix}Level 2 已补齐所有失败条目，跳过 Level 3`);
         }
       }
     }
@@ -236,14 +295,19 @@ export class Translator {
     logger.info(`   输入JSON: ${JSON.stringify(inputObj)}`);
 
     const response = await this.client.callChat(systemPrompt, userPrompt, {
-      temperature: 0.7,
+      temperature: 0.3,
       timeout: 80000,
       signal,
     });
 
     logger.info(`${prefix}LLM原始返回数据:\n${response}`);
 
-    const xmlMap = parseXmlTags(response);
+    const repairedResponse = repairMalformedXml(response);
+    if (repairedResponse.repairedCount > 0) {
+      logger.info(`${prefix}XML 修复: 自动补全/纠正 ${repairedResponse.repairedCount} 处标签`);
+    }
+
+    const xmlMap = parseXmlTags(repairedResponse.text);
 
     const failedIds: number[] = [];
 
@@ -294,7 +358,7 @@ export class Translator {
         logger.info(`正在翻译字幕ID: ${key}`);
 
         const response = await this.client.callChat(systemPrompt, value, {
-          temperature: 0.7,
+          temperature: 0.3,
           timeout: 80000,
           signal,
         });
