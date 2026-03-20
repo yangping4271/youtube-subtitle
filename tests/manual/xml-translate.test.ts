@@ -15,8 +15,7 @@ function loadConfig(): TranslatorConfig {
   return {
     openaiBaseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
     openaiApiKey: process.env.OPENAI_API_KEY || '',
-    splitModel: process.env.SPLIT_MODEL || 'gpt-4o-mini',
-    translationModel: process.env.TRANSLATION_MODEL || 'gpt-4o',
+    model: process.env.MODEL || process.env.LLM_MODEL || 'gpt-4o',
     targetLanguage: 'zh',
     maxWordCountEnglish: 19,
     threadNum: 3,

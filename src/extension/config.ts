@@ -34,8 +34,7 @@ export const DEFAULT_API_CONFIG: ApiConfig = {
 const DEFAULT_TRANSLATOR_CONFIG: TranslatorConfig = {
   openaiBaseUrl: 'https://api.openai.com/v1',
   openaiApiKey: '',
-  splitModel: 'gpt-4o-mini',
-  translationModel: 'gpt-4o',
+  model: 'gpt-4o',
   targetLanguage: 'zh',
   maxWordCountEnglish: 19,
   threadNum: 3,  // 默认并发数，降低以避免 rate limit
@@ -52,8 +51,7 @@ export function buildTranslatorConfig(
     ...DEFAULT_TRANSLATOR_CONFIG,
     openaiBaseUrl: apiConfig?.openaiBaseUrl || DEFAULT_TRANSLATOR_CONFIG.openaiBaseUrl,
     openaiApiKey: apiConfig?.openaiApiKey || '',
-    splitModel: apiConfig?.llmModel || DEFAULT_TRANSLATOR_CONFIG.splitModel,
-    translationModel: apiConfig?.llmModel || DEFAULT_TRANSLATOR_CONFIG.translationModel,
+    model: apiConfig?.llmModel || DEFAULT_TRANSLATOR_CONFIG.model,
     targetLanguage: apiConfig?.targetLanguage || DEFAULT_TRANSLATOR_CONFIG.targetLanguage,
     threadNum: apiConfig?.threadNum || DEFAULT_TRANSLATOR_CONFIG.threadNum,
   };

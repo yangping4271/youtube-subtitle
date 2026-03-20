@@ -54,13 +54,13 @@ export class TranslatorService {
 
       const processData = subtitleData.splitToWordSegments();
       logger.info(`转换为单词: ${processData.length()} 个单词`);
-      logger.info(`使用模型: ${this.config.splitModel}`);
+      logger.info(`使用模型: ${this.config.model}`);
 
-      const splitClient = new OpenAIClient(this.config, 'split');
+      const client = new OpenAIClient(this.config);
 
       await this.translateWithPipeline(
         processData,
-        splitClient,
+        client,
         options,
         onPartialResult ?? (() => {}),
         onProgress
@@ -89,7 +89,7 @@ export class TranslatorService {
    */
   private async translateWithPipeline(
     processData: SubtitleData,
-    splitClient: OpenAIClient,
+    client: OpenAIClient,
     options: TranslateOptions,
     onPartialResult: (partial: BilingualSubtitles, isFirst: boolean) => void,
     onProgress?: ProgressCallback
@@ -115,8 +115,7 @@ export class TranslatorService {
 
     this.checkAborted(signal);
 
-    const translationClient = new OpenAIClient(this.config, 'translation');
-    const translator = new Translator(translationClient, this.config);
+    const translator = new Translator(client, this.config);
 
     const { threadNum } = this.config;
     logger.info(`并发控制: 最多同时处理 ${threadNum} 个批次`);
@@ -134,7 +133,7 @@ export class TranslatorService {
       const batchResult = await mergeSegmentsWithinBatch(
         batch,
         wordSegments,
-        splitClient,
+        client,
         this.config,
         batchNumber,
         signal

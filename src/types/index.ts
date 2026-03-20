@@ -58,8 +58,7 @@ export interface ApiConfig {
 export interface TranslatorConfig {
   openaiBaseUrl: string;
   openaiApiKey: string;
-  splitModel: string;
-  translationModel: string;
+  model: string;
   targetLanguage: string;
   maxWordCountEnglish: number;
   threadNum: number;

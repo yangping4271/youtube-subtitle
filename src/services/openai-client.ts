@@ -13,20 +13,10 @@ export class OpenAIClient {
   private apiKey: string;
   private model: string;
 
-  constructor(config: TranslatorConfig, modelType: 'split' | 'translation' = 'translation') {
+  constructor(config: TranslatorConfig) {
     this.baseUrl = config.openaiBaseUrl;
     this.apiKey = config.openaiApiKey;
-
-    // 根据类型选择模型
-    switch (modelType) {
-      case 'split':
-        this.model = config.splitModel;
-        break;
-      case 'translation':
-      default:
-        this.model = config.translationModel;
-        break;
-    }
+    this.model = config.model;
   }
 
   /**

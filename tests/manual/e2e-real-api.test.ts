@@ -21,8 +21,7 @@ function loadConfig(): TranslatorConfig {
   return {
     openaiBaseUrl: process.env.OPENAI_BASE_URL || '',
     openaiApiKey: process.env.OPENAI_API_KEY,
-    splitModel: process.env.SPLIT_MODEL || 'gpt-4',
-    translationModel: process.env.TRANSLATION_MODEL || 'gpt-4',
+    model: process.env.MODEL || process.env.LLM_MODEL || 'gpt-4',
     targetLanguage: 'zh',
     maxWordCountEnglish: 19,
     toleranceMultiplier: 1.2,
@@ -97,7 +96,7 @@ describe('端到端测试 - 真实 API', () => {
     console.log(`   首批句子数: ${batches[0].length}`);
 
     // 6. 创建 OpenAI 客户端
-    const client = new OpenAIClient(config, 'split');
+    const client = new OpenAIClient(config);
     console.log('✅ OpenAI 客户端创建成功');
 
     // 7. 处理首批（只测试首批以节省 API 调用）
@@ -169,8 +168,7 @@ describe('端到端测试 - 真实 API', () => {
     console.log(`✅ 分批完成: ${batches.length} 批`);
 
     // 6. 创建客户端
-    const splitClient = new OpenAIClient(config, 'split');
-    const translationClient = new OpenAIClient(config, 'translation');
+    const client = new OpenAIClient(config);
     console.log('✅ OpenAI 客户端创建成功');
 
     // 7. 处理首批：断句 + 时间戳对齐
@@ -180,7 +178,7 @@ describe('端到端测试 - 真实 API', () => {
     const splitResult = await mergeSegmentsWithinBatch(
       firstBatch,
       words,
-      splitClient,
+      client,
       config
     );
 
@@ -195,7 +193,7 @@ describe('端到端测试 - 真实 API', () => {
       const systemPrompt = `You are a professional translator. Translate the following English subtitle to ${config.targetLanguage}. Only return the translation, no explanations.`;
       const userPrompt = segment.text;
 
-      const translation = await translationClient.callChat(systemPrompt, userPrompt, {
+      const translation = await client.callChat(systemPrompt, userPrompt, {
         temperature: 0.3,
         timeout: 30000,
       });
@@ -230,4 +228,3 @@ describe('端到端测试 - 真实 API', () => {
     console.log('\n✅ 完整流水线测试通过（包括翻译）！');
   }, 180000); // 3分钟超时
 });
-

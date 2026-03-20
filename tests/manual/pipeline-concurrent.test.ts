@@ -33,8 +33,7 @@ function loadConfig(): TranslatorConfig {
     return {
       openaiBaseUrl: envVars.OPENAI_BASE_URL || '',
       openaiApiKey: envVars.OPENAI_API_KEY || '',
-      splitModel: envVars.SPLIT_MODEL || 'gpt-4',
-      translationModel: envVars.TRANSLATION_MODEL || 'gpt-4',
+      model: envVars.MODEL || envVars.LLM_MODEL || 'gpt-4',
       targetLanguage: 'zh',
       maxWordCountEnglish: 19,
       toleranceMultiplier: 1.2,

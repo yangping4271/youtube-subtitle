@@ -26,8 +26,7 @@ function createConfig(model: string): TranslatorConfig {
   return {
     openaiBaseUrl: 'https://api.openai.com/v1',
     openaiApiKey: 'test-key',
-    splitModel: model,
-    translationModel: model,
+    model,
     targetLanguage: 'zh',
     maxWordCountEnglish: 19,
     threadNum: 3,
@@ -95,11 +94,11 @@ describe('TranslatorServiceWrapper', () => {
     expect(mocks.loadConfig).toHaveBeenCalledTimes(2);
     expect(mocks.serviceCtor).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ translationModel: 'old-model' })
+      expect.objectContaining({ model: 'old-model' })
     );
     expect(mocks.serviceCtor).toHaveBeenNthCalledWith(
       3,
-      expect.objectContaining({ translationModel: 'new-model' })
+      expect.objectContaining({ model: 'new-model' })
     );
   });
 
@@ -126,7 +125,7 @@ describe('TranslatorServiceWrapper', () => {
     );
     expect(mocks.loadConfig).not.toHaveBeenCalled();
     expect(mocks.serviceCtor).toHaveBeenCalledWith(
-      expect.objectContaining({ translationModel: 'request-model' })
+      expect.objectContaining({ model: 'request-model' })
     );
   });
 });

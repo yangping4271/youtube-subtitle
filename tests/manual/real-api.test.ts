@@ -28,8 +28,7 @@ function loadEnvConfig(): TranslatorConfig {
   return {
     openaiBaseUrl: envVars.OPENAI_BASE_URL || 'https://api.openai.com/v1',
     openaiApiKey: envVars.OPENAI_API_KEY || '',
-    splitModel: envVars.SPLIT_MODEL || envVars.LLM_MODEL || 'gpt-4o-mini',
-    translationModel: envVars.TRANSLATION_MODEL || envVars.LLM_MODEL || 'gpt-4o',
+    model: envVars.MODEL || envVars.LLM_MODEL || 'gpt-4o',
     targetLanguage: 'zh',
     maxWordCountEnglish: 19,
     threadNum: 3,
@@ -114,8 +113,7 @@ describe('真实字幕文件集成测试', () => {
     const config = loadEnvConfig();
     console.log(`\n⚙️  配置信息:`);
     console.log(`  - API Base URL: ${config.openaiBaseUrl}`);
-    console.log(`  - Split Model: ${config.splitModel}`);
-    console.log(`  - Translation Model: ${config.translationModel}`);
+    console.log(`  - Model: ${config.model}`);
     console.log(`  - API Key: ${config.openaiApiKey ? '已配置' : '未配置'}\n`);
 
     if (!config.openaiApiKey) {
