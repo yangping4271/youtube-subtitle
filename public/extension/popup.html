@@ -26,15 +26,12 @@
         <!-- 标签页导航 -->
         <div class="tab-navigation">
             <button class="tab-button active" data-tab="files">
-                <span class="tab-icon">📁</span>
                 <span class="tab-text">字幕管理</span>
             </button>
             <button class="tab-button" data-tab="api">
-                <span class="tab-icon">🔑</span>
                 <span class="tab-text">API设置</span>
             </button>
             <button class="tab-button" data-tab="settings">
-                <span class="tab-icon">⚙️</span>
                 <span class="tab-text">样式设定</span>
             </button>
         </div>
@@ -48,11 +45,11 @@
                     <!-- 当前视频信息 -->
                     <div class="video-info-card">
                         <div class="info-row">
-                            <span class="info-label">🎬 当前视频</span>
+                            <span class="info-label">视频识别</span>
                             <span class="info-value" id="currentVideoId">未检测到视频</span>
                         </div>
                         <div class="info-row">
-                            <span class="info-label">📊 状态</span>
+                            <span class="info-label">字幕状态</span>
                             <span class="info-value" id="autoLoadStatus">等待开始</span>
                         </div>
                         <div class="progress-row" id="progressRow" style="display: none;">
@@ -66,7 +63,6 @@
                     <!-- 翻译按钮组 -->
                     <div class="translate-btn-group">
                         <button class="translate-main-btn" id="translateBtn">
-                            <span class="btn-icon">🚀</span>
                             <span class="btn-text">开始翻译</span>
                         </button>
                     </div>
@@ -77,14 +73,13 @@
             <div class="tab-content" id="apiTab">
                 <div class="settings-card">
                     <div class="settings-header">
-                        <span>🔑 API 配置</span>
+                        <span>API 配置</span>
                     </div>
 
                     <div class="settings-grid">
                         <!-- API Base URL -->
                         <div class="setting-item">
                             <div class="setting-label">
-                                <span class="setting-icon">🌐</span>
                                 <span class="setting-name">API Base URL</span>
                             </div>
                             <input type="text" id="apiBaseUrl" class="config-input"
@@ -94,7 +89,6 @@
                         <!-- API Key -->
                         <div class="setting-item">
                             <div class="setting-label">
-                                <span class="setting-icon">🔐</span>
                                 <span class="setting-name">API Key</span>
                             </div>
                             <div class="api-key-input-wrapper">
@@ -108,7 +102,6 @@
                         <!-- LLM Model -->
                         <div class="setting-item">
                             <div class="setting-label">
-                                <span class="setting-icon">🤖</span>
                                 <span class="setting-name">翻译模型</span>
                             </div>
                             <input type="text" id="llmModel" class="config-input" placeholder="输入模型名称" value="">
@@ -117,7 +110,6 @@
                         <!-- Target Language -->
                         <div class="setting-item">
                             <div class="setting-label">
-                                <span class="setting-icon">🌍</span>
                                 <span class="setting-name">目标语言</span>
                             </div>
                             <select id="targetLanguage" class="setting-select">
@@ -128,7 +120,6 @@
                         <!-- 并发数 -->
                         <div class="setting-item">
                             <div class="setting-label">
-                                <span class="setting-icon">⚡</span>
                                 <span class="setting-name">并发数</span>
                                 <span class="setting-value" id="threadNumValue">3</span>
                             </div>
@@ -139,19 +130,12 @@
 
                     <!-- 操作按钮 -->
                     <div class="api-actions">
-                        <button class="action-btn test-api-btn" id="testApiBtn">
-                            <span>🔍</span>
-                            <span>测试连接</span>
-                        </button>
-                        <button class="action-btn save-api-btn" id="saveApiBtn">
-                            <span>💾</span>
-                            <span>保存配置</span>
-                        </button>
+                        <button class="action-btn test-api-btn" id="testApiBtn">测试连接</button>
+                        <button class="action-btn save-api-btn" id="saveApiBtn">保存配置</button>
                     </div>
 
                     <!-- API状态显示 -->
                     <div class="api-status" id="apiStatus" style="display: none;">
-                        <span class="api-status-icon" id="apiStatusIcon">✓</span>
                         <span class="api-status-text" id="apiStatusText">API连接成功</span>
                     </div>
                 </div>
@@ -159,7 +143,7 @@
                 <!-- 使用说明 -->
                 <div class="tips-card">
                     <div class="tips-header">
-                        <span>💡 配置说明</span>
+                        <span>配置说明</span>
                     </div>
                     <div class="tip-item">
                         <span class="tip-number">1</span>
@@ -196,9 +180,9 @@
                 <!-- 详细设置 -->
                 <div class="settings-card">
                     <div class="settings-header">
-                        <span>⚙️ 详细设置</span>
+                        <span>详细设置</span>
                         <button class="reset-btn" id="resetSettings" title="恢复默认">
-                            <span>🔄</span>
+                            重置
                         </button>
                     </div>
 
@@ -206,7 +190,6 @@
                         <!-- 字体大小 -->
                         <div class="setting-item">
                             <div class="setting-label">
-                                <span class="setting-icon">📏</span>
                                 <span class="setting-name">字体大小</span>
                                 <span class="setting-value" id="fontSizeValue">30px</span>
                             </div>
@@ -216,7 +199,6 @@
                         <!-- 字体颜色 -->
                         <div class="setting-item">
                             <div class="setting-label">
-                                <span class="setting-icon">🎨</span>
                                 <span class="setting-name">字体颜色</span>
                                 <span class="color-preview" id="colorPreview"></span>
                             </div>
@@ -240,7 +222,6 @@
                         <!-- 字体类型 -->
                         <div class="setting-item">
                             <div class="setting-label">
-                                <span class="setting-icon">🎭</span>
                                 <span class="setting-name">字体类型</span>
                             </div>
                             <select id="fontFamily" class="setting-select">
@@ -251,7 +232,6 @@
                         <!-- 字体粗细 -->
                         <div class="setting-item">
                             <div class="setting-label">
-                                <span class="setting-icon">💪</span>
                                 <span class="setting-name">字体粗细</span>
                             </div>
                             <select id="fontWeight" class="setting-select">

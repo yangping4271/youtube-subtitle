@@ -1500,7 +1500,8 @@ class PopupController {
         const statusElement = document.getElementById('autoLoadStatus');
 
         if (videoIdElement) {
-            videoIdElement.textContent = videoId || '未检测到视频';
+            videoIdElement.textContent = videoId ? '已识别当前视频' : '未检测到视频';
+            videoIdElement.title = videoId || '';
         }
 
         if (statusElement) {
@@ -1776,15 +1777,11 @@ class PopupController {
 
     showApiStatus(type, message) {
         const apiStatus = document.getElementById('apiStatus');
-        const apiStatusIcon = document.getElementById('apiStatusIcon');
         const apiStatusText = document.getElementById('apiStatusText');
 
         if (apiStatus) {
             apiStatus.style.display = 'flex';
             apiStatus.className = `api-status ${type}`;
-        }
-        if (apiStatusIcon) {
-            apiStatusIcon.textContent = type === 'success' ? '✓' : type === 'error' ? '✗' : '⏳';
         }
         if (apiStatusText) {
             apiStatusText.textContent = message;
@@ -1857,7 +1854,7 @@ class PopupController {
 
         if (translateBtn) {
             translateBtn.disabled = false; // 允许点击取消
-            translateBtn.innerHTML = '<span>❌ 取消翻译</span>';
+            translateBtn.innerHTML = '<span class="btn-text">取消翻译</span>';
             translateBtn.classList.add('translating');
             // 绑定取消事件(只绑定一次)
             if (!translateBtn._cancelBound) {
@@ -1991,7 +1988,7 @@ class PopupController {
         const translateBtn = document.getElementById('translateBtn');
         if (translateBtn) {
             translateBtn.disabled = false;
-            translateBtn.innerHTML = '<span>🚀 开始翻译</span>';
+            translateBtn.innerHTML = '<span class="btn-text">开始翻译</span>';
             translateBtn.classList.remove('translating');
             translateBtn._cancelBound = false;
             translateBtn.onclick = () => this.startTranslation();
@@ -2007,7 +2004,7 @@ class PopupController {
 
         const currentVideoId = await this.getCurrentVideoId();
         if (!currentVideoId) {
-            translateBtn.innerHTML = '<span class="btn-icon">🚀</span><span class="btn-text">开始翻译</span>';
+            translateBtn.innerHTML = '<span class="btn-text">开始翻译</span>';
             return;
         }
 
@@ -2016,9 +2013,9 @@ class PopupController {
         const cached = result[cacheKey];
 
         if (cached && (cached.englishSubtitles?.length > 0 || cached.chineseSubtitles?.length > 0)) {
-            translateBtn.innerHTML = '<span class="btn-icon">🔄</span><span class="btn-text">重新翻译</span>';
+            translateBtn.innerHTML = '<span class="btn-text">重新翻译</span>';
         } else {
-            translateBtn.innerHTML = '<span class="btn-icon">🚀</span><span class="btn-text">开始翻译</span>';
+            translateBtn.innerHTML = '<span class="btn-text">开始翻译</span>';
         }
     }
 
@@ -2158,7 +2155,7 @@ class PopupController {
             // 立即将按钮变成"取消翻译"状态
             if (translateBtn) {
                 translateBtn.disabled = false; // 不禁用按钮，允许点击取消
-                translateBtn.innerHTML = '<span>❌ 取消翻译</span>';
+                translateBtn.innerHTML = '<span class="btn-text">取消翻译</span>';
                 translateBtn.classList.add('translating');
 
                 // 绑定取消事件（只绑定一次）
