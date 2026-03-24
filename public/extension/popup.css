@@ -4,33 +4,34 @@
 
 /* CSS变量系统 - 电影院主题 */
 :root {
-    /* 🎬 电影院色彩系统 */
-    --primary-gradient: linear-gradient(135deg, #d4af37 0%, #f4d03f 100%);
-    --primary-color: #d4af37;
-    --primary-dark: #b8941f;
-    --secondary-color: #ff4444;
+    /* 🎬 编辑化深色主题 */
+    --primary-gradient: linear-gradient(135deg, #f6c75a 0%, #ff9f5a 100%);
+    --primary-color: #f6c75a;
+    --primary-dark: #d88b3d;
+    --secondary-color: #ff6b57;
 
     /* 📝 文字颜色 */
-    --text-primary: #e8e8e8;
-    --text-secondary: #999999;
-    --text-light: #666666;
+    --text-primary: #f5f7fb;
+    --text-secondary: #93a0b8;
+    --text-light: #66748f;
     --text-white: #ffffff;
 
-    /* 📦 背景色系 - 深色电影院风格 */
-    --bg-primary: #0a0a0a;
-    --bg-secondary: #1a1a1a;
-    --bg-tertiary: #252525;
-    --bg-overlay: rgba(0, 0, 0, 0.5);
+    /* 📦 背景色系 */
+    --bg-primary: #07111f;
+    --bg-secondary: #0d1726;
+    --bg-tertiary: #152338;
+    --bg-elevated: #1c2d46;
+    --bg-overlay: rgba(3, 8, 18, 0.68);
 
-    /* 🎯 状态色彩 - 电影院风格 */
-    --success-color: #4ade80;
-    --success-bg: rgba(74, 222, 128, 0.15);
-    --warning-color: #fbbf24;
-    --warning-bg: rgba(251, 191, 36, 0.15);
-    --error-color: #ff4444;
-    --error-bg: rgba(255, 68, 68, 0.15);
-    --info-color: #60a5fa;
-    --info-bg: rgba(96, 165, 250, 0.15);
+    /* 🎯 状态色彩 */
+    --success-color: #47d8a0;
+    --success-bg: rgba(71, 216, 160, 0.16);
+    --warning-color: #ffcf5a;
+    --warning-bg: rgba(255, 207, 90, 0.16);
+    --error-color: #ff7a67;
+    --error-bg: rgba(255, 122, 103, 0.16);
+    --info-color: #7ab6ff;
+    --info-bg: rgba(122, 182, 255, 0.16);
 
     /* 📐 间距系统 */
     --spacing-xs: 4px;
@@ -47,13 +48,13 @@
     --radius-lg: 12px;
     --radius-xl: 16px;
 
-    /* 🌟 阴影系统 - 电影院发光效果 */
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.8);
-    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.6);
-    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.7);
-    --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.8);
-    --shadow-gold: 0 0 20px rgba(212, 175, 55, 0.3);
-    --shadow-gold-strong: 0 0 30px rgba(212, 175, 55, 0.5);
+    /* 🌟 阴影系统 */
+    --shadow-sm: 0 10px 24px rgba(3, 8, 18, 0.18);
+    --shadow-md: 0 16px 40px rgba(3, 8, 18, 0.24);
+    --shadow-lg: 0 22px 56px rgba(3, 8, 18, 0.32);
+    --shadow-xl: 0 28px 72px rgba(0, 0, 0, 0.42);
+    --shadow-gold: 0 12px 40px rgba(246, 199, 90, 0.14);
+    --shadow-gold-strong: 0 18px 56px rgba(246, 199, 90, 0.24);
 
     /* 🔄 动画时长 */
     --transition-fast: 150ms;
@@ -89,9 +90,12 @@
 
 body {
     font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    width: 380px;
-    height: 520px;
-    background: var(--bg-primary);
+    width: 412px;
+    height: 580px;
+    background:
+        radial-gradient(circle at top left, rgba(122, 182, 255, 0.22), transparent 34%),
+        radial-gradient(circle at top right, rgba(246, 199, 90, 0.18), transparent 26%),
+        linear-gradient(180deg, #08111e 0%, #0b1420 100%);
     color: var(--text-primary);
     font-size: 14px;
     line-height: 1.5;
@@ -108,7 +112,7 @@ body::before {
     right: 0;
     bottom: 0;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-    opacity: 0.03;
+    opacity: 0.02;
     pointer-events: none;
     z-index: 1;
 }
@@ -118,61 +122,113 @@ body::before {
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: var(--bg-secondary);
-    border-radius: var(--radius-lg);
+    background:
+        linear-gradient(180deg, rgba(19, 33, 53, 0.98) 0%, rgba(10, 20, 34, 0.98) 100%);
+    border-radius: 24px;
     box-shadow: var(--shadow-xl);
     margin: 0;
     overflow: hidden;
     position: relative;
     z-index: 2;
-    border: 1px solid rgba(212, 175, 55, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 /* ========================================
    📄 标题栏设计 - 电影院风格
    ======================================== */
 .header {
-    background: linear-gradient(135deg, rgba(212, 175, 55, 0.15) 0%, rgba(244, 208, 63, 0.1) 100%);
+    background:
+        linear-gradient(135deg, rgba(246, 199, 90, 0.12) 0%, rgba(122, 182, 255, 0.08) 100%);
     color: var(--text-white);
-    padding: var(--spacing-lg);
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-    box-shadow: 0 2px 10px rgba(212, 175, 55, 0.2);
+    padding: 18px 18px 16px;
     position: relative;
     z-index: 10;
-    border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.header-glow {
+    position: absolute;
+    inset: auto -30px -50px auto;
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(246, 199, 90, 0.28) 0%, rgba(246, 199, 90, 0) 72%);
+    pointer-events: none;
 }
 
 .header-content {
     display: flex;
-    justify-content: center;
     align-items: center;
+    gap: 14px;
+}
+
+.brand-mark {
+    width: 46px;
+    height: 46px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(246, 199, 90, 0.9) 0%, rgba(255, 159, 90, 0.85) 100%);
+    color: #201102;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    box-shadow: var(--shadow-gold);
+    flex-shrink: 0;
 }
 
 .app-info {
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+    gap: 3px;
+    min-width: 0;
+}
+
+.app-meta {
+    display: flex;
     align-items: center;
-    text-align: center;
-    gap: 4px;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.header-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
 }
 
 .app-info h1 {
     font-family: 'Playfair Display', 'Cormorant Garamond', serif;
-    font-size: 20px;
+    font-size: 24px;
     font-weight: 700;
     margin-bottom: 0;
-    color: var(--primary-color);
-    text-shadow: var(--shadow-gold);
-    letter-spacing: 0.5px;
+    color: var(--text-white);
+    letter-spacing: 0.01em;
+    line-height: 1.08;
 }
 
 .app-info .version {
     font-size: 10px;
-    opacity: 0.7;
-    color: var(--text-secondary);
-    font-weight: 500;
-    letter-spacing: 1px;
+    color: var(--primary-color);
+    font-weight: 700;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
+}
+
+.header-subtitle {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    max-width: 280px;
 }
 
 /* 🎛️ 主开关设计 */
@@ -236,53 +292,53 @@ body::before {
    ======================================== */
 .tab-navigation {
     display: flex;
-    background: var(--bg-tertiary);
-    padding: var(--spacing-xs);
-    border-radius: var(--radius-md);
-    margin: var(--spacing-lg) var(--spacing-lg) 0;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(212, 175, 55, 0.1);
+    background: rgba(7, 17, 31, 0.66);
+    padding: 6px;
+    border-radius: 18px;
+    margin: 14px 16px 0;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    gap: 4px;
 }
 
 .tab-button {
     flex: 1;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
     justify-content: center;
-    padding: var(--spacing-md) var(--spacing-sm);
+    gap: 6px;
+    padding: 10px 6px;
     background: transparent;
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: 14px;
     cursor: pointer;
     transition: all var(--transition-fast);
     color: var(--text-secondary);
     position: relative;
-    min-height: 50px;
+    min-height: 42px;
 }
 
 .tab-button:hover {
-    background: rgba(212, 175, 55, 0.1);
-    color: var(--primary-color);
-    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-white);
 }
 
 .tab-button.active {
-    background: linear-gradient(135deg, rgba(212, 175, 55, 0.2) 0%, rgba(244, 208, 63, 0.15) 100%);
-    color: var(--primary-color);
-    box-shadow: var(--shadow-gold);
+    background: linear-gradient(135deg, rgba(246, 199, 90, 0.18) 0%, rgba(255, 159, 90, 0.12) 100%);
+    color: var(--text-white);
+    box-shadow: inset 0 0 0 1px rgba(246, 199, 90, 0.25);
     font-weight: 600;
-    border: 1px solid rgba(212, 175, 55, 0.3);
 }
 
 .tab-icon {
-    font-size: 18px;
-    margin-bottom: var(--spacing-xs);
-    display: block;
+    font-size: 14px;
+    margin-bottom: 0;
+    display: inline-flex;
 }
 
 .tab-text {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: inherit;
     white-space: nowrap;
 }
@@ -294,6 +350,7 @@ body::before {
     flex: 1;
     position: relative;
     overflow: hidden;
+    min-height: 0;
 }
 
 .tab-content {
@@ -304,17 +361,44 @@ body::before {
     bottom: 0;
     opacity: 0;
     visibility: hidden;
-    transform: translateX(20px);
-    transition: all var(--transition-normal);
+    transform: translateX(14px);
+    transition: opacity var(--transition-normal), transform var(--transition-normal), visibility var(--transition-normal);
     overflow-y: auto;
     overflow-x: hidden;
-    padding: var(--spacing-md);
+    padding: 14px 16px 16px;
 }
 
 .tab-content.active {
     opacity: 1;
     visibility: visible;
     transform: translateX(0);
+}
+
+#filesTab {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+#filesTab.active {
+    display: grid;
+    grid-template-columns: 150px minmax(0, 1fr);
+    gap: 12px;
+    align-content: start;
+}
+
+#filesTab .subtitle-source-section {
+    margin: 0;
+}
+
+#filesTab .srt-upload-section {
+    grid-column: 1 / -1;
+    margin-bottom: 0;
+}
+
+#filesTab .translate-control-section {
+    grid-column: 2;
+    grid-row: 1;
 }
 
 /* 自定义滚动条 - 电影院风格 */
@@ -786,11 +870,12 @@ body::before {
 
 /* 🔄 语言切换器 */
 .language-switcher {
-    background: var(--bg-secondary);
-    border-radius: var(--radius-lg);
+    background: linear-gradient(180deg, rgba(17, 30, 48, 0.96) 0%, rgba(13, 23, 38, 0.96) 100%);
+    border-radius: 18px;
     padding: var(--spacing-lg);
     margin-bottom: var(--spacing-lg);
-    border: 2px solid var(--bg-tertiary);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: var(--shadow-sm);
 }
 
 .switch-header {
@@ -801,17 +886,19 @@ body::before {
 }
 
 .switch-label {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .language-buttons {
     display: flex;
-    background: var(--bg-tertiary);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-xs);
-    gap: var(--spacing-xs);
+    background: rgba(7, 17, 31, 0.64);
+    border-radius: 16px;
+    padding: 4px;
+    gap: 4px;
 }
 
 .lang-btn {
@@ -820,10 +907,10 @@ body::before {
     align-items: center;
     justify-content: center;
     gap: var(--spacing-sm);
-    padding: var(--spacing-md);
+    padding: 11px 10px;
     background: transparent;
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: 12px;
     cursor: pointer;
     transition: all var(--transition-fast);
     color: var(--text-secondary);
@@ -832,15 +919,15 @@ body::before {
 }
 
 .lang-btn:hover {
-    background: rgba(102, 126, 234, 0.1);
-    color: var(--primary-color);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-white);
 }
 
 .lang-btn.active {
-    background: var(--bg-primary);
-    color: var(--primary-color);
+    background: linear-gradient(135deg, rgba(246, 199, 90, 0.18) 0%, rgba(255, 159, 90, 0.12) 100%);
+    color: var(--text-white);
     font-weight: 600;
-    box-shadow: var(--shadow-sm);
+    box-shadow: inset 0 0 0 1px rgba(246, 199, 90, 0.24);
 }
 
 .lang-flag {
@@ -989,9 +1076,9 @@ body::before {
 
 /* ⚙️ 设置卡片 - 电影院风格 */
 .settings-card {
-    background: var(--bg-tertiary);
-    border: 1px solid rgba(212, 175, 55, 0.2);
-    border-radius: var(--radius-lg);
+    background: linear-gradient(180deg, rgba(18, 31, 49, 0.98) 0%, rgba(13, 23, 38, 0.98) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 18px;
     padding: var(--spacing-lg);
     box-shadow: var(--shadow-md);
 }
@@ -1001,9 +1088,11 @@ body::before {
     justify-content: space-between;
     align-items: center;
     margin-bottom: var(--spacing-lg);
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 12px;
+    font-weight: 700;
     color: var(--text-primary);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .reset-btn {
@@ -1038,6 +1127,13 @@ body::before {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-sm);
+    padding: 12px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.setting-item:first-child {
+    padding-top: 0;
+    border-top: none;
 }
 
 .setting-label {
@@ -1079,7 +1175,7 @@ body::before {
 .setting-slider {
     width: 100%;
     height: 6px;
-    background: var(--bg-tertiary);
+    background: rgba(255, 255, 255, 0.08);
     outline: none;
     border-radius: 3px;
     -webkit-appearance: none;
@@ -1118,10 +1214,10 @@ body::before {
 
 .setting-select {
     flex: 1;
-    padding: var(--spacing-sm) var(--spacing-md);
-    border: 1px solid rgba(212, 175, 55, 0.2);
-    border-radius: var(--radius-md);
-    background: var(--bg-secondary);
+    padding: 10px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    background: rgba(7, 17, 31, 0.66);
     font-size: 12px;
     cursor: pointer;
     transition: all var(--transition-fast);
@@ -1198,13 +1294,17 @@ body::before {
 
 /* ℹ️ 关于标签页样式 - 电影院风格 */
 .about-card {
-    background: var(--bg-tertiary);
-    border-radius: var(--radius-lg);
+    background: linear-gradient(180deg, rgba(18, 31, 49, 0.98) 0%, rgba(13, 23, 38, 0.98) 100%);
+    border-radius: 18px;
     padding: var(--spacing-xl);
     margin-bottom: var(--spacing-lg);
-    border: 1px solid rgba(212, 175, 55, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     text-align: center;
     box-shadow: var(--shadow-md);
+}
+
+.logo-text h3 {
+    font-size: 20px;
 }
 
 .app-logo {
@@ -1247,14 +1347,14 @@ body::before {
     align-items: center;
     gap: var(--spacing-sm);
     padding: var(--spacing-md);
-    background: var(--bg-primary);
-    border-radius: var(--radius-md);
-    border: 2px solid var(--bg-tertiary);
+    background: rgba(7, 17, 31, 0.72);
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
     transition: all var(--transition-fast);
 }
 
 .feature-item:hover {
-    border-color: var(--primary-color);
+    border-color: rgba(246, 199, 90, 0.28);
     transform: translateY(-2px);
     box-shadow: var(--shadow-sm);
 }
@@ -1300,27 +1400,35 @@ body::before {
 }
 
 .tips-card {
-    background: var(--bg-tertiary);
-    border: 1px solid rgba(212, 175, 55, 0.2);
-    border-radius: var(--radius-lg);
+    background: linear-gradient(180deg, rgba(18, 31, 49, 0.98) 0%, rgba(13, 23, 38, 0.98) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 18px;
     padding: var(--spacing-lg);
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--shadow-sm);
 }
 
 .tips-header {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-secondary);
     margin-bottom: var(--spacing-md);
-    text-align: center;
+    text-align: left;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .tip-item {
     display: flex;
     align-items: flex-start;
     gap: var(--spacing-md);
-    margin-bottom: var(--spacing-md);
-    padding: var(--spacing-sm) 0;
+    margin-bottom: 0;
+    padding: 10px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tip-item:first-of-type {
+    border-top: none;
+    padding-top: 0;
 }
 
 .tip-item:last-child {
@@ -1848,24 +1956,24 @@ body::before {
 
 .config-input {
     width: 100%;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(212, 175, 55, 0.2);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-sm) var(--spacing-md);
+    background: rgba(7, 17, 31, 0.66);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 10px 12px;
     color: var(--text-white);
-    font-size: 14px;
+    font-size: 13px;
     font-family: 'Monaco', 'Menlo', monospace;
 }
 
 .config-input::placeholder {
-    color: rgba(255, 255, 255, 0.4);
+    color: rgba(147, 160, 184, 0.55);
 }
 
 .config-input:focus {
     outline: none;
     border-color: var(--primary-color);
-    background: rgba(0, 0, 0, 0.4);
-    box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.15);
+    background: rgba(7, 17, 31, 0.8);
+    box-shadow: 0 0 0 3px rgba(246, 199, 90, 0.12);
 }
 
 /* 配置帮助 */
@@ -1930,9 +2038,9 @@ body::before {
 }
 
 .toggle-visibility {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--bg-tertiary);
-    border-radius: var(--radius-md);
+    background: rgba(7, 17, 31, 0.66);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
     padding: var(--spacing-sm);
     cursor: pointer;
     font-size: 14px;
@@ -1965,7 +2073,7 @@ body::before {
     gap: var(--spacing-md);
     margin-top: var(--spacing-xl);
     padding-top: var(--spacing-lg);
-    border-top: 1px solid var(--bg-tertiary);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .test-api-btn,
@@ -1985,9 +2093,9 @@ body::before {
 }
 
 .test-api-btn {
-    background: var(--bg-tertiary);
+    background: rgba(7, 17, 31, 0.66);
     color: var(--text-primary);
-    border: 1px solid rgba(212, 175, 55, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .test-api-btn:hover {
@@ -2081,20 +2189,20 @@ body::before {
     gap: var(--spacing-md);
     margin-top: var(--spacing-md);
     padding-top: var(--spacing-md);
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .progress-bar {
     flex: 1;
     height: 8px;
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.12);
     border-radius: 4px;
     overflow: hidden;
 }
 
 .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #10b981, #34d399);
+    background: linear-gradient(90deg, #7ab6ff, #47d8a0);
     border-radius: 4px;
     transition: width 0.3s ease-out;
 }
@@ -2124,25 +2232,37 @@ body::before {
    ======================================== */
 
 .subtitle-source-section {
-    background: var(--bg-secondary);
-    border-radius: var(--radius-lg);
-    padding: var(--spacing-lg);
-    margin-bottom: var(--spacing-lg);
+    background: linear-gradient(180deg, rgba(20, 35, 56, 0.98) 0%, rgba(12, 22, 35, 0.98) 100%);
+    border-radius: 20px;
+    padding: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: var(--shadow-sm);
 }
 
 .source-header {
-    margin-bottom: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 12px;
 }
 
 .source-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-white);
+    letter-spacing: 0.02em;
+}
+
+.source-description {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.45;
 }
 
 .source-options {
     display: flex;
-    gap: var(--spacing-md);
+    gap: 10px;
+    flex-direction: column;
 }
 
 .source-option {
@@ -2150,24 +2270,27 @@ body::before {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-md) var(--spacing-lg);
-    background: var(--bg-primary);
-    border: 2px solid var(--bg-tertiary);
-    border-radius: var(--radius-md);
+    gap: 8px;
+    padding: 14px 12px;
+    background: rgba(6, 14, 24, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
     cursor: pointer;
     transition: all var(--transition-fast);
+    min-height: 64px;
 }
 
 .source-option:hover {
-    border-color: var(--primary-color);
-    background: rgba(102, 126, 234, 0.05);
+    border-color: rgba(246, 199, 90, 0.34);
+    background: rgba(255, 255, 255, 0.04);
+    transform: translateY(-1px);
 }
 
 .source-option.active,
 .source-option:has(input:checked) {
-    border-color: var(--primary-color);
-    background: rgba(102, 126, 234, 0.1);
+    border-color: rgba(246, 199, 90, 0.42);
+    background: linear-gradient(180deg, rgba(246, 199, 90, 0.12) 0%, rgba(255, 159, 90, 0.08) 100%);
+    box-shadow: inset 0 0 0 1px rgba(246, 199, 90, 0.18);
 }
 
 .source-option input {
@@ -2180,7 +2303,7 @@ body::before {
 
 .option-text {
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--text-primary);
 }
 
@@ -2190,23 +2313,23 @@ body::before {
 }
 
 .srt-drop-zone {
-    background: var(--bg-secondary);
-    border: 2px dashed var(--bg-tertiary);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-xl);
+    background: rgba(246, 199, 90, 0.06);
+    border: 1px dashed rgba(246, 199, 90, 0.44);
+    border-radius: 18px;
+    padding: 18px;
     text-align: center;
     cursor: pointer;
     transition: all var(--transition-fast);
 }
 
 .srt-drop-zone:hover {
-    border-color: var(--primary-color);
-    background: rgba(102, 126, 234, 0.05);
+    background: rgba(246, 199, 90, 0.1);
+    transform: translateY(-1px);
 }
 
 .srt-drop-zone.dragover {
     border-color: var(--primary-color);
-    background: rgba(102, 126, 234, 0.1);
+    background: rgba(246, 199, 90, 0.14);
     border-style: solid;
 }
 
@@ -2259,41 +2382,79 @@ body::before {
 
 /* 翻译控制区域 - 电影院风格 */
 .translate-control-section {
-    background: linear-gradient(135deg, rgba(212, 175, 55, 0.2) 0%, rgba(244, 208, 63, 0.15) 100%);
-    border-radius: var(--radius-lg);
-    padding: var(--spacing-xl);
+    background:
+        radial-gradient(circle at top right, rgba(246, 199, 90, 0.12), transparent 34%),
+        linear-gradient(180deg, rgba(18, 31, 49, 0.98) 0%, rgba(13, 23, 38, 0.98) 100%);
+    border-radius: 20px;
+    padding: 16px;
     color: var(--text-white);
-    border: 1px solid rgba(212, 175, 55, 0.3);
-    box-shadow: var(--shadow-gold);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: var(--shadow-md);
+}
+
+.translate-panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.translate-panel-kicker {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    margin-bottom: 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.translate-panel-title {
+    font-size: 18px;
+    line-height: 1.15;
+    font-weight: 700;
+    color: var(--text-white);
 }
 
 .video-info-card {
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-lg);
-    margin-bottom: var(--spacing-lg);
-    border: 1px solid rgba(212, 175, 55, 0.2);
+    background: rgba(6, 14, 24, 0.62);
+    border-radius: 16px;
+    padding: 14px;
+    margin-bottom: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .info-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: var(--spacing-sm) 0;
+    gap: 12px;
+    padding: 10px 0;
 }
 
 .info-row:not(:last-child) {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .info-label {
-    font-size: 13px;
+    font-size: 12px;
     opacity: 0.9;
+    color: var(--text-secondary);
 }
 
 .info-value {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
+    color: var(--text-white);
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: right;
 }
 
 .translate-btn-group {
@@ -2307,13 +2468,13 @@ body::before {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: var(--spacing-md);
-    padding: var(--spacing-lg);
-    background: linear-gradient(135deg, rgba(212, 175, 55, 0.3) 0%, rgba(244, 208, 63, 0.25) 100%);
-    border: 2px solid rgba(212, 175, 55, 0.5);
-    border-radius: var(--radius-md);
-    color: var(--text-white);
-    font-size: 16px;
+    gap: 10px;
+    padding: 14px 16px;
+    background: var(--primary-gradient);
+    border: none;
+    border-radius: 16px;
+    color: #201102;
+    font-size: 15px;
     font-weight: 600;
     cursor: pointer;
     transition: all var(--transition-fast);
@@ -2321,8 +2482,6 @@ body::before {
 }
 
 .translate-main-btn:hover {
-    background: linear-gradient(135deg, rgba(212, 175, 55, 0.4) 0%, rgba(244, 208, 63, 0.35) 100%);
-    border-color: rgba(212, 175, 55, 0.7);
     transform: translateY(-2px);
     box-shadow: var(--shadow-gold-strong);
 }
@@ -2332,18 +2491,18 @@ body::before {
 }
 
 .translate-main-btn .btn-icon {
-    font-size: 20px;
+    font-size: 18px;
 }
 
 .translate-main-btn.translating {
-    background: rgba(245, 158, 11, 0.3);
-    border-color: rgba(245, 158, 11, 0.5);
+    background: linear-gradient(135deg, #ffd975 0%, #f6b756 100%);
+    color: #2a1a02;
 }
 
 .translate-main-btn.cancel {
-    background: linear-gradient(135deg, rgba(255, 68, 68, 0.3) 0%, rgba(239, 68, 68, 0.25) 100%);
-    border-color: rgba(255, 68, 68, 0.5);
-    box-shadow: 0 0 20px rgba(255, 68, 68, 0.3);
+    background: linear-gradient(135deg, #ff9d78 0%, #ff6b57 100%);
+    color: #2b0f09;
+    box-shadow: 0 18px 48px rgba(255, 107, 87, 0.24);
 }
 
 .retranslate-btn {
