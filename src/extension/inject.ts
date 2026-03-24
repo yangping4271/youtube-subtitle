@@ -6,6 +6,14 @@ interface YouTubeEngagementPanel extends HTMLElement {
   visibility?: string;
 }
 
+interface YouTubePageWindow extends Window {
+  ytInitialPlayerResponse?: unknown;
+}
+
+interface YouTubePlayerElement extends HTMLElement {
+  getPlayerResponse?: () => unknown;
+}
+
 window.addEventListener('YTSP_OpenTranscript', () => {
   const engagementPanel = document.querySelector(
     'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]'
@@ -20,4 +28,15 @@ window.addEventListener('YTSP_OpenTranscript', () => {
 
 window.addEventListener('YTSP_StartTranslation', () => {
   window.postMessage({ type: 'YTSP_StartTranslation' }, '*');
+});
+
+window.addEventListener('YTSP_RequestCaptionTracks', () => {
+  const pageWindow = window as YouTubePageWindow;
+  const player = document.getElementById('movie_player') as YouTubePlayerElement | null;
+  const playerResponse = player?.getPlayerResponse?.() || pageWindow.ytInitialPlayerResponse || null;
+
+  window.postMessage({
+    type: 'YTSP_PageCaptionTracks',
+    payload: playerResponse,
+  }, '*');
 });

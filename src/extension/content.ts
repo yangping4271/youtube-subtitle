@@ -6,6 +6,19 @@
 import { getDefaultEnglishSettings, getDefaultChineseSettings, getDefaultConfig } from './config';
 import { SubtitleParser } from './subtitle-parser';
 import { getVideoInfo } from './transcript-core';
+import {
+  classifyCaptionTrackResponse,
+  createYouTubeRequestInit,
+  extractCaptionTracks,
+  extractTranscriptSegmentData,
+  findTranscriptTrigger,
+  getTranscriptPanel,
+  getTranscriptPanelState,
+  getTranscriptSegmentElements,
+  hasYouTubeLoginPrompt,
+  isTranscriptReady,
+  shouldForceLegacyTranscriptOpen,
+} from './youtube-subtitle-fetch';
 import type { SimpleSubtitleEntry, SubtitleStyleSettings, VideoSubtitleData, ASSParseResult, TranslationProgress } from '../types';
 
 // Chrome API 类型声明
@@ -42,6 +55,11 @@ interface ChromeMessage {
   videoId?: string;
 }
 
+interface WindowCaptionTrackMessage {
+  type: 'YTSP_PageCaptionTracks';
+  payload: YouTubePlayerResponse | null;
+}
+
 interface YouTubeCaptionTrack {
   baseUrl?: string;
   languageCode?: string;
@@ -49,6 +67,10 @@ interface YouTubeCaptionTrack {
 }
 
 interface YouTubePlayerResponse {
+  playabilityStatus?: {
+    status?: string;
+    reason?: string;
+  };
   captions?: {
     playerCaptionsTracklistRenderer?: {
       captionTracks?: YouTubeCaptionTrack[];
@@ -177,6 +199,8 @@ class YouTubeSubtitleOverlay {
       // 检查是否是扩展上下文失效错误
       if (error instanceof Error && error.message.includes('Extension context invalidated')) {
         this.showErrorNotification('扩展已重新加载，请刷新页面后再试');
+      } else if (error instanceof Error && error.message) {
+        this.showErrorNotification(error.message);
       }
     }
   }
@@ -282,6 +306,7 @@ class YouTubeSubtitleOverlay {
       throw new Error('无法获取视频ID');
     }
 
+    let captionTrackError: Error | null = null;
     try {
       const subtitles = await this.getSubtitlesFromCaptionTracks(videoId);
       if (subtitles.length > 0) {
@@ -289,17 +314,37 @@ class YouTubeSubtitleOverlay {
         return subtitles;
       }
     } catch (error) {
+      captionTrackError = error instanceof Error ? error : new Error(String(error));
       console.warn('通过字幕轨接口获取字幕失败，回退到 transcript 面板:', error);
     }
 
-    const panelSubtitles = await this.getSubtitlesFromTranscriptPanel();
-    if (panelSubtitles.length > 0) {
-      this.logSubtitleFetchSource('transcript-panel', panelSubtitles.length);
-      return panelSubtitles;
+    try {
+      const panelSubtitles = await this.getSubtitlesFromTranscriptPanel();
+      if (panelSubtitles.length > 0) {
+        this.logSubtitleFetchSource('transcript-panel', panelSubtitles.length);
+        return panelSubtitles;
+      }
+    } catch (panelError) {
+      const normalizedPanelError = panelError instanceof Error ? panelError : new Error(String(panelError));
+      this.logSubtitleFetchSource('unavailable', 0);
+
+      if (captionTrackError?.message.includes('请先登录 YouTube')) {
+        throw captionTrackError;
+      }
+
+      if (hasYouTubeLoginPrompt(document)) {
+        throw new Error('YouTube 当前要求先登录以确认不是机器人，请登录后刷新页面再试。');
+      }
+
+      throw normalizedPanelError;
     }
 
     this.logSubtitleFetchSource('unavailable', 0);
-    throw new Error('无法获取 YouTube 字幕，请确保视频有可用字幕');
+    if (captionTrackError) {
+      throw captionTrackError;
+    }
+
+    throw new Error('无法获取 YouTube 字幕，请确保视频有可用字幕。');
   }
 
   private logSubtitleFetchSource(source: 'caption-tracks' | 'transcript-panel' | 'unavailable', subtitleCount: number): void {
@@ -321,14 +366,36 @@ class YouTubeSubtitleOverlay {
   }
 
   private async getSubtitlesFromCaptionTracks(videoId: string): Promise<SimpleSubtitleEntry[]> {
+    const pagePlayerResponse = await this.getCaptionTracksFromPage();
+    const pageTracks = extractCaptionTracks(pagePlayerResponse);
+    if (pageTracks.length > 0) {
+      const track = this.pickPreferredCaptionTrack(pageTracks as YouTubeCaptionTrack[]);
+      if (track?.baseUrl) {
+        return this.fetchSubtitleTrack(track);
+      }
+    }
+
     const playerResponse = await this.fetchYouTubePlayerResponse(videoId);
-    const tracks = playerResponse.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+    const responseClassification = classifyCaptionTrackResponse(playerResponse);
+    if (responseClassification.kind === 'login_required') {
+      throw new Error(responseClassification.message || '请先登录 YouTube 后重试。');
+    }
+
+    const tracks = extractCaptionTracks(playerResponse) as YouTubeCaptionTrack[];
     if (tracks.length === 0) {
       return [];
     }
 
     const track = this.pickPreferredCaptionTrack(tracks);
     if (!track?.baseUrl) {
+      return [];
+    }
+
+    return this.fetchSubtitleTrack(track);
+  }
+
+  private async fetchSubtitleTrack(track: YouTubeCaptionTrack): Promise<SimpleSubtitleEntry[]> {
+    if (!track.baseUrl) {
       return [];
     }
 
@@ -339,7 +406,7 @@ class YouTubeSubtitleOverlay {
       return [];
     }
 
-    const response = await fetch(track.baseUrl);
+    const response = await fetch(track.baseUrl, createYouTubeRequestInit());
     if (!response.ok) {
       throw new Error(`字幕轨请求失败: ${response.status}`);
     }
@@ -352,8 +419,30 @@ class YouTubeSubtitleOverlay {
     return this.parseTimedTextXml(xml);
   }
 
+  private async getCaptionTracksFromPage(): Promise<YouTubePlayerResponse | null> {
+    return new Promise((resolve) => {
+      const timeoutId = window.setTimeout(() => {
+        window.removeEventListener('message', onMessage);
+        resolve(null);
+      }, 1000);
+
+      const onMessage = (event: MessageEvent<WindowCaptionTrackMessage>): void => {
+        if (event.source !== window || event.data?.type !== 'YTSP_PageCaptionTracks') {
+          return;
+        }
+
+        window.clearTimeout(timeoutId);
+        window.removeEventListener('message', onMessage);
+        resolve((event.data.payload as YouTubePlayerResponse | null) || null);
+      };
+
+      window.addEventListener('message', onMessage);
+      window.dispatchEvent(new CustomEvent('YTSP_RequestCaptionTracks'));
+    });
+  }
+
   private async fetchYouTubePlayerResponse(videoId: string): Promise<YouTubePlayerResponse> {
-    const response = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+    const response = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', createYouTubeRequestInit({
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -367,7 +456,7 @@ class YouTubeSubtitleOverlay {
         },
         videoId,
       }),
-    });
+    }));
 
     if (!response.ok) {
       throw new Error(`player 接口请求失败: ${response.status}`);
@@ -473,72 +562,34 @@ class YouTubeSubtitleOverlay {
   }
 
   private async getSubtitlesFromTranscriptPanel(): Promise<SimpleSubtitleEntry[]> {
-    let transcriptSegments = document.querySelectorAll('ytd-transcript-segment-renderer');
-
-    if (!transcriptSegments || transcriptSegments.length === 0) {
-      const moreButton = document.querySelector('#expand') as HTMLElement;
-      if (moreButton) {
-        moreButton.click();
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
-
-      const transcriptButtonSelectors = [
-        'button[aria-label*="transcript" i]',
-        'button[aria-label*="Show transcript" i]',
-        'ytd-button-renderer[button-renderer*="transcript" i]',
-        '#primary-button:has(yt-formatted-string)',
-        '.ytd-video-description-transcript-section-renderer button',
-      ];
-
-      for (const selector of transcriptButtonSelectors) {
-        const btn = document.querySelector(selector) as HTMLElement;
-        if (btn) {
-          btn.click();
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          break;
-        }
-      }
-
-      transcriptSegments = document.querySelectorAll('ytd-transcript-segment-renderer');
-    }
-
-    if (!transcriptSegments || transcriptSegments.length === 0) {
-      throw new Error('Transcript面板未找到字幕');
-    }
-
+    await this.ensureTranscriptPanelReady();
+    const transcriptSegments = getTranscriptSegmentElements(document);
     const subtitles: SimpleSubtitleEntry[] = [];
     transcriptSegments.forEach((segment, index) => {
-      let timestampElement =
-        segment.querySelector('.segment-timestamp') ||
-        segment.querySelector('[class*="timestamp"]') ||
-        segment.querySelector('div[class*="time"]');
-      let textElement =
-        segment.querySelector('.segment-text') ||
-        segment.querySelector('[class*="text"]') ||
-        segment.querySelector('yt-formatted-string');
+      const segmentData = extractTranscriptSegmentData(segment);
+      let timestampText = segmentData?.timestampText || '';
+      let text = segmentData?.bodyText || '';
 
-      if (!timestampElement || !textElement) {
+      if (!timestampText || !text) {
         const divs = segment.querySelectorAll('div');
         if (divs.length >= 2) {
-          timestampElement = timestampElement || divs[0];
-          textElement = textElement || divs[1];
+          timestampText = timestampText || (divs[0].textContent || '').trim();
+          text = text || (divs[1].textContent || '').trim();
         }
       }
 
-      if (timestampElement && textElement) {
-        const timestamp = this.parseTimestamp(timestampElement.textContent || '');
-        const text = textElement.textContent?.trim() || '';
-
+      if (timestampText && text) {
+        const timestamp = this.parseTimestamp(timestampText);
         if (text) {
           const nextSegment = transcriptSegments[index + 1];
           let endTime = timestamp + 5;
           if (nextSegment) {
-            const nextTimestamp =
-              nextSegment.querySelector('.segment-timestamp') ||
-              nextSegment.querySelector('[class*="timestamp"]') ||
-              nextSegment.querySelector('div');
-            if (nextTimestamp) {
-              endTime = this.parseTimestamp(nextTimestamp.textContent || '');
+            const nextSegmentData = extractTranscriptSegmentData(nextSegment);
+            const nextTimestampText =
+              nextSegmentData?.timestampText ||
+              (nextSegment.querySelector('div')?.textContent || '').trim();
+            if (nextTimestampText) {
+              endTime = this.parseTimestamp(nextTimestampText);
             }
           }
 
@@ -548,6 +599,57 @@ class YouTubeSubtitleOverlay {
     });
 
     return subtitles;
+  }
+
+  private async ensureTranscriptPanelReady(): Promise<void> {
+    if (isTranscriptReady(getTranscriptPanelState(document))) {
+      return;
+    }
+
+    const moreButton = document.querySelector('#expand') as HTMLElement | null;
+    if (moreButton) {
+      moreButton.click();
+      await this.sleep(400);
+    }
+
+    let clickedTranscriptTrigger = false;
+    const transcriptButton = findTranscriptTrigger(document);
+    if (transcriptButton instanceof HTMLElement) {
+      transcriptButton.click();
+      clickedTranscriptTrigger = true;
+      await this.sleep(400);
+    }
+
+    const transcriptPanel = getTranscriptPanel(document);
+    if (shouldForceLegacyTranscriptOpen(clickedTranscriptTrigger, !!transcriptPanel)) {
+      window.dispatchEvent(new CustomEvent('YTSP_OpenTranscript'));
+    }
+
+    const ready = await this.waitForTranscriptReady();
+    if (!ready) {
+      if (hasYouTubeLoginPrompt(document)) {
+        throw new Error('YouTube 当前要求先登录以确认不是机器人，请登录后刷新页面再试。');
+      }
+
+      throw new Error('转写面板已打开，但字幕内容尚未加载完成，请稍后重试。');
+    }
+  }
+
+  private async waitForTranscriptReady(maxRetries = 20, intervalMs = 500): Promise<boolean> {
+    for (let retry = 0; retry < maxRetries; retry += 1) {
+      const state = getTranscriptPanelState(document);
+      if (isTranscriptReady(state)) {
+        return true;
+      }
+
+      await this.sleep(intervalMs);
+    }
+
+    return false;
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private parseTimestamp(timestampStr: string): number {

@@ -5,6 +5,19 @@
 
 import type { VideoInfo } from '../types';
 import { getVideoDescription, getAISummary } from './video-metadata.js';
+import {
+  classifyCaptionTrackResponse,
+  createYouTubeRequestInit,
+  extractCaptionTracks,
+  extractTranscriptSegmentData,
+  findTranscriptTrigger,
+  getTranscriptPanel,
+  getTranscriptPanelState,
+  getTranscriptSegmentElements,
+  hasYouTubeLoginPrompt,
+  isTranscriptReady,
+  shouldForceLegacyTranscriptOpen,
+} from './youtube-subtitle-fetch.js';
 
 interface TranscriptSegment {
   timeStr: string;
@@ -17,6 +30,10 @@ interface YouTubeCaptionTrack {
 }
 
 interface YouTubePlayerResponse {
+  playabilityStatus?: {
+    status?: string;
+    reason?: string;
+  };
   captions?: {
     playerCaptionsTracklistRenderer?: {
       captionTracks?: YouTubeCaptionTrack[];
@@ -121,112 +138,78 @@ function formatTimeSRT(seconds: number): string {
 }
 
 function getTranscriptSegments(): TranscriptSegment[] {
-  const watchFlexyElement = getWatchFlexyElement();
-  if (!watchFlexyElement) return [];
-
-  const transcriptContainer = watchFlexyElement.querySelector(
-    'ytd-transcript-segment-list-renderer #segments-container'
-  );
-  if (!transcriptContainer) return [];
-
   const segments: TranscriptSegment[] = [];
-  Array.from(transcriptContainer.children).forEach((element) => {
-    if (element.tagName === 'YTD-TRANSCRIPT-SEGMENT-RENDERER') {
-      const timeElement = element.querySelector('.segment-timestamp');
-      const textElement = element.querySelector('.segment-text');
-      if (timeElement && textElement) {
-        segments.push({
-          timeStr: timeElement.textContent?.trim() || '',
-          text: textElement.textContent?.replace(/\s+/g, ' ').trim() || '',
-        });
-      }
+  getTranscriptSegmentElements(document).forEach((element) => {
+    const segmentData = extractTranscriptSegmentData(element);
+    if (segmentData) {
+      segments.push({
+        timeStr: segmentData.timestampText,
+        text: segmentData.bodyText.replace(/\s+/g, ' ').trim(),
+      });
     }
   });
+
   return segments;
 }
 
 function getTranscriptTextOnly(): string {
-  const watchFlexyElement = getWatchFlexyElement();
-  if (!watchFlexyElement) return '';
-
-  const transcriptContainer = watchFlexyElement.querySelector(
-    'ytd-transcript-segment-list-renderer #segments-container'
-  );
-  if (!transcriptContainer) return '';
-
   const lines: string[] = [];
-  Array.from(transcriptContainer.children).forEach((element) => {
+
+  getTranscriptSegmentElements(document).forEach((element) => {
     if (element.tagName === 'YTD-TRANSCRIPT-SECTION-HEADER-RENDERER') {
       if (USER_CONFIG.includeChapterHeaders) {
         const chapterTitle = element.querySelector('h2 > span')?.textContent?.trim();
         if (chapterTitle) lines.push(`\nChapter: ${chapterTitle}`);
       }
-    } else if (element.tagName === 'YTD-TRANSCRIPT-SEGMENT-RENDERER') {
-      const textElement = element.querySelector('.segment-text');
-      if (textElement) {
-        lines.push(textElement.textContent?.replace(/\s+/g, ' ').trim() || '');
-      }
+      return;
+    }
+
+    const segmentData = extractTranscriptSegmentData(element);
+    if (segmentData) {
+      lines.push(segmentData.bodyText.replace(/\s+/g, ' ').trim());
     }
   });
 
   return lines.join('\n');
 }
 
-function getTranscriptSRT(): string {
-  const segments = getTranscriptSegments();
-  if (segments.length === 0) return '';
-
-  let srtOutput = '';
-  segments.forEach((seg, index) => {
-    const startSeconds = parseTimeSeconds(seg.timeStr);
-    let endSeconds = startSeconds + 5;
-
-    if (index < segments.length - 1) {
-      const nextStart = parseTimeSeconds(segments[index + 1].timeStr);
-      if (nextStart > startSeconds) {
-        endSeconds = nextStart;
-      }
-    }
-
-    srtOutput += `${index + 1}\n`;
-    srtOutput += `${formatTimeSRT(startSeconds)} --> ${formatTimeSRT(endSeconds)}\n`;
-    srtOutput += `${seg.text}\n\n`;
-  });
-
-  return srtOutput;
-}
-
-async function fetchYouTubePlayerResponse(videoId: string): Promise<YouTubePlayerResponse> {
-  const response = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      context: {
-        client: {
-          clientName: 'ANDROID',
-          clientVersion: '20.10.38',
-        },
-      },
-      videoId,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`player 接口请求失败: ${response.status}`);
+function getTranscriptUnavailableMessage(): string {
+  if (hasYouTubeLoginPrompt(document)) {
+    return 'YouTube 当前要求先登录以确认不是机器人，请登录后刷新页面再试。';
   }
 
-  return response.json() as Promise<YouTubePlayerResponse>;
+  return '转写面板已打开，但字幕内容尚未加载完成，请稍后重试。';
 }
 
-function pickPreferredCaptionTrack(tracks: YouTubeCaptionTrack[]): YouTubeCaptionTrack | undefined {
-  return tracks.find((track) => track.languageCode === 'en') || tracks[0];
+function getTranscriptSegmentContainer(): Element | null {
+  const watchFlexyElement = getWatchFlexyElement();
+  if (!watchFlexyElement) return null;
+
+  return watchFlexyElement.querySelector(
+    'ytd-transcript-segment-list-renderer #segments-container'
+  );
+}
+
+async function ensureTranscriptLoaded(): Promise<boolean> {
+  if (isTranscriptReady(getTranscriptPanelState(document))) {
+    return true;
+  }
+
+  if (!openTranscript()) {
+    return false;
+  }
+
+  return waitForTranscriptContent();
 }
 
 async function getTranscriptTextFromCaptionTracks(videoId: string): Promise<string> {
   const playerResponse = await fetchYouTubePlayerResponse(videoId);
-  const tracks = playerResponse.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+  const responseClassification = classifyCaptionTrackResponse(playerResponse);
+  if (responseClassification.kind === 'login_required') {
+    throw new Error(responseClassification.message || '请先登录 YouTube 后重试。');
+  }
+
+  const tracks = extractCaptionTracks(playerResponse) as YouTubeCaptionTrack[];
   if (tracks.length === 0) {
     return '';
   }
@@ -242,7 +225,7 @@ async function getTranscriptTextFromCaptionTracks(videoId: string): Promise<stri
     return '';
   }
 
-  const response = await fetch(track.baseUrl);
+  const response = await fetch(track.baseUrl, createYouTubeRequestInit());
   if (!response.ok) {
     throw new Error(`字幕轨请求失败: ${response.status}`);
   }
@@ -253,6 +236,34 @@ async function getTranscriptTextFromCaptionTracks(videoId: string): Promise<stri
   }
 
   return extractTranscriptTextFromXml(xml);
+}
+
+async function fetchYouTubePlayerResponse(videoId: string): Promise<YouTubePlayerResponse> {
+  const response = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', createYouTubeRequestInit({
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      context: {
+        client: {
+          clientName: 'ANDROID',
+          clientVersion: '20.10.38',
+        },
+      },
+      videoId,
+    }),
+  }));
+
+  if (!response.ok) {
+    throw new Error(`player 接口请求失败: ${response.status}`);
+  }
+
+  return response.json() as Promise<YouTubePlayerResponse>;
+}
+
+function pickPreferredCaptionTrack(tracks: YouTubeCaptionTrack[]): YouTubeCaptionTrack | undefined {
+  return tracks.find((track) => track.languageCode === 'en') || tracks[0];
 }
 
 function extractTranscriptTextFromXml(xml: string): string {
@@ -280,6 +291,29 @@ function extractTranscriptTextFromXml(xml: string): string {
     .filter((line) => line.length > 0);
 
   return timedTextLines.join('\n');
+}
+function getTranscriptSRT(): string {
+  const segments = getTranscriptSegments();
+  if (segments.length === 0) return '';
+
+  let srtOutput = '';
+  segments.forEach((seg, index) => {
+    const startSeconds = parseTimeSeconds(seg.timeStr);
+    let endSeconds = startSeconds + 5;
+
+    if (index < segments.length - 1) {
+      const nextStart = parseTimeSeconds(segments[index + 1].timeStr);
+      if (nextStart > startSeconds) {
+        endSeconds = nextStart;
+      }
+    }
+
+    srtOutput += `${index + 1}\n`;
+    srtOutput += `${formatTimeSRT(startSeconds)} --> ${formatTimeSRT(endSeconds)}\n`;
+    srtOutput += `${seg.text}\n\n`;
+  });
+
+  return srtOutput;
 }
 
 function downloadTranscriptAsSRT(): void {
@@ -325,11 +359,7 @@ function waitForTranscriptContent(retries = 0): Promise<boolean> {
   const interval = 500;
 
   return new Promise((resolve) => {
-    const transcriptContainer = getWatchFlexyElement()?.querySelector(
-      'ytd-transcript-segment-list-renderer #segments-container'
-    );
-
-    if (transcriptContainer && transcriptContainer.children.length > 0) {
+    if (isTranscriptReady(getTranscriptPanelState(document))) {
       resolve(true);
     } else if (retries < maxRetries) {
       setTimeout(() => {
@@ -358,15 +388,9 @@ async function selectAndCopyTranscript(): Promise<void> {
 
   let finalText = getTranscriptTextOnly();
   if (!finalText) {
-    if (!openTranscript()) {
-      showNotification('Transcript is empty or not loaded.');
-      return;
-    }
-
-    showNotification('正在打开文字记录...');
-    const loaded = await waitForTranscriptContent();
+    const loaded = await ensureTranscriptLoaded();
     if (!loaded) {
-      showNotification('加载失败');
+      showNotification(getTranscriptUnavailableMessage());
       return;
     }
 
@@ -374,7 +398,7 @@ async function selectAndCopyTranscript(): Promise<void> {
   }
 
   if (!finalText) {
-    showNotification('Transcript is empty or not loaded.');
+    showNotification(getTranscriptUnavailableMessage());
     return;
   }
 
@@ -382,20 +406,20 @@ async function selectAndCopyTranscript(): Promise<void> {
 }
 
 function openTranscript(): boolean {
-  const transcriptButton =
-    document.querySelector('#button-container button[aria-label="Show transcript"]') ||
-    document.querySelector('button[aria-label="Show transcript"]');
+  const transcriptButton = findTranscriptTrigger(document);
 
   if (transcriptButton) {
     (transcriptButton as HTMLButtonElement).click();
+    const engagementPanel = getTranscriptPanel(document) as HTMLElement | null;
+    if (shouldForceLegacyTranscriptOpen(true, !!engagementPanel)) {
+      window.dispatchEvent(new CustomEvent('YTSP_OpenTranscript'));
+    }
     return true;
   }
 
-  const engagementPanelSelector =
-    'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]';
-  const engagementPanel = document.querySelector(engagementPanelSelector);
+  const engagementPanel = getTranscriptPanel(document) as HTMLElement | null;
 
-  if (engagementPanel) {
+  if (shouldForceLegacyTranscriptOpen(false, !!engagementPanel)) {
     window.dispatchEvent(new CustomEvent('YTSP_OpenTranscript'));
     return true;
   }
@@ -407,9 +431,7 @@ function handleTranscriptAction(callback: () => void): void {
   const watchFlexyElement = getWatchFlexyElement();
   if (!watchFlexyElement) return;
 
-  const transcriptContainer = watchFlexyElement.querySelector(
-    'ytd-transcript-segment-list-renderer #segments-container'
-  );
+  const transcriptContainer = getTranscriptSegmentContainer();
   if (transcriptContainer && transcriptContainer.children.length > 0) {
     callback();
     return;
