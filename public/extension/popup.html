@@ -15,10 +15,16 @@
     <div class="container">
         <!-- 精简的标题栏 -->
         <div class="header">
+            <div class="header-glow" aria-hidden="true"></div>
             <div class="header-content">
+                <div class="brand-mark" aria-hidden="true">YT</div>
                 <div class="app-info">
-                    <h1>🎬 字幕翻译</h1>
-                    <span class="version">v1.1.2</span>
+                    <div class="app-meta">
+                        <span class="header-badge">Chrome Extension</span>
+                        <span class="version">v1.1.2</span>
+                    </div>
+                    <h1>YouTube 字幕翻译</h1>
+                    <p class="header-subtitle">抓取原字幕，生成双语字幕，并同步到播放器展示。</p>
                 </div>
             </div>
         </div>
@@ -50,7 +56,8 @@
                 <!-- 字幕来源选择 -->
                 <div class="subtitle-source-section">
                     <div class="source-header">
-                        <span class="source-title">📝 字幕来源</span>
+                        <span class="source-title">字幕来源</span>
+                        <span class="source-description">直接提取 YouTube 字幕，或上传现有 SRT 文件重新翻译。</span>
                     </div>
                     <div class="source-options">
                         <label class="source-option active">
@@ -83,6 +90,13 @@
 
                 <!-- 翻译控制区域 -->
                 <div class="translate-control-section">
+                    <div class="translate-panel-header">
+                        <div>
+                            <span class="translate-panel-kicker">翻译任务</span>
+                            <h2 class="translate-panel-title">一键生成双语字幕</h2>
+                        </div>
+                    </div>
+
                     <!-- 当前视频信息 -->
                     <div class="video-info-card">
                         <div class="info-row">
