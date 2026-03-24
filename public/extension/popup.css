@@ -159,51 +159,16 @@ body::before {
 .header-content {
     display: flex;
     align-items: center;
-    gap: 14px;
-}
-
-.brand-mark {
-    width: 46px;
-    height: 46px;
-    border-radius: 16px;
-    display: flex;
-    align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, rgba(246, 199, 90, 0.9) 0%, rgba(255, 159, 90, 0.85) 100%);
-    color: #201102;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    box-shadow: var(--shadow-gold);
-    flex-shrink: 0;
 }
 
 .app-info {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    text-align: left;
-    gap: 3px;
+    align-items: center;
+    text-align: center;
+    gap: 2px;
     min-width: 0;
-}
-
-.app-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.header-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 3px 8px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.08);
-    color: var(--text-secondary);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
 }
 
 .app-info h1 {
@@ -216,19 +181,16 @@ body::before {
     line-height: 1.08;
 }
 
-.app-info .version {
-    font-size: 10px;
+.title-version {
+    display: inline-block;
+    margin-left: 6px;
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 12px;
     color: var(--primary-color);
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-}
-
-.header-subtitle {
-    font-size: 12px;
-    color: var(--text-secondary);
-    line-height: 1.45;
-    max-width: 280px;
+    vertical-align: middle;
 }
 
 /* 🎛️ 主开关设计 */
@@ -381,24 +343,7 @@ body::before {
 }
 
 #filesTab.active {
-    display: grid;
-    grid-template-columns: 150px minmax(0, 1fr);
-    gap: 12px;
-    align-content: start;
-}
-
-#filesTab .subtitle-source-section {
-    margin: 0;
-}
-
-#filesTab .srt-upload-section {
-    grid-column: 1 / -1;
-    margin-bottom: 0;
-}
-
-#filesTab .translate-control-section {
-    grid-column: 2;
-    grid-row: 1;
+    display: flex;
 }
 
 /* 自定义滚动条 - 电影院风格 */
@@ -1292,113 +1237,6 @@ body::before {
     border-top: 2px solid var(--bg-tertiary);
 }
 
-/* ℹ️ 关于标签页样式 - 电影院风格 */
-.about-card {
-    background: linear-gradient(180deg, rgba(18, 31, 49, 0.98) 0%, rgba(13, 23, 38, 0.98) 100%);
-    border-radius: 18px;
-    padding: var(--spacing-xl);
-    margin-bottom: var(--spacing-lg);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    text-align: center;
-    box-shadow: var(--shadow-md);
-}
-
-.logo-text h3 {
-    font-size: 20px;
-}
-
-.app-logo {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-bottom: var(--spacing-xl);
-}
-
-.logo-icon {
-    font-size: 48px;
-    margin-bottom: var(--spacing-md);
-}
-
-.logo-text h3 {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: var(--spacing-xs);
-}
-
-.logo-text .version {
-    font-size: 12px;
-    color: var(--text-secondary);
-    background: var(--bg-tertiary);
-    padding: 2px 8px;
-    border-radius: var(--radius-sm);
-}
-
-.feature-list {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: var(--spacing-md);
-    margin-bottom: var(--spacing-xl);
-}
-
-.feature-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-md);
-    background: rgba(7, 17, 31, 0.72);
-    border-radius: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    transition: all var(--transition-fast);
-}
-
-.feature-item:hover {
-    border-color: rgba(246, 199, 90, 0.28);
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-sm);
-}
-
-.feature-icon {
-    font-size: 24px;
-}
-
-.feature-text {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.about-actions {
-    display: flex;
-    gap: var(--spacing-md);
-}
-
-.about-btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-md);
-    background: var(--bg-primary);
-    border: 2px solid var(--bg-tertiary);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    color: var(--text-secondary);
-    font-size: 12px;
-    font-weight: 500;
-}
-
-.about-btn:hover {
-    border-color: var(--primary-color);
-    color: var(--primary-color);
-    background: rgba(212, 175, 55, 0.1);
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-gold);
-}
-
 .tips-card {
     background: linear-gradient(180deg, rgba(18, 31, 49, 0.98) 0%, rgba(13, 23, 38, 0.98) 100%);
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1473,9 +1311,6 @@ body::before {
         padding: var(--spacing-md);
     }
 
-    .feature-list {
-        grid-template-columns: 1fr;
-    }
 }
 
 /* 高DPI屏幕适配 */
@@ -2227,159 +2062,6 @@ body::before {
     color: #f87171 !important;
 }
 
-/* ========================================
-   📝 新版字幕来源选择
-   ======================================== */
-
-.subtitle-source-section {
-    background: linear-gradient(180deg, rgba(20, 35, 56, 0.98) 0%, rgba(12, 22, 35, 0.98) 100%);
-    border-radius: 20px;
-    padding: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: var(--shadow-sm);
-}
-
-.source-header {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-bottom: 12px;
-}
-
-.source-title {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--text-white);
-    letter-spacing: 0.02em;
-}
-
-.source-description {
-    font-size: 12px;
-    color: var(--text-secondary);
-    line-height: 1.45;
-}
-
-.source-options {
-    display: flex;
-    gap: 10px;
-    flex-direction: column;
-}
-
-.source-option {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 14px 12px;
-    background: rgba(6, 14, 24, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 16px;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    min-height: 64px;
-}
-
-.source-option:hover {
-    border-color: rgba(246, 199, 90, 0.34);
-    background: rgba(255, 255, 255, 0.04);
-    transform: translateY(-1px);
-}
-
-.source-option.active,
-.source-option:has(input:checked) {
-    border-color: rgba(246, 199, 90, 0.42);
-    background: linear-gradient(180deg, rgba(246, 199, 90, 0.12) 0%, rgba(255, 159, 90, 0.08) 100%);
-    box-shadow: inset 0 0 0 1px rgba(246, 199, 90, 0.18);
-}
-
-.source-option input {
-    display: none;
-}
-
-.option-icon {
-    font-size: 18px;
-}
-
-.option-text {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-/* SRT 上传区域 */
-.srt-upload-section {
-    margin-bottom: var(--spacing-lg);
-}
-
-.srt-drop-zone {
-    background: rgba(246, 199, 90, 0.06);
-    border: 1px dashed rgba(246, 199, 90, 0.44);
-    border-radius: 18px;
-    padding: 18px;
-    text-align: center;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-}
-
-.srt-drop-zone:hover {
-    background: rgba(246, 199, 90, 0.1);
-    transform: translateY(-1px);
-}
-
-.srt-drop-zone.dragover {
-    border-color: var(--primary-color);
-    background: rgba(246, 199, 90, 0.14);
-    border-style: solid;
-}
-
-.srt-drop-content {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-md);
-}
-
-.srt-icon {
-    font-size: 24px;
-}
-
-.srt-text {
-    font-size: 14px;
-    color: var(--text-secondary);
-}
-
-.srt-file-info {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--success-bg);
-    border: 1px solid var(--success-color);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-md) var(--spacing-lg);
-    margin-top: var(--spacing-md);
-}
-
-.srt-filename {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--success-color);
-}
-
-.srt-remove {
-    background: none;
-    border: none;
-    color: var(--error-color);
-    font-size: 18px;
-    cursor: pointer;
-    padding: 0 var(--spacing-sm);
-    transition: transform var(--transition-fast);
-}
-
-.srt-remove:hover {
-    transform: scale(1.2);
-}
-
 /* 翻译控制区域 - 电影院风格 */
 .translate-control-section {
     background:
@@ -2392,39 +2074,11 @@ body::before {
     box-shadow: var(--shadow-md);
 }
 
-.translate-panel-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    margin-bottom: 12px;
-}
-
-.translate-panel-kicker {
-    display: inline-flex;
-    align-items: center;
-    padding: 3px 8px;
-    margin-bottom: 8px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.06);
-    color: var(--text-secondary);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-}
-
-.translate-panel-title {
-    font-size: 18px;
-    line-height: 1.15;
-    font-weight: 700;
-    color: var(--text-white);
-}
-
 .video-info-card {
     background: rgba(6, 14, 24, 0.62);
     border-radius: 16px;
     padding: 14px;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
     border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -2470,20 +2124,20 @@ body::before {
     justify-content: center;
     gap: 10px;
     padding: 14px 16px;
-    background: var(--primary-gradient);
+    background: linear-gradient(135deg, #5874a1 0%, #6f88b2 100%);
     border: none;
     border-radius: 16px;
-    color: #201102;
+    color: var(--text-white);
     font-size: 15px;
     font-weight: 600;
     cursor: pointer;
     transition: all var(--transition-fast);
-    box-shadow: var(--shadow-gold);
+    box-shadow: 0 16px 36px rgba(74, 102, 145, 0.28);
 }
 
 .translate-main-btn:hover {
     transform: translateY(-2px);
-    box-shadow: var(--shadow-gold-strong);
+    box-shadow: 0 18px 40px rgba(90, 122, 170, 0.34);
 }
 
 .translate-main-btn:active {
@@ -2495,14 +2149,14 @@ body::before {
 }
 
 .translate-main-btn.translating {
-    background: linear-gradient(135deg, #ffd975 0%, #f6b756 100%);
-    color: #2a1a02;
+    background: linear-gradient(135deg, #6e88b3 0%, #84a0cb 100%);
+    color: var(--text-white);
 }
 
 .translate-main-btn.cancel {
-    background: linear-gradient(135deg, #ff9d78 0%, #ff6b57 100%);
-    color: #2b0f09;
-    box-shadow: 0 18px 48px rgba(255, 107, 87, 0.24);
+    background: linear-gradient(135deg, #8b6571 0%, #a67684 100%);
+    color: var(--text-white);
+    box-shadow: 0 18px 40px rgba(120, 87, 99, 0.26);
 }
 
 .retranslate-btn {

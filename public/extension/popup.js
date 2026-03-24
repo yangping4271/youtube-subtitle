@@ -124,7 +124,6 @@ class PopupController {
         this.initCSSVariablesFromConfig();
 
         this.setupTabs();
-        this.setupUploadModeSelection();
         this.bindEvents();
 
         // 监听来自content script的消息（全局监听）
@@ -325,92 +324,6 @@ class PopupController {
     }
 
     // ========================================
-    // 字幕来源选择管理
-    // ========================================
-    setupUploadModeSelection() {
-        const sourceOptions = document.querySelectorAll('input[name="subtitleSource"]');
-        const srtUploadSection = document.getElementById('srtUploadSection');
-
-        sourceOptions.forEach(radio => {
-            radio.addEventListener('change', (e) => {
-                const source = e.target.value;
-                this.subtitleSource = source;
-
-                // 显示/隐藏 SRT 上传区域
-                if (srtUploadSection) {
-                    srtUploadSection.style.display = source === 'upload' ? 'block' : 'none';
-                }
-            });
-        });
-
-        // 初始化 SRT 上传功能
-        this.setupSrtUpload();
-    }
-
-    setupSrtUpload() {
-        const srtUploadArea = document.getElementById('srtUploadArea');
-        const srtFileInput = document.getElementById('srtFileInput');
-        const srtFileInfo = document.getElementById('srtFileInfo');
-        const srtFileName = document.getElementById('srtFileName');
-        const srtRemove = document.getElementById('srtRemove');
-
-        if (!srtUploadArea || !srtFileInput) return;
-
-        // 点击上传
-        srtUploadArea.addEventListener('click', () => srtFileInput.click());
-
-        // 拖拽处理
-        srtUploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            srtUploadArea.classList.add('dragover');
-        });
-
-        srtUploadArea.addEventListener('dragleave', () => {
-            srtUploadArea.classList.remove('dragover');
-        });
-
-        srtUploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            srtUploadArea.classList.remove('dragover');
-            const file = e.dataTransfer.files[0];
-            if (file && file.name.endsWith('.srt')) {
-                this.handleSrtFile(file);
-            }
-        });
-
-        // 文件选择
-        srtFileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                this.handleSrtFile(file);
-            }
-        });
-
-        // 移除文件
-        if (srtRemove) {
-            srtRemove.addEventListener('click', () => {
-                this.uploadedSrtContent = null;
-                if (srtFileInfo) srtFileInfo.style.display = 'none';
-                if (srtFileName) srtFileName.textContent = '';
-                srtFileInput.value = '';
-            });
-        }
-    }
-
-    async handleSrtFile(file) {
-        const content = await file.text();
-        this.uploadedSrtContent = content;
-
-        const srtFileInfo = document.getElementById('srtFileInfo');
-        const srtFileName = document.getElementById('srtFileName');
-
-        if (srtFileInfo) srtFileInfo.style.display = 'flex';
-        if (srtFileName) srtFileName.textContent = file.name;
-
-        this.showToast(`已加载: ${file.name}`);
-    }
-
-    // ========================================
     // 事件绑定
     // ========================================
     bindEvents() {
@@ -421,8 +334,6 @@ class PopupController {
                 this.toggleSubtitle(e.target.checked);
             });
         }
-
-        // SRT上传事件已在 setupUploadModeSelection 中处理
 
         // 文件移除事件
         const englishRemove = document.getElementById('englishRemove');
@@ -2480,4 +2391,3 @@ document.addEventListener('DOMContentLoaded', () => {
     // 启动控制器；计数更新由控制器内部统一管理
     new PopupController();
 });
-

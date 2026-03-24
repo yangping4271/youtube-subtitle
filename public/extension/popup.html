@@ -17,14 +17,8 @@
         <div class="header">
             <div class="header-glow" aria-hidden="true"></div>
             <div class="header-content">
-                <div class="brand-mark" aria-hidden="true">YT</div>
                 <div class="app-info">
-                    <div class="app-meta">
-                        <span class="header-badge">Chrome Extension</span>
-                        <span class="version">v1.1.2</span>
-                    </div>
-                    <h1>YouTube 字幕翻译</h1>
-                    <p class="header-subtitle">抓取原字幕，生成双语字幕，并同步到播放器展示。</p>
+                    <h1>YouTube 字幕翻译 <span class="title-version">v1.1.2</span></h1>
                 </div>
             </div>
         </div>
@@ -43,60 +37,14 @@
                 <span class="tab-icon">⚙️</span>
                 <span class="tab-text">样式设定</span>
             </button>
-            <button class="tab-button" data-tab="about">
-                <span class="tab-icon">ℹ️</span>
-                <span class="tab-text">关于</span>
-            </button>
         </div>
 
         <!-- 标签页内容 -->
         <div class="main-content">
             <!-- 文件管理标签页 -->
             <div class="tab-content active" id="filesTab">
-                <!-- 字幕来源选择 -->
-                <div class="subtitle-source-section">
-                    <div class="source-header">
-                        <span class="source-title">字幕来源</span>
-                        <span class="source-description">直接提取 YouTube 字幕，或上传现有 SRT 文件重新翻译。</span>
-                    </div>
-                    <div class="source-options">
-                        <label class="source-option active">
-                            <input type="radio" name="subtitleSource" value="youtube" checked>
-                            <span class="option-icon">🎬</span>
-                            <span class="option-text">YouTube 字幕</span>
-                        </label>
-                        <label class="source-option">
-                            <input type="radio" name="subtitleSource" value="upload">
-                            <span class="option-icon">📄</span>
-                            <span class="option-text">上传 SRT</span>
-                        </label>
-                    </div>
-                </div>
-
-                <!-- SRT 上传区域 (默认隐藏) -->
-                <div class="srt-upload-section" id="srtUploadSection" style="display: none;">
-                    <div class="srt-drop-zone" id="srtUploadArea">
-                        <div class="srt-drop-content">
-                            <span class="srt-icon">📄</span>
-                            <span class="srt-text">拖拽 SRT 文件或点击选择</span>
-                        </div>
-                        <input type="file" id="srtFileInput" accept=".srt" hidden>
-                    </div>
-                    <div class="srt-file-info" id="srtFileInfo" style="display: none;">
-                        <span class="srt-filename" id="srtFileName"></span>
-                        <button class="srt-remove" id="srtRemove">×</button>
-                    </div>
-                </div>
-
                 <!-- 翻译控制区域 -->
                 <div class="translate-control-section">
-                    <div class="translate-panel-header">
-                        <div>
-                            <span class="translate-panel-kicker">翻译任务</span>
-                            <h2 class="translate-panel-title">一键生成双语字幕</h2>
-                        </div>
-                    </div>
-
                     <!-- 当前视频信息 -->
                     <div class="video-info-card">
                         <div class="info-row">
@@ -318,47 +266,6 @@
                 </div>
             </div>
 
-            <!-- 关于标签页 -->
-            <div class="tab-content" id="aboutTab">
-                <div class="about-card">
-                    <div class="app-logo">
-                        <div class="logo-icon">🎬</div>
-                        <div class="logo-text">
-                            <h3>YouTube 字幕翻译</h3>
-                            <span class="version">v1.1.2</span>
-                        </div>
-                    </div>
-
-                    <div class="feature-list">
-                        <div class="feature-item">
-                            <span class="feature-icon">🤖</span>
-                            <span class="feature-text">AI 智能翻译</span>
-                        </div>
-                        <div class="feature-item">
-                            <span class="feature-icon">🌍</span>
-                            <span class="feature-text">双语字幕显示</span>
-                        </div>
-                        <div class="feature-item">
-                            <span class="feature-icon">🎨</span>
-                            <span class="feature-text">自定义样式</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="tips-card">
-                    <div class="tips-header">
-                        <span>💡 使用技巧</span>
-                    </div>
-                    <div class="tip-item">
-                        <span class="tip-number">1</span>
-                        <span class="tip-text">支持上传 SRT 格式字幕文件</span>
-                    </div>
-                    <div class="tip-item">
-                        <span class="tip-number">2</span>
-                        <span class="tip-text">全屏模式下效果更佳</span>
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 
