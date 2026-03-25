@@ -156,7 +156,7 @@ class PopupController {
         try {
             await this.ensureDefaultSettings();
         } catch (e) {
-            console.warn('确保默认设置时出现问题，但继续加载当前状态:', e);
+            console.log('确保默认设置时出现问题，但继续加载当前状态:', e);
         }
 
         await this.loadCurrentState();
@@ -283,7 +283,7 @@ class PopupController {
                 // 设置已初始化
             }
         } catch (error) {
-            console.error('初始化默认设置失败:', error);
+            console.log('初始化默认设置失败，但不影响继续使用:', error);
         }
     }
 
@@ -1487,10 +1487,10 @@ class PopupController {
                 }
                 this.updateVideoDisplay(response.videoId, response.subtitleLoaded ? '已加载字幕' : '无字幕');
                 this.syncSubtitleDataFromContentScript()
-                    .catch(error => console.error('❌ 字幕数据同步失败:', error));
+                    .catch(error => console.log('字幕数据同步失败，保留当前界面状态:', error));
             });
         } catch (error) {
-            console.error('获取视频信息失败:', error);
+            console.log('获取视频信息失败，使用空状态继续展示:', error);
             this.updateVideoDisplay(null, '获取失败');
         }
     }
@@ -1569,7 +1569,7 @@ class PopupController {
             // 更新统计显示
             this.updateSubtitleInfoWithRetry();
         } catch (error) {
-            console.error('❌ 同步字幕数据异常:', error);
+            console.log('同步字幕数据异常，保留当前界面状态:', error);
         }
     }
 
@@ -1586,12 +1586,12 @@ class PopupController {
                 if (response.hasSubtitles && (response.englishCount > 0 || response.chineseCount > 0)) {
                     this.syncSubtitleDataFromContentScript()
                         .then(() => this.updateSubtitleInfoWithRetry())
-                        .catch(error => console.error('❌ 初始化字幕数据同步失败:', error));
+                        .catch(error => console.log('初始化字幕数据同步失败，稍后可重试:', error));
                 }
             });
 
         } catch (error) {
-            console.error('❌ 检查视频字幕状态失败:', error);
+            console.log('检查视频字幕状态失败，稍后可重试:', error);
         }
     }
 
@@ -1841,7 +1841,7 @@ class PopupController {
                 this.startProgressListener();
             }
         } catch (error) {
-            console.error('检查翻译进度失败:', error);
+            console.log('检查翻译进度失败，保持当前界面状态:', error);
         }
     }
 
@@ -1930,7 +1930,7 @@ class PopupController {
         try {
             await chrome.runtime.sendMessage({ action: 'cancelTranslation' });
         } catch (error) {
-            console.warn('发送取消消息失败:', error);
+            console.log('发送取消消息失败，继续执行本地重置:', error);
         }
 
         // 清除当前视频的缓存
@@ -1946,7 +1946,7 @@ class PopupController {
                 action: 'clearSubtitleData'
             });
         } catch (error) {
-            console.warn('清除页面字幕失败:', error);
+            console.log('清除页面字幕失败，继续执行本地重置:', error);
         }
 
         // 清空当前数据
@@ -2071,7 +2071,7 @@ class PopupController {
                     });
                     console.log('✅ 页面字幕已清空');
                 } catch (error) {
-                    console.warn('⚠️ 清空页面字幕失败:', error);
+                    console.log('清空页面字幕失败，继续执行重新翻译:', error);
                 }
 
                 // 清空当前数据
@@ -2188,7 +2188,7 @@ class PopupController {
                     const response = await new Promise((resolve, reject) => {
                         chrome.tabs.sendMessage(tabs[0].id, { action: 'getVideoInfo' }, (response) => {
                             if (chrome.runtime.lastError) {
-                                console.warn('获取视频信息失败:', chrome.runtime.lastError);
+                                console.log('获取视频信息失败，跳过附加元数据:', chrome.runtime.lastError);
                                 resolve(null);
                             } else {
                                 resolve(response);
@@ -2207,7 +2207,7 @@ class PopupController {
                         console.log('📦 准备传递的视频信息:', videoInfo);
                     }
                 } catch (error) {
-                    console.warn('获取视频信息异常:', error);
+                    console.log('获取视频信息异常，跳过附加元数据:', error);
                 }
             }
 

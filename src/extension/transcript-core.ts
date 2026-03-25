@@ -382,7 +382,7 @@ async function selectAndCopyTranscript(): Promise<void> {
         return;
       }
     } catch (error) {
-      console.warn('通过字幕轨接口复制字幕失败，回退到 transcript 面板:', error);
+      console.log('通过字幕轨接口复制字幕失败，回退到 transcript 面板:', error);
     }
   }
 
@@ -472,7 +472,7 @@ function handleCopyClick(): void {
 }
 
 function handleTranslateClick(): void {
-  handleTranscriptAction(triggerExtensionTranslation);
+  triggerExtensionTranslation();
 }
 
 function triggerExtensionTranslation(): void {

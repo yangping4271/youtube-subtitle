@@ -4,6 +4,7 @@
  */
 
 import { getDefaultEnglishSettings, getDefaultChineseSettings } from './config';
+import { formatSubtitleFetchLog } from './subtitle-fetch-log';
 import { translatorService } from './translator';
 import type {
   SimpleSubtitleEntry,
@@ -305,18 +306,25 @@ class SubtitleExtensionBackground {
   }
 
   logSubtitleFetchSource(request: ChromeMessage, sender: chrome.runtime.MessageSender): void {
-    const source = typeof request.data === 'object' && request.data !== null
-      ? (request.data as { source?: string }).source || 'unknown'
-      : 'unknown';
-    const subtitleCount = typeof request.data === 'object' && request.data !== null
-      ? (request.data as { subtitleCount?: number }).subtitleCount || 0
-      : 0;
+    const payload = typeof request.data === 'object' && request.data !== null
+      ? request.data as {
+          source?: 'caption-tracks' | 'transcript-panel' | 'unavailable';
+          subtitleCount?: number;
+          fallbackReason?: string;
+          captionTrackError?: string;
+          panelError?: string;
+        }
+      : {};
     const pageUrl = sender.tab?.url || 'unknown-url';
     const videoId = request.videoId || 'unknown-video';
 
-    console.info(
-      `[SubtitleFetch] source=${source} subtitles=${subtitleCount} videoId=${videoId} url=${pageUrl}`
-    );
+    console.info(formatSubtitleFetchLog({
+      source: payload.source || 'unavailable',
+      subtitleCount: payload.subtitleCount || 0,
+      fallbackReason: payload.fallbackReason,
+      captionTrackError: payload.captionTrackError,
+      panelError: payload.panelError,
+    }, videoId, pageUrl));
   }
 
   async saveVideoSubtitles(
@@ -511,7 +519,7 @@ class SubtitleExtensionBackground {
       try {
         await chrome.tabs.sendMessage(sourceTabId, { action: 'clearData' });
       } catch (error) {
-        console.error('清除字幕显示失败:', error);
+        console.log('清除字幕显示失败，继续后台翻译:', error);
       }
     }
 
@@ -559,7 +567,7 @@ class SubtitleExtensionBackground {
                 chineseSubtitles: partial.chinese,
               });
             } catch (error) {
-              console.error('发送部分结果失败:', error);
+              console.log('发送部分结果失败，等待最终结果同步:', error);
             }
           }
         },

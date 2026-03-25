@@ -5,6 +5,11 @@
 
 import { getDefaultEnglishSettings, getDefaultChineseSettings, getDefaultConfig } from './config';
 import { SubtitleParser } from './subtitle-parser';
+import {
+  normalizeSubtitleFetchErrorMessage,
+  type SubtitleFetchLogPayload,
+  type SubtitleFetchSource,
+} from './subtitle-fetch-log';
 import { getVideoInfo } from './transcript-core';
 import {
   classifyCaptionTrackResponse,
@@ -315,18 +320,27 @@ class YouTubeSubtitleOverlay {
       }
     } catch (error) {
       captionTrackError = error instanceof Error ? error : new Error(String(error));
-      console.warn('通过字幕轨接口获取字幕失败，回退到 transcript 面板:', error);
+      console.log('通过字幕轨接口获取字幕失败，回退到 transcript 面板:', error);
     }
 
     try {
       const panelSubtitles = await this.getSubtitlesFromTranscriptPanel();
       if (panelSubtitles.length > 0) {
-        this.logSubtitleFetchSource('transcript-panel', panelSubtitles.length);
+        this.logSubtitleFetchSource('transcript-panel', panelSubtitles.length, {
+          fallbackReason: captionTrackError
+            ? normalizeSubtitleFetchErrorMessage(captionTrackError.message)
+            : undefined,
+        });
         return panelSubtitles;
       }
     } catch (panelError) {
       const normalizedPanelError = panelError instanceof Error ? panelError : new Error(String(panelError));
-      this.logSubtitleFetchSource('unavailable', 0);
+      this.logSubtitleFetchSource('unavailable', 0, {
+        captionTrackError: captionTrackError
+          ? normalizeSubtitleFetchErrorMessage(captionTrackError.message)
+          : undefined,
+        panelError: normalizeSubtitleFetchErrorMessage(normalizedPanelError.message),
+      });
 
       if (captionTrackError?.message.includes('请先登录 YouTube')) {
         throw captionTrackError;
@@ -339,7 +353,11 @@ class YouTubeSubtitleOverlay {
       throw normalizedPanelError;
     }
 
-    this.logSubtitleFetchSource('unavailable', 0);
+    this.logSubtitleFetchSource('unavailable', 0, {
+      captionTrackError: captionTrackError
+        ? normalizeSubtitleFetchErrorMessage(captionTrackError.message)
+        : '字幕轨未返回可用字幕',
+    });
     if (captionTrackError) {
       throw captionTrackError;
     }
@@ -347,7 +365,11 @@ class YouTubeSubtitleOverlay {
     throw new Error('无法获取 YouTube 字幕，请确保视频有可用字幕。');
   }
 
-  private logSubtitleFetchSource(source: 'caption-tracks' | 'transcript-panel' | 'unavailable', subtitleCount: number): void {
+  private logSubtitleFetchSource(
+    source: SubtitleFetchSource,
+    subtitleCount: number,
+    details: Partial<Omit<SubtitleFetchLogPayload, 'source' | 'subtitleCount'>> = {}
+  ): void {
     const videoId = this.getVideoId();
     if (!chrome.runtime?.id || !videoId) {
       return;
@@ -359,19 +381,25 @@ class YouTubeSubtitleOverlay {
       data: {
         source,
         subtitleCount,
+        ...details,
       },
     }).catch((error) => {
-      console.warn('发送字幕来源日志失败:', error);
+      console.log('发送字幕来源日志失败:', error);
     });
   }
 
   private async getSubtitlesFromCaptionTracks(videoId: string): Promise<SimpleSubtitleEntry[]> {
+    let pageTrackError: Error | null = null;
     const pagePlayerResponse = await this.getCaptionTracksFromPage();
     const pageTracks = extractCaptionTracks(pagePlayerResponse);
     if (pageTracks.length > 0) {
       const track = this.pickPreferredCaptionTrack(pageTracks as YouTubeCaptionTrack[]);
       if (track?.baseUrl) {
-        return this.fetchSubtitleTrack(track);
+        try {
+          return await this.fetchSubtitleTrack(track);
+        } catch (error) {
+          pageTrackError = error instanceof Error ? error : new Error(String(error));
+        }
       }
     }
 
@@ -383,27 +411,46 @@ class YouTubeSubtitleOverlay {
 
     const tracks = extractCaptionTracks(playerResponse) as YouTubeCaptionTrack[];
     if (tracks.length === 0) {
-      return [];
+      const reason = responseClassification.message || 'player 响应未提供字幕轨';
+      if (pageTrackError) {
+        throw new Error(
+          `页面字幕轨失败: ${pageTrackError.message}; youtubei/player 未提供字幕轨: ${reason}`
+        );
+      }
+      throw new Error(reason);
     }
 
     const track = this.pickPreferredCaptionTrack(tracks);
     if (!track?.baseUrl) {
-      return [];
+      const error = new Error('字幕轨缺少 baseUrl');
+      if (pageTrackError) {
+        throw new Error(`页面字幕轨失败: ${pageTrackError.message}; ${error.message}`);
+      }
+      throw error;
     }
 
-    return this.fetchSubtitleTrack(track);
+    try {
+      return await this.fetchSubtitleTrack(track);
+    } catch (error) {
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      if (pageTrackError) {
+        throw new Error(
+          `页面字幕轨失败: ${pageTrackError.message}; youtubei/player 字幕轨失败: ${normalizedError.message}`
+        );
+      }
+      throw normalizedError;
+    }
   }
 
   private async fetchSubtitleTrack(track: YouTubeCaptionTrack): Promise<SimpleSubtitleEntry[]> {
     if (!track.baseUrl) {
-      return [];
+      throw new Error('字幕轨缺少 baseUrl');
     }
 
     const captionUrl = new URL(track.baseUrl);
     const isYouTubeHost = captionUrl.hostname === 'www.youtube.com' || captionUrl.hostname.endsWith('.youtube.com');
     if (!isYouTubeHost) {
-      console.warn('字幕轨地址不是 YouTube 域名，已忽略:', captionUrl.hostname);
-      return [];
+      throw new Error(`字幕轨地址不是 YouTube 域名: ${captionUrl.hostname}`);
     }
 
     const response = await fetch(track.baseUrl, createYouTubeRequestInit());
@@ -413,10 +460,15 @@ class YouTubeSubtitleOverlay {
 
     const xml = await response.text();
     if (!xml.trim()) {
-      return [];
+      throw new Error('字幕轨返回空响应');
     }
 
-    return this.parseTimedTextXml(xml);
+    const subtitles = this.parseTimedTextXml(xml);
+    if (subtitles.length === 0) {
+      throw new Error('字幕轨解析成功但未产出字幕');
+    }
+
+    return subtitles;
   }
 
   private async getCaptionTracksFromPage(): Promise<YouTubePlayerResponse | null> {
