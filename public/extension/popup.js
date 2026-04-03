@@ -1620,6 +1620,70 @@ class PopupController {
         }
     }
 
+    getApiPermissionOrigin() {
+        if (!this.apiConfig.openaiBaseUrl) {
+            throw new Error('请先填写API地址');
+        }
+
+        let url;
+        try {
+            url = new URL(this.apiConfig.openaiBaseUrl);
+        } catch {
+            throw new Error('API地址格式无效');
+        }
+
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+            throw new Error('API地址必须使用 http 或 https');
+        }
+
+        return `${url.origin}/*`;
+    }
+
+    async hasApiPermission(originPattern) {
+        if (!chrome.permissions?.contains) {
+            return true;
+        }
+
+        return new Promise((resolve) => {
+            chrome.permissions.contains({ origins: [originPattern] }, (granted) => {
+                resolve(Boolean(granted));
+            });
+        });
+    }
+
+    async requestApiPermission(originPattern) {
+        if (!chrome.permissions?.request) {
+            return true;
+        }
+
+        return new Promise((resolve) => {
+            chrome.permissions.request({ origins: [originPattern] }, (granted) => {
+                resolve(Boolean(granted));
+            });
+        });
+    }
+
+    async ensureApiPermission(interactive = true) {
+        const originPattern = this.getApiPermissionOrigin();
+        const hasPermission = await this.hasApiPermission(originPattern);
+
+        if (hasPermission) {
+            return true;
+        }
+
+        if (!interactive) {
+            return false;
+        }
+
+        const granted = await this.requestApiPermission(originPattern);
+        if (!granted) {
+            const origin = originPattern.replace(/\/\*$/, '');
+            throw new Error(`需要授权访问 ${origin}`);
+        }
+
+        return true;
+    }
+
     initApiSettingsUI() {
         // 填充目标语言下拉框
         const targetLangSelect = document.getElementById('targetLanguage');
@@ -1739,18 +1803,26 @@ class PopupController {
         if (targetLanguage) this.apiConfig.targetLanguage = targetLanguage.value;
         if (threadNum) this.apiConfig.threadNum = parseInt(threadNum.value, 10) || 3;
 
-        await this.saveApiConfig();
+        try {
+            await this.ensureApiPermission(true);
+            await this.saveApiConfig();
+        } catch (error) {
+            this.showApiStatus('error', error.message);
+            Toast.error(error.message);
+        }
     }
 
     async testApiConnection() {
         this.showApiStatus('loading', '测试连接中...');
 
-        // 临时更新translator配置
-        if (typeof translatorService !== 'undefined') {
-            await chrome.storage.local.set({ apiConfig: this.apiConfig });
-        }
-
         try {
+            await this.ensureApiPermission(true);
+
+            // 临时更新translator配置
+            if (typeof translatorService !== 'undefined') {
+                await chrome.storage.local.set({ apiConfig: this.apiConfig });
+            }
+
             const headers = {
                 'Content-Type': 'application/json'
             };
@@ -2042,6 +2114,18 @@ class PopupController {
             const autoLoadStatus = document.getElementById('autoLoadStatus');
             if (autoLoadStatus) {
                 autoLoadStatus.textContent = '请先配置API地址';
+                autoLoadStatus.className = 'load-status error';
+            }
+            this.switchTab('api');
+            return;
+        }
+
+        try {
+            await this.ensureApiPermission(true);
+        } catch (error) {
+            const autoLoadStatus = document.getElementById('autoLoadStatus');
+            if (autoLoadStatus) {
+                autoLoadStatus.textContent = error.message;
                 autoLoadStatus.className = 'load-status error';
             }
             this.switchTab('api');

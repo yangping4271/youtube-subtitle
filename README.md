@@ -42,6 +42,7 @@ npm run build
 - 支持 OpenAI 及兼容 API，例如 LM Studio、Azure、OpenRouter
 - `API Base URL` 可填写任意 OpenAI-compatible endpoint，例如 `http://127.0.0.1:1234/v1`
 - 对于 LM Studio 这类本地服务，`API Key` 通常可以留空
+- 首次连接新的 API 地址时，扩展会按该地址动态请求访问权限，而不是默认申请所有网站权限
 - 推荐本地模型：`gemma-4-e2b-it`、`gemma-4-e4b-it`
 
 示例：

@@ -1,17 +1,15 @@
 {
   "manifest_version": 3,
   "name": "YouTube 字幕翻译",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "AI 驱动的 YouTube 字幕翻译工具",
   "permissions": [
     "activeTab",
     "storage"
   ],
-  "host_permissions": [
+  "optional_host_permissions": [
     "http://*/*",
-    "https://*/*",
-    "https://api.openai.com/*",
-    "https://*.openai.com/*"
+    "https://*/*"
   ],
   "action": {
     "default_popup": "popup.html",
