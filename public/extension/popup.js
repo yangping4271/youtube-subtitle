@@ -1651,9 +1651,7 @@ class PopupController {
         }
 
         // 检查API状态
-        if (this.apiConfig.openaiApiKey) {
-            this.checkApiStatus();
-        }
+        this.checkApiStatus();
     }
 
     bindApiSettingsEvents() {
@@ -1753,12 +1751,16 @@ class PopupController {
         }
 
         try {
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            if (this.apiConfig.openaiApiKey) {
+                headers.Authorization = `Bearer ${this.apiConfig.openaiApiKey}`;
+            }
+
             const response = await fetch(`${this.apiConfig.openaiBaseUrl}/models`, {
                 method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${this.apiConfig.openaiApiKey}`,
-                    'Content-Type': 'application/json'
-                }
+                headers
             });
 
             if (response.ok) {
@@ -1789,10 +1791,10 @@ class PopupController {
     }
 
     checkApiStatus() {
-        if (this.apiConfig.openaiApiKey) {
-            this.updateTranslateStatus('ready', 'API已配置', '点击按钮开始翻译');
+        if (this.apiConfig.openaiBaseUrl) {
+            this.updateTranslateStatus('ready', 'API已配置', '支持本地兼容服务，API Key 可留空');
         } else {
-            this.updateTranslateStatus('unconfigured', '未配置API', '请在API设置中配置');
+            this.updateTranslateStatus('unconfigured', '未配置API', '请先填写 API 地址');
         }
     }
 
@@ -2036,10 +2038,10 @@ class PopupController {
         }
 
         // 检查API配置
-        if (!this.apiConfig.openaiApiKey) {
+        if (!this.apiConfig.openaiBaseUrl) {
             const autoLoadStatus = document.getElementById('autoLoadStatus');
             if (autoLoadStatus) {
-                autoLoadStatus.textContent = '请先配置API密钥';
+                autoLoadStatus.textContent = '请先配置API地址';
                 autoLoadStatus.className = 'load-status error';
             }
             this.switchTab('api');
@@ -2327,12 +2329,16 @@ Example:
 
 Return ONLY the XML tags, no other text.`;
 
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+        if (this.apiConfig.openaiApiKey) {
+            headers.Authorization = `Bearer ${this.apiConfig.openaiApiKey}`;
+        }
+
         const response = await fetch(`${this.apiConfig.openaiBaseUrl}/chat/completions`, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${this.apiConfig.openaiApiKey}`,
-                'Content-Type': 'application/json'
-            },
+            headers,
             body: JSON.stringify({
                 model: this.apiConfig.llmModel,
                 messages: [

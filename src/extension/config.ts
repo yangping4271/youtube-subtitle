@@ -189,10 +189,6 @@ export function getDefaultTranslatorConfig(): TranslatorConfig {
 export function validateConfig(config: TranslatorConfig): string[] {
   const errors: string[] = [];
 
-  if (!config.openaiApiKey) {
-    errors.push('API 密钥未配置');
-  }
-
   if (!config.openaiBaseUrl) {
     errors.push('API 地址未配置');
   }

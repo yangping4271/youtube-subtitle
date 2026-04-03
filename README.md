@@ -1,6 +1,6 @@
 # YouTube Subtitle Translator
 
-自动翻译 YouTube 视频字幕的 Chrome 扩展。
+自动翻译 YouTube 视频字幕的 Chrome 扩展，支持 OpenAI 及本地 OpenAI-compatible 模型服务。
 
 ## 项目结构
 
@@ -36,6 +36,21 @@ npm run build
 ```
 
 构建完成后，Chrome 扩展目录为 `dist/extension`。
+
+## API 配置
+
+- 支持 OpenAI 及兼容 API，例如 LM Studio、Azure、OpenRouter
+- `API Base URL` 可填写任意 OpenAI-compatible endpoint，例如 `http://127.0.0.1:1234/v1`
+- 对于 LM Studio 这类本地服务，`API Key` 通常可以留空
+- 推荐本地模型：`gemma-4-e2b-it`、`gemma-4-e4b-it`
+
+示例：
+
+```text
+API Base URL: http://127.0.0.1:1234/v1
+API Key:      留空
+翻译模型:      gemma-4-e4b-it
+```
 
 ## 开发命令
 

@@ -29,10 +29,6 @@ export class OpenAIClient {
   ): Promise<string> {
     const { temperature = 0.7, timeout = 80000, signal: externalSignal } = options;
 
-    if (!this.apiKey) {
-      throw new Error('API 密钥未配置');
-    }
-
     const url = `${this.baseUrl}/chat/completions`;
     const body = {
       model: this.model,
@@ -54,12 +50,16 @@ export class OpenAIClient {
         externalSignal?.addEventListener('abort', externalAbortHandler);
 
         try {
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+          };
+          if (this.apiKey) {
+            headers.Authorization = `Bearer ${this.apiKey}`;
+          }
+
           const response = await fetch(url, {
             method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${this.apiKey}`,
-              'Content-Type': 'application/json',
-            },
+            headers,
             body: JSON.stringify(body),
             signal: controller.signal,
           });
