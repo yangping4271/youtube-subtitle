@@ -18,7 +18,7 @@ function createConfig(): TranslatorConfig {
 }
 
 describe('Translator XML repair', () => {
-  it('在常见闭合标签损坏时先修补再解析', async () => {
+  it('在降级到 XML 后仍会先修补再解析', async () => {
     let callCount = 0;
     const client = {
       async callChat(): Promise<string> {
@@ -38,7 +38,7 @@ describe('Translator XML repair', () => {
       '3': 'third',
     });
 
-    expect(callCount).toBe(1);
+    expect(callCount).toBe(3);
     expect(result.map((item) => item.translation)).toEqual(['第一句', '第二句', '第三句']);
   });
 });

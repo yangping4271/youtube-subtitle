@@ -13,6 +13,11 @@ const logger = setupLogger('splitter');
 // 时间间隔阈值（毫秒）
 const MAX_GAP = 1500; // 1.5秒
 const MAX_WORDS_PER_PRESPLIT = 80;
+const EXACT_MATCH_MAX_SHIFT = 8;
+const MAX_TRANSITION_GAP_MS = 120;
+const DEFAULT_TRANSITION_LEAD_MS = 180;
+const STRONG_PUNCTUATION_TRANSITION_LEAD_MS = 80;
+const TOKEN_BOUNDARY_PUNCTUATION = /([.,!?;:…。，！？；：、])/g;
 
 /**
  * 基于标点预分句，返回句子列表及其对应的单词索引范围
@@ -210,8 +215,8 @@ export async function mergeSegmentsWithinBatch(
     llmSentences
   );
 
-  // 合并过短的分段
-  mergeShortSegment(alignedSegments, config);
+  // 只微调相邻句子的切换点，不再通过合并短句来延长上一句
+  refineSegmentTransitions(alignedSegments);
 
   return new SubtitleData(alignedSegments);
 }
@@ -245,6 +250,54 @@ function groupSegmentsByTimeGaps(segments: SubtitleEntry[], maxGap: number = MAX
   return groups;
 }
 
+function normalizeComparableToken(token: string): string {
+  return token.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function tokenizeComparableText(text: string): string[] {
+  return text
+    .replace(TOKEN_BOUNDARY_PUNCTUATION, ' $1 ')
+    .split(/\s+/)
+    .map(normalizeComparableToken)
+    .filter(token => token.length > 0);
+}
+
+function findSequentialTokenMatch(
+  sentenceTokens: string[],
+  sourceTokens: string[],
+  startIndex: number,
+  maxShift: number = EXACT_MATCH_MAX_SHIFT
+): { position: number; windowSize: number } | null {
+  if (sentenceTokens.length === 0) {
+    return null;
+  }
+
+  const maxStart = Math.min(startIndex + maxShift, sourceTokens.length - sentenceTokens.length);
+  if (maxStart < startIndex) {
+    return null;
+  }
+
+  for (let start = startIndex; start <= maxStart; start++) {
+    let matched = true;
+
+    for (let offset = 0; offset < sentenceTokens.length; offset++) {
+      if (sourceTokens[start + offset] !== sentenceTokens[offset]) {
+        matched = false;
+        break;
+      }
+    }
+
+    if (matched) {
+      return {
+        position: start,
+        windowSize: sentenceTokens.length,
+      };
+    }
+  }
+
+  return null;
+}
+
 /**
  * 基于句子相似度匹配来合并字幕片段
  */
@@ -256,20 +309,30 @@ function mergeSegmentsBasedOnSentences(
   let currentIndex = 0;
   let unmatchedCount = 0;
   const maxUnmatched = 5;
+  const sourceTokens = segments.map(seg => normalizeComparableToken(seg.text));
 
   logger.info(`🔗 开始时间戳对齐: ${sentences.length} 个句子 -> ${segments.length} 个原始片段`);
 
   for (let sentenceIdx = 0; sentenceIdx < sentences.length; sentenceIdx++) {
     const sentence = sentences[sentenceIdx];
+    const sentenceTokens = tokenizeComparableText(sentence);
+
+    const exactMatch = findSequentialTokenMatch(
+      sentenceTokens,
+      sourceTokens,
+      currentIndex
+    );
 
     // 使用相似度匹配查找最佳对应位置
-    const match = findBestMatch(
-      sentence,
-      segments,
-      currentIndex,
-      30, // maxShift
-      0.5  // threshold
-    );
+    const match = exactMatch
+      ? { ...exactMatch, similarity: 1.0 }
+      : findBestMatch(
+        sentence,
+        segments,
+        currentIndex,
+        30, // maxShift
+        0.5  // threshold
+      );
 
     if (match) {
       const { position, windowSize, similarity } = match;
@@ -798,42 +861,44 @@ export async function splitByLLM(
 }
 
 /**
- * 合并过短的分段
+ * 微调相邻分段切换点：
+ * - 不再延长上一句结束时间
+ * - 在极短切换间隙下，允许下一句适度提前开始
  */
-function mergeShortSegment(segments: SubtitleEntry[], config: TranslatorConfig): void {
-  if (segments.length === 0) return;
+function refineSegmentTransitions(segments: SubtitleEntry[]): void {
+  if (segments.length < 2) return;
 
-  const maxWordCount = config.maxWordCountEnglish;
-  let i = 0;
+  for (let i = 1; i < segments.length; i++) {
+    const previous = segments[i - 1];
+    const current = segments[i];
+    const gap = current.startTime - previous.endTime;
 
-  while (i < segments.length - 1) {
-    const currentSeg = segments[i];
-    const nextSeg = segments[i + 1];
+    if (gap > MAX_TRANSITION_GAP_MS) {
+      continue;
+    }
 
-    // 判断是否需要合并:
-    // 1. 时间间隔小于300ms
-    // 2. 当前段落或下一段落词数小于5
-    // 3. 合并后总词数不超过限制
-    // 4. 当前段落不以句子结束标点结尾
-    const timeGap = Math.abs(nextSeg.startTime - currentSeg.endTime);
-    const currentWords = countWords(currentSeg.text);
-    const nextWords = countWords(nextSeg.text);
-    const totalWords = currentWords + nextWords;
+    const previousDuration = previous.endTime - previous.startTime;
+    const currentDuration = current.endTime - current.startTime;
+    if (previousDuration <= 0 || currentDuration <= 0) {
+      continue;
+    }
 
-    const endsWithPunctuation = /[.!?]$/.test(currentSeg.text);
+    const leadCap = /[.!?。！？]$/.test(previous.text.trim())
+      ? STRONG_PUNCTUATION_TRANSITION_LEAD_MS
+      : DEFAULT_TRANSITION_LEAD_MS;
+    const leadInMs = Math.min(
+      leadCap,
+      Math.floor(previousDuration * 0.12),
+      Math.floor(currentDuration * 0.2)
+    );
 
-    if (timeGap < 300 && (currentWords < 5 || nextWords <= 5) &&
-        totalWords <= maxWordCount && !endsWithPunctuation) {
-      // 执行合并操作
-      logger.info(`合并优化: ${currentSeg.text} --- ${nextSeg.text}`);
-      currentSeg.text += ' ' + nextSeg.text;
-      currentSeg.endTime = nextSeg.endTime;
+    if (leadInMs <= 0) {
+      continue;
+    }
 
-      // 移除下一个段落
-      segments.splice(i + 1, 1);
-      // 不增加i，继续检查合并后的段落
-    } else {
-      i++;
+    const adjustedStartTime = Math.max(previous.startTime, previous.endTime - leadInMs);
+    if (adjustedStartTime < current.startTime) {
+      current.startTime = adjustedStartTime;
     }
   }
 }

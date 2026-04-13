@@ -3,7 +3,7 @@
  */
 
 import { withRetry } from '../utils/retry.js';
-import type { TranslatorConfig } from '../types/index.js';
+import type { ChatOptions, TranslatorConfig } from '../types/index.js';
 
 /**
  * OpenAI API 客户端
@@ -25,12 +25,17 @@ export class OpenAIClient {
   async callChat(
     systemPrompt: string,
     userPrompt: string,
-    options: { temperature?: number; timeout?: number; signal?: AbortSignal } = {}
+    options: ChatOptions = {}
   ): Promise<string> {
-    const { temperature = 0.7, timeout = 80000, signal: externalSignal } = options;
+    const {
+      temperature = 0.7,
+      timeout = 80000,
+      signal: externalSignal,
+      responseFormat,
+    } = options;
 
     const url = `${this.baseUrl}/chat/completions`;
-    const body = {
+    const body: Record<string, unknown> = {
       model: this.model,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -38,6 +43,10 @@ export class OpenAIClient {
       ],
       temperature,
     };
+
+    if (responseFormat) {
+      body.response_format = responseFormat;
+    }
 
     // 使用 withRetry 包装 API 调用，自动重试 2 次
     return withRetry(

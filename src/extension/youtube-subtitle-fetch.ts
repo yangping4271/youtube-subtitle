@@ -59,6 +59,16 @@ const TRANSCRIPT_TRIGGER_SELECTORS = [
   '#primary-button button',
 ];
 
+const TRANSCRIPT_START_TIME_ATTRIBUTES = [
+  'data-start-ms',
+  'data-start-offset-ms',
+  'data-start-time-ms',
+  'start-ms',
+  'start-offset-ms',
+  'start-time-ms',
+  'offset-ms',
+];
+
 export function createYouTubeRequestInit(init: RequestInit = {}): RequestInit {
   return {
     credentials: 'include',
@@ -162,23 +172,97 @@ export function shouldForceLegacyTranscriptOpen(
   return !clickedTranscriptTrigger && hasTranscriptPanel;
 }
 
-export function extractTranscriptSegmentData(segment: QueryElementLike): {
-  timestampText: string;
-  bodyText: string;
-} | null {
-  const timestampElement =
+function getTranscriptTimestampElement(segment: QueryElementLike): QueryElementLike | null {
+  return (
     segment.querySelector?.('.segment-timestamp') ||
     segment.querySelector?.('[class*="timestamp"]') ||
     segment.querySelector?.('div[class*="time"]') ||
     segment.querySelector?.('#start-offset') ||
-    segment.querySelector?.('.ytwTranscriptSegmentViewModelTimestamp');
+    segment.querySelector?.('.ytwTranscriptSegmentViewModelTimestamp') ||
+    null
+  );
+}
 
-  const bodyElement =
+function getTranscriptBodyElement(segment: QueryElementLike): QueryElementLike | null {
+  return (
     segment.querySelector?.('.segment-text') ||
     segment.querySelector?.('[class*="text"]') ||
     segment.querySelector?.('yt-formatted-string') ||
     segment.querySelector?.('#segment-text') ||
-    segment.querySelector?.('span[role="text"]');
+    segment.querySelector?.('span[role="text"]') ||
+    null
+  );
+}
+
+function readNumericAttribute(
+  element: QueryElementLike | null,
+  attributeNames: readonly string[]
+): number | null {
+  if (!element?.getAttribute) {
+    return null;
+  }
+
+  for (const attributeName of attributeNames) {
+    const rawValue = element.getAttribute(attributeName);
+    if (!rawValue) {
+      continue;
+    }
+
+    const value = Number(rawValue);
+    if (Number.isFinite(value)) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+export function parseTranscriptTimestamp(timestampText: string): number {
+  const normalized = timestampText.trim().replace(/[^\d:.]/g, '');
+  if (!normalized) {
+    return 0;
+  }
+
+  const parts = normalized.split(':');
+  if (parts.some((part) => part.length === 0 || Number.isNaN(Number(part)))) {
+    return 0;
+  }
+
+  if (parts.length === 2) {
+    return Number(parts[0]) * 60 + Number(parts[1]);
+  }
+
+  if (parts.length === 3) {
+    return Number(parts[0]) * 3600 + Number(parts[1]) * 60 + Number(parts[2]);
+  }
+
+  return 0;
+}
+
+export function extractTranscriptSegmentStartTime(segment: QueryElementLike): number | null {
+  const timestampElement = getTranscriptTimestampElement(segment);
+  const attributeValueMs =
+    readNumericAttribute(segment, TRANSCRIPT_START_TIME_ATTRIBUTES) ??
+    readNumericAttribute(timestampElement, TRANSCRIPT_START_TIME_ATTRIBUTES);
+
+  if (attributeValueMs !== null) {
+    return attributeValueMs / 1000;
+  }
+
+  const timestampText = timestampElement?.textContent?.trim() || '';
+  if (!timestampText) {
+    return null;
+  }
+
+  return parseTranscriptTimestamp(timestampText);
+}
+
+export function extractTranscriptSegmentData(segment: QueryElementLike): {
+  timestampText: string;
+  bodyText: string;
+} | null {
+  const timestampElement = getTranscriptTimestampElement(segment);
+  const bodyElement = getTranscriptBodyElement(segment);
 
   const timestampText = timestampElement?.textContent?.trim() || '';
   const bodyText = bodyElement?.textContent?.trim() || '';

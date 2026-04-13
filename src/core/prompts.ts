@@ -24,6 +24,54 @@ const STANDARD_TERMINOLOGY = `## Standard Terminology
 - co-pilots → co-pilots
 - MCP (Model Context Protocol) → 模型上下文协议 (Model Context Protocol/MCP)`;
 
+type BatchTranslateOutputFormat = 'json_schema' | 'json' | 'xml';
+
+function buildBatchTranslateOutputInstructions(
+  outputFormat: BatchTranslateOutputFormat
+): string {
+  if (outputFormat === 'json_schema') {
+    return `## Output Format
+Return a single JSON object that strictly matches the provided JSON Schema.
+
+Example:
+{
+  "1": "翻译内容",
+  "2": "翻译内容"
+}
+
+- Every key must match the input subtitle key exactly.
+- Every value must be the translated subtitle string for that key.
+- Do not add extra keys, omit keys, or rename keys.
+- Return ONLY the JSON object, no markdown, no code blocks, no explanations.`;
+  }
+
+  if (outputFormat === 'json') {
+    return `## Output Format
+Return a single JSON object where each key is the input subtitle key and each value is the translated subtitle string.
+
+Example:
+{
+  "1": "翻译内容",
+  "2": "翻译内容"
+}
+
+- Output keys and their order must exactly match the input keys.
+- Do not add, omit, or rename keys for any reason.
+- Return ONLY the JSON object, no markdown, no code blocks, no explanations.`;
+  }
+
+  return `## Output Format
+Return translations using XML-style numbered tags. Each tag number must match the input subtitle key exactly.
+
+Example:
+<1>翻译内容</1>
+<2>翻译内容</2>
+
+- Output tag numbers and their order must exactly match the input keys.
+- Do not add, omit, or renumber tags for any reason.
+- Return ONLY the XML tags, no other text, no code blocks, no explanations.`;
+}
+
 // ========================================
 // Prompt 模板
 // ========================================
@@ -101,16 +149,7 @@ If provided, use the following reference data to guide your translation:
 - For all other content: Translate naturally.
 - Always translate each segment individually without attempting to complete incomplete sentences. Maintain proper flow and context with adjacent subtitles as appropriate.
 
-## Output Format
-Return translations using XML-style numbered tags. Each tag number must match the input subtitle key exactly.
-
-Example:
-<1>翻译内容</1>
-<2>翻译内容</2>
-
-- Output tag numbers and their order must exactly match the input keys.
-- Do not add, omit, or renumber tags for any reason.
-- Return ONLY the XML tags, no other text, no code blocks, no explanations.
+[OutputFormatInstructions]
 
 ${STANDARD_TERMINOLOGY}
 `;
@@ -153,16 +192,19 @@ export function buildSplitPrompt(params: SplitPromptParams): string {
 
 interface TranslatePromptParams {
   targetLanguage: string;
+  outputFormat?: BatchTranslateOutputFormat;
 }
 
 /**
  * 构建翻译 Prompt
  */
 export function buildTranslatePrompt(params: TranslatePromptParams): string {
-  return TRANSLATE_PROMPT.replace(
-    /\[TargetLanguage\]/g,
-    params.targetLanguage
-  );
+  return TRANSLATE_PROMPT
+    .replace(/\[TargetLanguage\]/g, params.targetLanguage)
+    .replace(
+      /\[OutputFormatInstructions\]/g,
+      buildBatchTranslateOutputInstructions(params.outputFormat ?? 'xml')
+    );
 }
 
 /**

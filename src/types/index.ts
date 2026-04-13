@@ -104,6 +104,24 @@ export interface LLMResponse {
   }>;
 }
 
+/** Chat API 的 JSON Schema 输出格式 */
+export interface JsonSchemaResponseFormat {
+  type: 'json_schema';
+  json_schema: {
+    name: string;
+    strict: boolean;
+    schema: Record<string, unknown>;
+  };
+}
+
+/** Chat API 调用选项 */
+export interface ChatOptions {
+  temperature?: number;
+  timeout?: number;
+  signal?: AbortSignal;
+  responseFormat?: JsonSchemaResponseFormat;
+}
+
 // ========================================
 // Chrome Extension 相关类型
 // ========================================

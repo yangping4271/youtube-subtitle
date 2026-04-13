@@ -6,19 +6,138 @@ import { setupLogger } from '../utils/logger.js';
 import { buildTranslatePrompt, buildSingleTranslatePrompt } from './prompts.js';
 import { getLanguageName } from '../utils/language.js';
 import { normalizeChinesePunctuation, isChinese } from '../utils/punctuation.js';
-import type { TranslatorConfig, TranslatedEntry } from '../types/index.js';
+import { parseLlmResponse } from '../utils/json-repair.js';
+import type {
+  ChatOptions,
+  JsonSchemaResponseFormat,
+  TranslatorConfig,
+  TranslatedEntry,
+} from '../types/index.js';
 
 const logger = setupLogger('translator');
+
+type BatchResponseFormat = 'json_schema' | 'json' | 'xml';
+
+class BatchResponseFormatError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BatchResponseFormatError';
+  }
+}
 
 /**
  * OpenAI API 客户端接口
  */
 interface OpenAIClient {
-  callChat(systemPrompt: string, userPrompt: string, options?: {
-    temperature?: number;
-    timeout?: number;
-    signal?: AbortSignal;
-  }): Promise<string>;
+  callChat(systemPrompt: string, userPrompt: string, options?: ChatOptions): Promise<string>;
+}
+
+function getBatchFormatLabel(format: BatchResponseFormat): string {
+  switch (format) {
+    case 'json_schema':
+      return 'JSON Schema';
+    case 'json':
+      return 'JSON';
+    case 'xml':
+      return 'XML';
+  }
+}
+
+function createBatchJsonSchema(keys: string[]): JsonSchemaResponseFormat {
+  const properties: Record<string, unknown> = {};
+
+  for (const key of keys) {
+    properties[key] = {
+      type: 'string',
+      description: `Translation for subtitle ${key}`,
+    };
+  }
+
+  return {
+    type: 'json_schema',
+    json_schema: {
+      name: 'subtitle_translation_batch',
+      strict: true,
+      schema: {
+        type: 'object',
+        properties,
+        required: keys,
+        additionalProperties: false,
+      },
+    },
+  };
+}
+
+function normalizeTranslationValue(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  return undefined;
+}
+
+function parseJsonTranslations(
+  response: string,
+  expectedKeys: string[]
+): Record<string, string> {
+  const parsed = parseLlmResponse(response);
+  const result: Record<string, string> = {};
+
+  if (!parsed || Array.isArray(parsed)) {
+    throw new BatchResponseFormatError('JSON 响应不是对象');
+  }
+
+  const missingKeys: string[] = [];
+  const invalidKeys: string[] = [];
+
+  for (const key of expectedKeys) {
+    const value = normalizeTranslationValue(parsed[key]);
+    if (value === undefined) {
+      if (parsed[key] === undefined) {
+        missingKeys.push(key);
+      } else {
+        invalidKeys.push(key);
+      }
+      continue;
+    }
+    result[key] = value;
+  }
+
+  if (missingKeys.length > 0) {
+    throw new BatchResponseFormatError(
+      `JSON 响应缺少 ${missingKeys.length} 个字幕键: ${missingKeys.join(', ')}`
+    );
+  }
+
+  if (invalidKeys.length > 0) {
+    throw new BatchResponseFormatError(
+      `JSON 响应包含 ${invalidKeys.length} 个非字符串字幕值: ${invalidKeys.join(', ')}`
+    );
+  }
+
+  return result;
+}
+
+function isJsonSchemaCompatibilityError(error: Error): boolean {
+  const message = error.message.toLowerCase();
+  const compatibilityPatterns = [
+    'response_format',
+    'json_schema',
+    'structured outputs',
+    'schema',
+    'unsupported',
+    'not supported',
+    'invalid parameter',
+    'unknown parameter',
+    'extra inputs are not permitted',
+    'invalid_request_error',
+  ];
+
+  return compatibilityPatterns.some(pattern => message.includes(pattern));
 }
 
 /**
@@ -135,10 +254,35 @@ function buildContextInfo(context?: {
 export class Translator {
   private client: OpenAIClient;
   private config: TranslatorConfig;
+  private batchResponseFormat: BatchResponseFormat | null = null;
 
   constructor(client: OpenAIClient, config: TranslatorConfig) {
     this.client = client;
     this.config = config;
+  }
+
+  private getBatchFormatAttemptOrder(): BatchResponseFormat[] {
+    if (this.batchResponseFormat === 'json') {
+      return ['json', 'xml'];
+    }
+
+    if (this.batchResponseFormat === 'xml') {
+      return ['xml'];
+    }
+
+    return ['json_schema', 'json', 'xml'];
+  }
+
+  private shouldFallbackToNextFormat(format: BatchResponseFormat, error: Error): boolean {
+    if (error.name === 'BatchResponseFormatError') {
+      return format !== 'xml';
+    }
+
+    if (format === 'json_schema') {
+      return isJsonSchemaCompatibilityError(error);
+    }
+
+    return false;
   }
 
   /**
@@ -285,36 +429,79 @@ export class Translator {
     logger.info(`${prefix}翻译 ${batch.length} 条字幕`);
 
     const inputObj: Record<string, string> = Object.fromEntries(batch);
-    const systemPrompt = buildTranslatePrompt({ targetLanguage });
-    const contextInfo = buildContextInfo(context);
-
-    const userPrompt = `Translate the following subtitles into ${targetLanguage}:
-<subtitles>${JSON.stringify(inputObj, null, 2)}</subtitles>${contextInfo}`;
-
     logger.info(`${prefix}提交给LLM的字幕数据 (共${batch.length}条):`);
     logger.info(`   输入JSON: ${JSON.stringify(inputObj)}`);
 
-    const response = await this.client.callChat(systemPrompt, userPrompt, {
-      temperature: 0.3,
-      timeout: 80000,
-      signal,
-    });
-
-    logger.info(`${prefix}LLM原始返回数据:\n${response}`);
-
-    const repairedResponse = repairMalformedXml(response);
-    if (repairedResponse.repairedCount > 0) {
-      logger.info(`${prefix}XML 修复: 自动补全/纠正 ${repairedResponse.repairedCount} 处标签`);
+    const attemptFormats = this.getBatchFormatAttemptOrder();
+    if (this.batchResponseFormat) {
+      logger.info(
+        `${prefix}批量翻译输出格式: 当前优先 ${getBatchFormatLabel(this.batchResponseFormat)}`
+      );
+    } else {
+      logger.info(`${prefix}批量翻译输出格式探测: JSON Schema -> JSON -> XML`);
     }
 
-    const xmlMap = parseXmlTags(repairedResponse.text);
+    let lastError: Error | null = null;
 
+    for (let i = 0; i < attemptFormats.length; i++) {
+      const format = attemptFormats[i];
+      const nextFormat = attemptFormats[i + 1];
+
+      logger.info(`${prefix}尝试批量翻译输出格式: ${getBatchFormatLabel(format)}`);
+
+      try {
+        const results = await this.translateBatchWithFormat(
+          batch,
+          inputObj,
+          targetLanguage,
+          context,
+          signal,
+          format,
+          prefix
+        );
+
+        this.batchResponseFormat = format;
+        logger.info(`${prefix}批量翻译输出格式: 使用 ${getBatchFormatLabel(format)} 完成解析`);
+        return results;
+      } catch (error) {
+        const currentError = error instanceof Error ? error : new Error(String(error));
+        lastError = currentError;
+
+        if (!nextFormat || !this.shouldFallbackToNextFormat(format, currentError)) {
+          throw currentError;
+        }
+
+        this.batchResponseFormat = nextFormat;
+        logger.warn(
+          `${prefix}${getBatchFormatLabel(format)} 不可用，降级到 ${getBatchFormatLabel(nextFormat)}: ${currentError.message}`
+        );
+      }
+    }
+
+    throw lastError || new Error('批量翻译失败');
+  }
+
+  private buildBatchUserPrompt(
+    inputObj: Record<string, string>,
+    targetLanguage: string,
+    context?: { videoTitle?: string; videoDescription?: string; aiSummary?: string | null }
+  ): string {
+    const contextInfo = buildContextInfo(context);
+    return `Translate the following subtitles into ${targetLanguage}:
+<subtitles>${JSON.stringify(inputObj, null, 2)}</subtitles>${contextInfo}`;
+  }
+
+  private buildBatchResults(
+    batch: [string, string][],
+    translationMap: Record<string, string>,
+    prefix: string
+  ): TranslatedEntry[] {
     const failedIds: number[] = [];
 
     const results = batch.map(([key, originalText]) => {
       const id = parseInt(key, 10);
-      const translation = xmlMap[key] ?? '';
-      const isFailed = xmlMap[key] === undefined;
+      const translation = translationMap[key] ?? '';
+      const isFailed = translationMap[key] === undefined;
 
       if (isFailed) {
         failedIds.push(id);
@@ -334,6 +521,48 @@ export class Translator {
     }
 
     return results;
+  }
+
+  private async translateBatchWithFormat(
+    batch: [string, string][],
+    inputObj: Record<string, string>,
+    targetLanguage: string,
+    context: { videoTitle?: string; videoDescription?: string; aiSummary?: string | null } | undefined,
+    signal: AbortSignal | undefined,
+    format: BatchResponseFormat,
+    prefix: string
+  ): Promise<TranslatedEntry[]> {
+    const keys = batch.map(([key]) => key);
+    const systemPrompt = buildTranslatePrompt({
+      targetLanguage,
+      outputFormat: format,
+    });
+    const userPrompt = this.buildBatchUserPrompt(inputObj, targetLanguage, context);
+    const options: ChatOptions = {
+      temperature: 0.3,
+      timeout: 80000,
+      signal,
+    };
+
+    if (format === 'json_schema') {
+      options.responseFormat = createBatchJsonSchema(keys);
+    }
+
+    const response = await this.client.callChat(systemPrompt, userPrompt, options);
+    logger.info(`${prefix}${getBatchFormatLabel(format)} 原始返回数据:\n${response}`);
+
+    if (format === 'json_schema' || format === 'json') {
+      const translationMap = parseJsonTranslations(response, keys);
+      return this.buildBatchResults(batch, translationMap, prefix);
+    }
+
+    const repairedResponse = repairMalformedXml(response);
+    if (repairedResponse.repairedCount > 0) {
+      logger.info(`${prefix}XML 修复: 自动补全/纠正 ${repairedResponse.repairedCount} 处标签`);
+    }
+
+    const xmlMap = parseXmlTags(repairedResponse.text);
+    return this.buildBatchResults(batch, xmlMap, prefix);
   }
 
   /**

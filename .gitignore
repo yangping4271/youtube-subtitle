@@ -8,9 +8,12 @@ coverage/
 # Logs
 log/
 *.log
+*.pid
+*.pid.lock
 
 # Environment
 .env
+.env.*
 
 # IDE
 .idea/
@@ -25,6 +28,15 @@ log/
 # Local notes
 TODO.md
 AGENTS.md
+
+# Agent local state
+.agents/
+skills-lock.json
+
+# Local temp outputs
+tmp/
+temp/
+screenshots/
 
 # Local release artifacts
 youtube-subtitle-v*.zip

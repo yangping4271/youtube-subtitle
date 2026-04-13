@@ -71,7 +71,7 @@ export function findBestMatch(
       const substr = segments
         .slice(start, start + windowSize)
         .map(seg => seg.text)
-        .join('');
+        .join(' ');
       const substrProc = preprocessText(substr);
 
       // 计算相似度

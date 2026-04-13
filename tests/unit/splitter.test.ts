@@ -2,8 +2,12 @@
  * splitter.ts 单元测试
  */
 
-import { presplitByPunctuation, batchBySentenceCount } from '../../src/core/splitter.js';
-import type { SubtitleEntry, PreSplitSentence } from '../../src/types/index.js';
+import {
+  presplitByPunctuation,
+  batchBySentenceCount,
+  mergeSegmentsWithinBatch,
+} from '../../src/core/splitter.js';
+import type { SubtitleEntry, PreSplitSentence, TranslatorConfig } from '../../src/types/index.js';
 
 describe('presplitByPunctuation', () => {
   it('应该基于句子结束标记正确预分句', () => {
@@ -107,5 +111,66 @@ describe('batchBySentenceCount', () => {
   it('应该处理空数组', () => {
     const result = batchBySentenceCount([], 10, 20);
     expect(result.length).toBe(0);
+  });
+});
+
+describe('mergeSegmentsWithinBatch', () => {
+  const config: TranslatorConfig = {
+    openaiBaseUrl: 'https://api.openai.com/v1',
+    openaiApiKey: '',
+    model: 'gpt-4o',
+    targetLanguage: 'zh',
+    maxWordCountEnglish: 19,
+    threadNum: 1,
+    batchSize: 20,
+    toleranceMultiplier: 1.2,
+    warningMultiplier: 1.5,
+    maxMultiplier: 2.0,
+  };
+
+  it('保留断句结果，不再把短句重新并长', async () => {
+    const wordSegments: SubtitleEntry[] = [
+      { index: 1, startTime: 0, endTime: 200, text: 'I' },
+      { index: 2, startTime: 200, endTime: 450, text: 'think' },
+      { index: 3, startTime: 450, endTime: 600, text: 'we' },
+      { index: 4, startTime: 600, endTime: 900, text: 'should' },
+      { index: 5, startTime: 900, endTime: 1050, text: 'go' },
+      { index: 6, startTime: 1050, endTime: 1200, text: 'now' },
+      { index: 7, startTime: 1200, endTime: 1250, text: ',' },
+      { index: 8, startTime: 1250, endTime: 1600, text: 'because' },
+      { index: 9, startTime: 1600, endTime: 1720, text: 'it' },
+      { index: 10, startTime: 1720, endTime: 1840, text: 'is' },
+      { index: 11, startTime: 1840, endTime: 2100, text: 'late' },
+      { index: 12, startTime: 2100, endTime: 2150, text: '.' },
+    ];
+
+    const preSplitSentences: PreSplitSentence[] = [{
+      text: 'I think we should go now , because it is late .',
+      wordStartIndex: 0,
+      wordEndIndex: wordSegments.length,
+      startTime: 0,
+      endTime: 2150,
+    }];
+
+    const client = {
+      async callChat(): Promise<string> {
+        return 'I think we should go now,<br>because it is late.';
+      },
+    };
+
+    const result = await mergeSegmentsWithinBatch(
+      preSplitSentences,
+      wordSegments,
+      client,
+      config
+    );
+
+    const segments = result.getSegments();
+    expect(segments).toHaveLength(2);
+    expect(segments[0].text).toBe('I think we should go now,');
+    expect(segments[0].endTime).toBe(1250);
+    expect(segments[1].text).toBe('because it is late.');
+    expect(segments[1].startTime).toBeLessThan(1250);
+    expect(segments[1].startTime).toBeGreaterThanOrEqual(segments[0].startTime);
   });
 });

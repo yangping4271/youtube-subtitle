@@ -5,8 +5,10 @@ import {
   createYouTubeRequestInit,
   extractCaptionTracks,
   extractTranscriptSegmentData,
+  extractTranscriptSegmentStartTime,
   findTranscriptTrigger,
   isTranscriptReady,
+  parseTranscriptTimestamp,
   shouldForceLegacyTranscriptOpen,
 } from '../../src/extension/youtube-subtitle-fetch.js';
 
@@ -94,6 +96,39 @@ describe('youtube subtitle fetch helpers', () => {
       timestampText: '5:46',
       bodyText: 'that these things would be really',
     });
+  });
+
+  it('支持解析带小数秒的 transcript 时间文本', () => {
+    expect(parseTranscriptTimestamp('1:02.345')).toBe(62.345);
+    expect(parseTranscriptTimestamp('01:02:03.250')).toBe(3723.25);
+  });
+
+  it('优先使用 transcript 节点中的毫秒属性作为开始时间', () => {
+    const timestampNode = {
+      textContent: '5:46',
+      getAttribute(name: string) {
+        return name === 'data-start-ms' ? '345678' : null;
+      },
+    };
+
+    const segment = {
+      getAttribute() {
+        return null;
+      },
+      querySelector(selector: string) {
+        if (selector.includes('Timestamp')) {
+          return timestampNode;
+        }
+
+        if (selector === 'span[role="text"]') {
+          return { textContent: 'that these things would be really' };
+        }
+
+        return null;
+      },
+    };
+
+    expect(extractTranscriptSegmentStartTime(segment)).toBe(345.678);
   });
 
   it('在 transcript 面板还在加载时不误判为可解析', () => {

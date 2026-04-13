@@ -16,12 +16,14 @@ import {
   createYouTubeRequestInit,
   extractCaptionTracks,
   extractTranscriptSegmentData,
+  extractTranscriptSegmentStartTime,
   findTranscriptTrigger,
   getTranscriptPanel,
   getTranscriptPanelState,
   getTranscriptSegmentElements,
   hasYouTubeLoginPrompt,
   isTranscriptReady,
+  parseTranscriptTimestamp,
   shouldForceLegacyTranscriptOpen,
 } from './youtube-subtitle-fetch';
 import type { SimpleSubtitleEntry, SubtitleStyleSettings, VideoSubtitleData, ASSParseResult, TranslationProgress } from '../types';
@@ -102,12 +104,20 @@ class YouTubeSubtitleOverlay {
 
   private onTimeUpdate: (() => void) | null = null;
   private onEnded: (() => void) | null = null;
+  private onPlay: (() => void) | null = null;
+  private onPause: (() => void) | null = null;
+  private onSeeking: (() => void) | null = null;
+  private onSeeked: (() => void) | null = null;
+  private onRateChange: (() => void) | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private scrollListener: (() => void) | null = null;
   private fullscreenListener: (() => void) | null = null;
   private resizeWindowListener: (() => void) | null = null;
   private youtubeStateObserver: MutationObserver | null = null;
   private urlChangeObserver: MutationObserver | null = null;
+  private subtitleSyncVideo: HTMLVideoElement | null = null;
+  private subtitleVideoFrameRequestId: number | null = null;
+  private subtitleAnimationFrameId: number | null = null;
 
   constructor() {
     this.englishSettings = getDefaultEnglishSettings();
@@ -536,6 +546,11 @@ class YouTubeSubtitleOverlay {
   }
 
   private parseSrv3Subtitles(doc: Document): SimpleSubtitleEntry[] {
+    const timedSpanSubtitles = this.parseSrv3SpanSubtitles(doc);
+    if (timedSpanSubtitles.length > 0) {
+      return timedSpanSubtitles;
+    }
+
     const subtitles: SimpleSubtitleEntry[] = [];
 
     doc.querySelectorAll('p').forEach((segment) => {
@@ -559,6 +574,73 @@ class YouTubeSubtitleOverlay {
         startTime: startMs / 1000,
         endTime: Number.isNaN(durationMs) ? startMs / 1000 : (startMs + durationMs) / 1000,
         text,
+      });
+    });
+
+    return subtitles;
+  }
+
+  private parseSrv3SpanSubtitles(doc: Document): SimpleSubtitleEntry[] {
+    const subtitles: SimpleSubtitleEntry[] = [];
+
+    doc.querySelectorAll('p').forEach((segment) => {
+      const paragraphStartMs = Number(segment.getAttribute('t'));
+      if (Number.isNaN(paragraphStartMs)) {
+        return;
+      }
+
+      const paragraphDurationMs = Number(segment.getAttribute('d'));
+      const paragraphEndMs = Number.isNaN(paragraphDurationMs)
+        ? null
+        : paragraphStartMs + paragraphDurationMs;
+
+      const spans = Array.from(segment.querySelectorAll('s'));
+      if (spans.length === 0) {
+        return;
+      }
+
+      const spanOffsets = spans.map((span) => {
+        const offsetMs = Number(span.getAttribute('t'));
+        return Number.isNaN(offsetMs) ? null : offsetMs;
+      });
+
+      if (!spanOffsets.some((offsetMs) => offsetMs !== null)) {
+        return;
+      }
+
+      spans.forEach((span, index) => {
+        const text = (span.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!text) {
+          return;
+        }
+
+        const relativeStartMs =
+          spanOffsets[index] ?? (index === 0 ? 0 : spanOffsets[index - 1] ?? 0);
+        let relativeEndMs: number | null = null;
+
+        for (let nextIndex = index + 1; nextIndex < spanOffsets.length; nextIndex++) {
+          if (spanOffsets[nextIndex] !== null) {
+            relativeEndMs = spanOffsets[nextIndex];
+            break;
+          }
+        }
+
+        const startMs = paragraphStartMs + relativeStartMs;
+        let endMs = relativeEndMs !== null
+          ? paragraphStartMs + relativeEndMs
+          : paragraphEndMs ?? startMs;
+
+        if (endMs <= startMs) {
+          endMs = paragraphEndMs && paragraphEndMs > startMs
+            ? paragraphEndMs
+            : startMs;
+        }
+
+        subtitles.push({
+          startTime: startMs / 1000,
+          endTime: endMs / 1000,
+          text,
+        });
       });
     });
 
@@ -631,7 +713,8 @@ class YouTubeSubtitleOverlay {
       }
 
       if (timestampText && text) {
-        const timestamp = this.parseTimestamp(timestampText);
+        const timestamp =
+          extractTranscriptSegmentStartTime(segment) ?? parseTranscriptTimestamp(timestampText);
         if (text) {
           const nextSegment = transcriptSegments[index + 1];
           let endTime = timestamp + 5;
@@ -641,7 +724,9 @@ class YouTubeSubtitleOverlay {
               nextSegmentData?.timestampText ||
               (nextSegment.querySelector('div')?.textContent || '').trim();
             if (nextTimestampText) {
-              endTime = this.parseTimestamp(nextTimestampText);
+              endTime =
+                extractTranscriptSegmentStartTime(nextSegment) ??
+                parseTranscriptTimestamp(nextTimestampText);
             }
           }
 
@@ -702,20 +787,6 @@ class YouTubeSubtitleOverlay {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  private parseTimestamp(timestampStr: string): number {
-    if (!timestampStr) return 0;
-    const parts = timestampStr.trim().split(':').map(Number);
-    let seconds = 0;
-
-    if (parts.length === 2) {
-      seconds = parts[0] * 60 + parts[1];
-    } else if (parts.length === 3) {
-      seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
-    }
-
-    return seconds;
   }
 
   private createOverlayElement(): void {
@@ -872,11 +943,28 @@ class YouTubeSubtitleOverlay {
   private setupVideoListeners(): void {
     if (!this.currentVideo) return;
 
+    this.stopSubtitleSyncLoop();
+
     if (this.onTimeUpdate) {
       this.currentVideo.removeEventListener('timeupdate', this.onTimeUpdate);
     }
     if (this.onEnded) {
       this.currentVideo.removeEventListener('ended', this.onEnded);
+    }
+    if (this.onPlay) {
+      this.currentVideo.removeEventListener('play', this.onPlay);
+    }
+    if (this.onPause) {
+      this.currentVideo.removeEventListener('pause', this.onPause);
+    }
+    if (this.onSeeking) {
+      this.currentVideo.removeEventListener('seeking', this.onSeeking);
+    }
+    if (this.onSeeked) {
+      this.currentVideo.removeEventListener('seeked', this.onSeeked);
+    }
+    if (this.onRateChange) {
+      this.currentVideo.removeEventListener('ratechange', this.onRateChange);
     }
 
     this.onTimeUpdate = () => {
@@ -892,15 +980,114 @@ class YouTubeSubtitleOverlay {
     };
 
     this.onEnded = () => {
+      this.stopSubtitleSyncLoop();
       this.hideSubtitle();
+    };
+
+    this.onPlay = () => {
+      this.updateSubtitle();
+      this.startSubtitleSyncLoop();
+    };
+
+    this.onPause = () => {
+      this.stopSubtitleSyncLoop();
+      this.updateSubtitle();
+    };
+
+    this.onSeeking = () => {
+      this.updateSubtitle();
+    };
+
+    this.onSeeked = () => {
+      this.updateSubtitle();
+      this.startSubtitleSyncLoop();
+    };
+
+    this.onRateChange = () => {
+      this.updateSubtitle();
+      this.startSubtitleSyncLoop();
     };
 
     this.currentVideo.addEventListener('timeupdate', this.onTimeUpdate);
     this.currentVideo.addEventListener('ended', this.onEnded);
+    this.currentVideo.addEventListener('play', this.onPlay);
+    this.currentVideo.addEventListener('pause', this.onPause);
+    this.currentVideo.addEventListener('seeking', this.onSeeking);
+    this.currentVideo.addEventListener('seeked', this.onSeeked);
+    this.currentVideo.addEventListener('ratechange', this.onRateChange);
 
     if (this.isEnabled) {
       this.updateSubtitle();
+      this.startSubtitleSyncLoop();
     }
+  }
+
+  private startSubtitleSyncLoop(): void {
+    const video = this.currentVideo;
+    if (!video || !this.isEnabled || video.paused || video.ended) {
+      this.stopSubtitleSyncLoop();
+      return;
+    }
+
+    this.stopSubtitleSyncLoop();
+    this.subtitleSyncVideo = video;
+
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      const tick = (): void => {
+        this.subtitleVideoFrameRequestId = null;
+
+        if (video !== this.currentVideo || !this.isEnabled) {
+          return;
+        }
+
+        this.updateSubtitle();
+
+        if (!video.paused && !video.ended) {
+          this.subtitleVideoFrameRequestId = video.requestVideoFrameCallback(() => {
+            tick();
+          });
+        }
+      };
+
+      this.subtitleVideoFrameRequestId = video.requestVideoFrameCallback(() => {
+        tick();
+      });
+      return;
+    }
+
+    const tick = (): void => {
+      this.subtitleAnimationFrameId = null;
+
+      if (video !== this.currentVideo || !this.isEnabled) {
+        return;
+      }
+
+      this.updateSubtitle();
+
+      if (!video.paused && !video.ended) {
+        this.subtitleAnimationFrameId = window.requestAnimationFrame(tick);
+      }
+    };
+
+    this.subtitleAnimationFrameId = window.requestAnimationFrame(tick);
+  }
+
+  private stopSubtitleSyncLoop(): void {
+    if (
+      this.subtitleSyncVideo &&
+      this.subtitleVideoFrameRequestId !== null &&
+      typeof this.subtitleSyncVideo.cancelVideoFrameCallback === 'function'
+    ) {
+      this.subtitleSyncVideo.cancelVideoFrameCallback(this.subtitleVideoFrameRequestId);
+    }
+
+    if (this.subtitleAnimationFrameId !== null) {
+      window.cancelAnimationFrame(this.subtitleAnimationFrameId);
+    }
+
+    this.subtitleSyncVideo = null;
+    this.subtitleVideoFrameRequestId = null;
+    this.subtitleAnimationFrameId = null;
   }
 
   private setupResizeListener(): void {
@@ -1227,15 +1414,21 @@ class YouTubeSubtitleOverlay {
     currentTime: number,
     subtitles: SimpleSubtitleEntry[]
   ): SimpleSubtitleEntry | undefined {
-    return subtitles.find(
-      (subtitle) => currentTime >= subtitle.startTime && currentTime <= subtitle.endTime
-    );
+    for (let i = subtitles.length - 1; i >= 0; i--) {
+      const subtitle = subtitles[i];
+      if (currentTime >= subtitle.startTime && currentTime < subtitle.endTime) {
+        return subtitle;
+      }
+    }
+
+    return undefined;
   }
 
   private toggleSubtitle(enabled: boolean): void {
     this.isEnabled = enabled;
 
     if (!enabled) {
+      this.stopSubtitleSyncLoop();
       this.hideSubtitle();
     } else {
       if (
@@ -1245,6 +1438,7 @@ class YouTubeSubtitleOverlay {
       ) {
         if (this.currentVideo) {
           this.updateSubtitle();
+          this.startSubtitleSyncLoop();
         }
       }
     }
@@ -1327,6 +1521,7 @@ class YouTubeSubtitleOverlay {
   }
 
   private clearSubtitleData(): void {
+    this.stopSubtitleSyncLoop();
     this.subtitleData = [];
     this.englishSubtitles = [];
     this.chineseSubtitles = [];
@@ -1334,6 +1529,7 @@ class YouTubeSubtitleOverlay {
   }
 
   private forceReset(): void {
+    this.stopSubtitleSyncLoop();
     this.subtitleData = [];
     this.englishSubtitles = [];
     this.chineseSubtitles = [];
