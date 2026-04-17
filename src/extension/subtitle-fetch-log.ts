@@ -3,6 +3,9 @@ export type SubtitleFetchSource = 'caption-tracks' | 'transcript-panel' | 'unava
 export interface SubtitleFetchLogPayload {
   source: SubtitleFetchSource;
   subtitleCount: number;
+  strategy?: string;
+  trackLanguageCode?: string;
+  trackKind?: string;
   fallbackReason?: string;
   captionTrackError?: string;
   panelError?: string;
@@ -26,6 +29,18 @@ export function formatSubtitleFetchLog(
 
   if (payload.fallbackReason) {
     parts.push(`fallbackReason=${payload.fallbackReason}`);
+  }
+
+  if (payload.strategy) {
+    parts.push(`strategy=${payload.strategy}`);
+  }
+
+  if (payload.trackLanguageCode) {
+    parts.push(`trackLanguageCode=${payload.trackLanguageCode}`);
+  }
+
+  if (payload.trackKind) {
+    parts.push(`trackKind=${payload.trackKind}`);
   }
 
   if (payload.captionTrackError) {

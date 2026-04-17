@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   classifyCaptionTrackResponse,
@@ -6,13 +6,20 @@ import {
   extractCaptionTracks,
   extractTranscriptSegmentData,
   extractTranscriptSegmentStartTime,
+  fetchCaptionTrackText,
   findTranscriptTrigger,
   isTranscriptReady,
   parseTranscriptTimestamp,
+  pickPreferredCaptionTrack,
+  resolveCaptionTrackText,
   shouldForceLegacyTranscriptOpen,
 } from '../../src/extension/youtube-subtitle-fetch.js';
 
 describe('youtube subtitle fetch helpers', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('将 YouTube 反机器人登录校验识别为 login_required', () => {
     const result = classifyCaptionTrackResponse({
       playabilityStatus: {
@@ -75,6 +82,69 @@ describe('youtube subtitle fetch helpers', () => {
   it('点击新 transcript 入口后不再强开旧 panel', () => {
     expect(shouldForceLegacyTranscriptOpen(true, true)).toBe(false);
     expect(shouldForceLegacyTranscriptOpen(false, true)).toBe(true);
+  });
+
+  it('优先选择人工英文字幕轨而不是 asr', () => {
+    const track = pickPreferredCaptionTrack([
+      { languageCode: 'en', kind: 'asr', baseUrl: 'https://www.youtube.com/api/timedtext?v=1&kind=asr' },
+      { languageCode: 'en', baseUrl: 'https://www.youtube.com/api/timedtext?v=1' },
+    ]);
+
+    expect(track?.kind).toBeUndefined();
+    expect(track?.baseUrl).toContain('timedtext?v=1');
+  });
+
+  it('字幕轨返回空 HTML 时包含 content-type 便于排查', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      text: vi.fn().mockResolvedValue(''),
+      headers: {
+        get(name: string) {
+          return name === 'content-type' ? 'text/html; charset=UTF-8' : null;
+        },
+      },
+    }));
+
+    await expect(fetchCaptionTrackText({
+      baseUrl: 'https://www.youtube.com/api/timedtext?v=1',
+    })).rejects.toThrow('content-type: text/html; charset=UTF-8');
+  });
+
+  it('页面字幕轨失败后回退到 youtubei/player', async () => {
+    const result = await resolveCaptionTrackText('video-id', {
+      requestPageResponse: async () => ({
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            captionTracks: [
+              { languageCode: 'en', baseUrl: 'https://www.youtube.com/api/timedtext?v=page' },
+            ],
+          },
+        },
+      }),
+      requestPlayerResponse: async () => ({
+        playabilityStatus: {
+          status: 'OK',
+        },
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            captionTracks: [
+              { languageCode: 'en', baseUrl: 'https://www.youtube.com/api/timedtext?v=player&fmt=srv3' },
+            ],
+          },
+        },
+      }),
+      requestTrackText: async (track) => {
+        if (track.baseUrl?.includes('v=page')) {
+          throw new Error('字幕轨返回空响应 (content-type: text/html; charset=UTF-8)');
+        }
+
+        return '<timedtext><text start="0" dur="1">hello</text></timedtext>';
+      },
+    });
+
+    expect(result.source).toBe('youtubei-player');
+    expect(result.trackText).toContain('<timedtext>');
+    expect(result.fallbackReason).toContain('text/html');
   });
 
   it('解析新的 transcript-segment-view-model 节点', () => {

@@ -12,9 +12,6 @@ import {
 } from './subtitle-fetch-log';
 import { getVideoInfo } from './transcript-core';
 import {
-  classifyCaptionTrackResponse,
-  createYouTubeRequestInit,
-  extractCaptionTracks,
   extractTranscriptSegmentData,
   extractTranscriptSegmentStartTime,
   findTranscriptTrigger,
@@ -24,6 +21,7 @@ import {
   hasYouTubeLoginPrompt,
   isTranscriptReady,
   parseTranscriptTimestamp,
+  resolveCaptionTrackText,
   shouldForceLegacyTranscriptOpen,
 } from './youtube-subtitle-fetch';
 import type { SimpleSubtitleEntry, SubtitleStyleSettings, VideoSubtitleData, ASSParseResult, TranslationProgress } from '../types';
@@ -60,29 +58,6 @@ interface ChromeMessage {
   language?: 'english' | 'chinese';
   settings?: Partial<SubtitleStyleSettings>;
   videoId?: string;
-}
-
-interface WindowCaptionTrackMessage {
-  type: 'YTSP_PageCaptionTracks';
-  payload: YouTubePlayerResponse | null;
-}
-
-interface YouTubeCaptionTrack {
-  baseUrl?: string;
-  languageCode?: string;
-  kind?: string;
-}
-
-interface YouTubePlayerResponse {
-  playabilityStatus?: {
-    status?: string;
-    reason?: string;
-  };
-  captions?: {
-    playerCaptionsTracklistRenderer?: {
-      captionTracks?: YouTubeCaptionTrack[];
-    };
-  };
 }
 
 class YouTubeSubtitleOverlay {
@@ -323,9 +298,16 @@ class YouTubeSubtitleOverlay {
 
     let captionTrackError: Error | null = null;
     try {
-      const subtitles = await this.getSubtitlesFromCaptionTracks(videoId);
+      const { subtitles, resolution } = await this.getSubtitlesFromCaptionTracks(videoId);
       if (subtitles.length > 0) {
-        this.logSubtitleFetchSource('caption-tracks', subtitles.length);
+        this.logSubtitleFetchSource('caption-tracks', subtitles.length, {
+          strategy: resolution.source,
+          trackLanguageCode: resolution.trackLanguageCode,
+          trackKind: resolution.trackKind,
+          fallbackReason: resolution.fallbackReason
+            ? normalizeSubtitleFetchErrorMessage(resolution.fallbackReason)
+            : undefined,
+        });
         return subtitles;
       }
     } catch (error) {
@@ -398,137 +380,20 @@ class YouTubeSubtitleOverlay {
     });
   }
 
-  private async getSubtitlesFromCaptionTracks(videoId: string): Promise<SimpleSubtitleEntry[]> {
-    let pageTrackError: Error | null = null;
-    const pagePlayerResponse = await this.getCaptionTracksFromPage();
-    const pageTracks = extractCaptionTracks(pagePlayerResponse);
-    if (pageTracks.length > 0) {
-      const track = this.pickPreferredCaptionTrack(pageTracks as YouTubeCaptionTrack[]);
-      if (track?.baseUrl) {
-        try {
-          return await this.fetchSubtitleTrack(track);
-        } catch (error) {
-          pageTrackError = error instanceof Error ? error : new Error(String(error));
-        }
-      }
-    }
-
-    const playerResponse = await this.fetchYouTubePlayerResponse(videoId);
-    const responseClassification = classifyCaptionTrackResponse(playerResponse);
-    if (responseClassification.kind === 'login_required') {
-      throw new Error(responseClassification.message || '请先登录 YouTube 后重试。');
-    }
-
-    const tracks = extractCaptionTracks(playerResponse) as YouTubeCaptionTrack[];
-    if (tracks.length === 0) {
-      const reason = responseClassification.message || 'player 响应未提供字幕轨';
-      if (pageTrackError) {
-        throw new Error(
-          `页面字幕轨失败: ${pageTrackError.message}; youtubei/player 未提供字幕轨: ${reason}`
-        );
-      }
-      throw new Error(reason);
-    }
-
-    const track = this.pickPreferredCaptionTrack(tracks);
-    if (!track?.baseUrl) {
-      const error = new Error('字幕轨缺少 baseUrl');
-      if (pageTrackError) {
-        throw new Error(`页面字幕轨失败: ${pageTrackError.message}; ${error.message}`);
-      }
-      throw error;
-    }
-
-    try {
-      return await this.fetchSubtitleTrack(track);
-    } catch (error) {
-      const normalizedError = error instanceof Error ? error : new Error(String(error));
-      if (pageTrackError) {
-        throw new Error(
-          `页面字幕轨失败: ${pageTrackError.message}; youtubei/player 字幕轨失败: ${normalizedError.message}`
-        );
-      }
-      throw normalizedError;
-    }
-  }
-
-  private async fetchSubtitleTrack(track: YouTubeCaptionTrack): Promise<SimpleSubtitleEntry[]> {
-    if (!track.baseUrl) {
-      throw new Error('字幕轨缺少 baseUrl');
-    }
-
-    const captionUrl = new URL(track.baseUrl);
-    const isYouTubeHost = captionUrl.hostname === 'www.youtube.com' || captionUrl.hostname.endsWith('.youtube.com');
-    if (!isYouTubeHost) {
-      throw new Error(`字幕轨地址不是 YouTube 域名: ${captionUrl.hostname}`);
-    }
-
-    const response = await fetch(track.baseUrl, createYouTubeRequestInit());
-    if (!response.ok) {
-      throw new Error(`字幕轨请求失败: ${response.status}`);
-    }
-
-    const xml = await response.text();
-    if (!xml.trim()) {
-      throw new Error('字幕轨返回空响应');
-    }
-
-    const subtitles = this.parseTimedTextXml(xml);
-    if (subtitles.length === 0) {
-      throw new Error('字幕轨解析成功但未产出字幕');
-    }
-
-    return subtitles;
-  }
-
-  private async getCaptionTracksFromPage(): Promise<YouTubePlayerResponse | null> {
-    return new Promise((resolve) => {
-      const timeoutId = window.setTimeout(() => {
-        window.removeEventListener('message', onMessage);
-        resolve(null);
-      }, 1000);
-
-      const onMessage = (event: MessageEvent<WindowCaptionTrackMessage>): void => {
-        if (event.source !== window || event.data?.type !== 'YTSP_PageCaptionTracks') {
-          return;
-        }
-
-        window.clearTimeout(timeoutId);
-        window.removeEventListener('message', onMessage);
-        resolve((event.data.payload as YouTubePlayerResponse | null) || null);
-      };
-
-      window.addEventListener('message', onMessage);
-      window.dispatchEvent(new CustomEvent('YTSP_RequestCaptionTracks'));
-    });
-  }
-
-  private async fetchYouTubePlayerResponse(videoId: string): Promise<YouTubePlayerResponse> {
-    const response = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', createYouTubeRequestInit({
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        context: {
-          client: {
-            clientName: 'ANDROID',
-            clientVersion: '20.10.38',
-          },
-        },
-        videoId,
-      }),
-    }));
-
-    if (!response.ok) {
-      throw new Error(`player 接口请求失败: ${response.status}`);
-    }
-
-    return response.json() as Promise<YouTubePlayerResponse>;
-  }
-
-  private pickPreferredCaptionTrack(tracks: YouTubeCaptionTrack[]): YouTubeCaptionTrack | undefined {
-    return tracks.find((track) => track.languageCode === 'en') || tracks[0];
+  private async getSubtitlesFromCaptionTracks(videoId: string): Promise<{
+    subtitles: SimpleSubtitleEntry[];
+    resolution: {
+      source: 'page-player-response' | 'youtubei-player';
+      fallbackReason?: string;
+      trackLanguageCode?: string;
+      trackKind?: string;
+    };
+  }> {
+    const resolution = await resolveCaptionTrackText(videoId);
+    return {
+      subtitles: this.parseTimedTextXml(resolution.trackText),
+      resolution,
+    };
   }
 
   private parseTimedTextXml(xml: string): SimpleSubtitleEntry[] {

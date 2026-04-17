@@ -5,11 +5,10 @@
 
 import type { VideoInfo } from '../types';
 import { getVideoDescription, getAISummary } from './video-metadata.js';
+import { normalizeSubtitleFetchErrorMessage } from './subtitle-fetch-log.js';
 import {
-  classifyCaptionTrackResponse,
-  createYouTubeRequestInit,
-  extractCaptionTracks,
   extractTranscriptSegmentData,
+  resolveCaptionTrackText,
   findTranscriptTrigger,
   getTranscriptPanel,
   getTranscriptPanelState,
@@ -29,17 +28,12 @@ interface YouTubeCaptionTrack {
   languageCode?: string;
 }
 
-interface YouTubePlayerResponse {
-  playabilityStatus?: {
-    status?: string;
-    reason?: string;
+declare const chrome: {
+  runtime?: {
+    id?: string;
+    sendMessage?: (message: unknown) => Promise<unknown>;
   };
-  captions?: {
-    playerCaptionsTracklistRenderer?: {
-      captionTracks?: YouTubeCaptionTrack[];
-    };
-  };
-}
+};
 
 interface UserConfig {
   buttonIcons: {
@@ -202,68 +196,54 @@ async function ensureTranscriptLoaded(): Promise<boolean> {
   return waitForTranscriptContent();
 }
 
-async function getTranscriptTextFromCaptionTracks(videoId: string): Promise<string> {
-  const playerResponse = await fetchYouTubePlayerResponse(videoId);
-  const responseClassification = classifyCaptionTrackResponse(playerResponse);
-  if (responseClassification.kind === 'login_required') {
-    throw new Error(responseClassification.message || '请先登录 YouTube 后重试。');
-  }
-
-  const tracks = extractCaptionTracks(playerResponse) as YouTubeCaptionTrack[];
-  if (tracks.length === 0) {
-    return '';
-  }
-
-  const track = pickPreferredCaptionTrack(tracks);
-  if (!track?.baseUrl) {
-    return '';
-  }
-
-  const captionUrl = new URL(track.baseUrl);
-  const isYouTubeHost = captionUrl.hostname === 'www.youtube.com' || captionUrl.hostname.endsWith('.youtube.com');
-  if (!isYouTubeHost) {
-    return '';
-  }
-
-  const response = await fetch(track.baseUrl, createYouTubeRequestInit());
-  if (!response.ok) {
-    throw new Error(`字幕轨请求失败: ${response.status}`);
-  }
-
-  const xml = await response.text();
-  if (!xml.trim()) {
-    return '';
-  }
-
-  return extractTranscriptTextFromXml(xml);
+async function getTranscriptTextFromCaptionTracks(videoId: string): Promise<{
+  text: string;
+  resolution: {
+    source: 'page-player-response' | 'youtubei-player';
+    fallbackReason?: string;
+    trackLanguageCode?: string;
+    trackKind?: string;
+  };
+}> {
+  const resolution = await resolveCaptionTrackText(videoId);
+  return {
+    text: extractTranscriptTextFromXml(resolution.trackText),
+    resolution,
+  };
 }
 
-async function fetchYouTubePlayerResponse(videoId: string): Promise<YouTubePlayerResponse> {
-  const response = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', createYouTubeRequestInit({
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
+function logTranscriptCopyFetch(
+  source: 'caption-tracks' | 'transcript-panel' | 'unavailable',
+  subtitleCount: number,
+  details: {
+    strategy?: string;
+    trackLanguageCode?: string;
+    trackKind?: string;
+    fallbackReason?: string;
+    captionTrackError?: string;
+    panelError?: string;
+  } = {}
+): void {
+  if (!chrome.runtime?.id || typeof chrome.runtime.sendMessage !== 'function') {
+    return;
+  }
+
+  const { videoId, videoURL } = getVideoInfo();
+  if (!videoId || !videoURL) {
+    return;
+  }
+
+  void chrome.runtime.sendMessage({
+    action: 'logSubtitleFetchSource',
+    videoId,
+    data: {
+      source,
+      subtitleCount,
+      ...details,
     },
-    body: JSON.stringify({
-      context: {
-        client: {
-          clientName: 'ANDROID',
-          clientVersion: '20.10.38',
-        },
-      },
-      videoId,
-    }),
-  }));
-
-  if (!response.ok) {
-    throw new Error(`player 接口请求失败: ${response.status}`);
-  }
-
-  return response.json() as Promise<YouTubePlayerResponse>;
-}
-
-function pickPreferredCaptionTrack(tracks: YouTubeCaptionTrack[]): YouTubeCaptionTrack | undefined {
-  return tracks.find((track) => track.languageCode === 'en') || tracks[0];
+  }).catch((error: unknown) => {
+    console.log('发送复制字幕来源日志失败:', error);
+  });
 }
 
 function extractTranscriptTextFromXml(xml: string): string {
@@ -373,15 +353,25 @@ function waitForTranscriptContent(retries = 0): Promise<boolean> {
 
 async function selectAndCopyTranscript(): Promise<void> {
   const { videoId } = getVideoInfo();
+  let captionTrackError: Error | null = null;
 
   if (videoId) {
     try {
-      const trackText = await getTranscriptTextFromCaptionTracks(videoId);
-      if (trackText) {
-        await copyTranscriptText(trackText);
+      const { text, resolution } = await getTranscriptTextFromCaptionTracks(videoId);
+      if (text) {
+        logTranscriptCopyFetch('caption-tracks', text.split('\n').filter(Boolean).length, {
+          strategy: resolution.source,
+          trackLanguageCode: resolution.trackLanguageCode,
+          trackKind: resolution.trackKind,
+          fallbackReason: resolution.fallbackReason
+            ? normalizeSubtitleFetchErrorMessage(resolution.fallbackReason)
+            : undefined,
+        });
+        await copyTranscriptText(text);
         return;
       }
     } catch (error) {
+      captionTrackError = error instanceof Error ? error : new Error(String(error));
       console.log('通过字幕轨接口复制字幕失败，回退到 transcript 面板:', error);
     }
   }
@@ -390,6 +380,11 @@ async function selectAndCopyTranscript(): Promise<void> {
   if (!finalText) {
     const loaded = await ensureTranscriptLoaded();
     if (!loaded) {
+      logTranscriptCopyFetch('unavailable', 0, {
+        captionTrackError: captionTrackError
+          ? normalizeSubtitleFetchErrorMessage(captionTrackError.message)
+          : undefined,
+      });
       showNotification(getTranscriptUnavailableMessage());
       return;
     }
@@ -398,10 +393,21 @@ async function selectAndCopyTranscript(): Promise<void> {
   }
 
   if (!finalText) {
+    logTranscriptCopyFetch('unavailable', 0, {
+      captionTrackError: captionTrackError
+        ? normalizeSubtitleFetchErrorMessage(captionTrackError.message)
+        : undefined,
+      panelError: normalizeSubtitleFetchErrorMessage(getTranscriptUnavailableMessage()),
+    });
     showNotification(getTranscriptUnavailableMessage());
     return;
   }
 
+  logTranscriptCopyFetch('transcript-panel', finalText.split('\n').filter(Boolean).length, {
+    fallbackReason: captionTrackError
+      ? normalizeSubtitleFetchErrorMessage(captionTrackError.message)
+      : undefined,
+  });
   await copyTranscriptText(finalText);
 }
 

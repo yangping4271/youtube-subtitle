@@ -1,4 +1,4 @@
-interface CaptionTrackResponseLike {
+export interface CaptionTrackResponseLike {
   playabilityStatus?: {
     status?: string;
     reason?: string;
@@ -10,10 +10,15 @@ interface CaptionTrackResponseLike {
   };
 }
 
-interface CaptionTrackLike {
+export interface CaptionTrackLike {
   baseUrl?: string;
   languageCode?: string;
   kind?: string;
+}
+
+interface WindowCaptionTrackMessage {
+  type: 'YTSP_PageCaptionTracks';
+  payload: CaptionTrackResponseLike | null;
 }
 
 interface QueryElementLike {
@@ -37,6 +42,14 @@ export interface TranscriptPanelState {
   segmentCount: number;
   hasSpinner: boolean;
   hasContinuation?: boolean;
+}
+
+export interface ResolvedCaptionTrackText {
+  trackText: string;
+  source: 'page-player-response' | 'youtubei-player';
+  fallbackReason?: string;
+  trackLanguageCode?: string;
+  trackKind?: string;
 }
 
 const TRANSCRIPT_PANEL_SELECTOR =
@@ -80,6 +93,13 @@ export function extractCaptionTracks(response: CaptionTrackResponseLike | null |
   return (response?.captions?.playerCaptionsTracklistRenderer?.captionTracks || []) as CaptionTrackLike[];
 }
 
+export function pickPreferredCaptionTrack<T extends CaptionTrackLike>(tracks: T[]): T | undefined {
+  return tracks.find((track) => track.languageCode === 'en' && track.kind !== 'asr') ||
+    tracks.find((track) => track.languageCode === 'en') ||
+    tracks.find((track) => track.kind !== 'asr') ||
+    tracks[0];
+}
+
 export function classifyCaptionTrackResponse(
   response: CaptionTrackResponseLike
 ): CaptionTrackResponseClassification {
@@ -105,6 +125,156 @@ export function classifyCaptionTrackResponse(
     kind: 'ok',
     message: null,
   };
+}
+
+export function requestPageCaptionTrackResponse(timeoutMs = 1000): Promise<CaptionTrackResponseLike | null> {
+  return new Promise((resolve) => {
+    const timeoutId = window.setTimeout(() => {
+      window.removeEventListener('message', onMessage);
+      resolve(null);
+    }, timeoutMs);
+
+    const onMessage = (event: MessageEvent<WindowCaptionTrackMessage>): void => {
+      if (event.source !== window || event.data?.type !== 'YTSP_PageCaptionTracks') {
+        return;
+      }
+
+      window.clearTimeout(timeoutId);
+      window.removeEventListener('message', onMessage);
+      resolve((event.data.payload as CaptionTrackResponseLike | null) || null);
+    };
+
+    window.addEventListener('message', onMessage);
+    window.dispatchEvent(new CustomEvent('YTSP_RequestCaptionTracks'));
+  });
+}
+
+export async function fetchYouTubePlayerResponse(videoId: string): Promise<CaptionTrackResponseLike> {
+  const response = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', createYouTubeRequestInit({
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      context: {
+        client: {
+          clientName: 'ANDROID',
+          clientVersion: '20.10.38',
+        },
+      },
+      videoId,
+    }),
+  }));
+
+  if (!response.ok) {
+    throw new Error(`player 接口请求失败: ${response.status}`);
+  }
+
+  return response.json() as Promise<CaptionTrackResponseLike>;
+}
+
+export async function fetchCaptionTrackText(track: CaptionTrackLike): Promise<string> {
+  if (!track.baseUrl) {
+    throw new Error('字幕轨缺少 baseUrl');
+  }
+
+  const captionUrl = new URL(track.baseUrl);
+  const isYouTubeHost = captionUrl.hostname === 'www.youtube.com' || captionUrl.hostname.endsWith('.youtube.com');
+  if (!isYouTubeHost) {
+    throw new Error(`字幕轨地址不是 YouTube 域名: ${captionUrl.hostname}`);
+  }
+
+  const response = await fetch(track.baseUrl, createYouTubeRequestInit());
+  if (!response.ok) {
+    throw new Error(`字幕轨请求失败: ${response.status}`);
+  }
+
+  const text = await response.text();
+  if (!text.trim()) {
+    const contentType = response.headers.get('content-type') || 'unknown';
+    throw new Error(`字幕轨返回空响应 (content-type: ${contentType})`);
+  }
+
+  return text;
+}
+
+export async function resolveCaptionTrackText(
+  videoId: string,
+  options: {
+    requestPageResponse?: () => Promise<CaptionTrackResponseLike | null>;
+    requestPlayerResponse?: (videoId: string) => Promise<CaptionTrackResponseLike>;
+    requestTrackText?: (track: CaptionTrackLike) => Promise<string>;
+  } = {}
+): Promise<ResolvedCaptionTrackText> {
+  const requestPageResponse = options.requestPageResponse || requestPageCaptionTrackResponse;
+  const requestPlayerResponse = options.requestPlayerResponse || fetchYouTubePlayerResponse;
+  const requestTrackText = options.requestTrackText || fetchCaptionTrackText;
+  let pageTrackError: Error | null = null;
+
+  const pagePlayerResponse = await requestPageResponse();
+  const pageTracks = extractCaptionTracks(pagePlayerResponse);
+  if (pageTracks.length > 0) {
+    const track = pickPreferredCaptionTrack(pageTracks);
+    if (track?.baseUrl) {
+      try {
+        return {
+          trackText: await requestTrackText(track),
+          source: 'page-player-response',
+          trackLanguageCode: track.languageCode,
+          trackKind: track.kind,
+        };
+      } catch (error) {
+        pageTrackError = error instanceof Error ? error : new Error(String(error));
+      }
+    }
+  }
+
+  const playerResponse = await requestPlayerResponse(videoId);
+  const responseClassification = classifyCaptionTrackResponse(playerResponse);
+  if (responseClassification.kind === 'login_required') {
+    throw new Error(responseClassification.message || '请先登录 YouTube 后重试。');
+  }
+
+  const tracks = extractCaptionTracks(playerResponse);
+  if (tracks.length === 0) {
+    const reason = responseClassification.message || 'player 响应未提供字幕轨';
+    if (pageTrackError) {
+      throw new Error(
+        `页面字幕轨失败: ${pageTrackError.message}; youtubei/player 未提供字幕轨: ${reason}`
+      );
+    }
+
+    throw new Error(reason);
+  }
+
+  const track = pickPreferredCaptionTrack(tracks);
+  if (!track?.baseUrl) {
+    const error = new Error('字幕轨缺少 baseUrl');
+    if (pageTrackError) {
+      throw new Error(`页面字幕轨失败: ${pageTrackError.message}; ${error.message}`);
+    }
+
+    throw error;
+  }
+
+  try {
+    return {
+      trackText: await requestTrackText(track),
+      source: 'youtubei-player',
+      fallbackReason: pageTrackError?.message,
+      trackLanguageCode: track.languageCode,
+      trackKind: track.kind,
+    };
+  } catch (error) {
+    const normalizedError = error instanceof Error ? error : new Error(String(error));
+    if (pageTrackError) {
+      throw new Error(
+        `页面字幕轨失败: ${pageTrackError.message}; youtubei/player 字幕轨失败: ${normalizedError.message}`
+      );
+    }
+
+    throw normalizedError;
+  }
 }
 
 export function findTranscriptTrigger(root: TranscriptQueryRoot): QueryElementLike | null {
