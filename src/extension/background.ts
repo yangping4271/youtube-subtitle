@@ -73,11 +73,24 @@ interface ChromeMessage {
   targetLanguage?: string;
   videoId?: string;
   apiConfig?: {
+    activeProviderId?: string;
+    providers?: Array<{
+      id: string;
+      name: string;
+      providerType?: 'openai' | 'openrouter' | 'deepseek' | 'custom';
+      openaiBaseUrl: string;
+      openaiApiKey: string;
+      llmModel: string;
+      threadNum?: number;
+      disableThinking?: boolean;
+    }>;
     openaiBaseUrl?: string;
     openaiApiKey?: string;
     llmModel?: string;
+    providerType?: 'openai' | 'openrouter' | 'deepseek' | 'custom';
     targetLanguage?: string;
     threadNum?: number;
+    disableThinking?: boolean;
   };
   videoInfo?: {
     ytTitle: string;

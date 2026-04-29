@@ -46,7 +46,22 @@ export interface PreSplitSentence {
 }
 
 /** API 配置 */
-export interface ApiConfig {
+export type ApiProviderType = 'openai' | 'openrouter' | 'deepseek' | 'custom';
+
+export interface ApiProviderConfig {
+  id: string;
+  name: string;
+  providerType?: ApiProviderType;
+  openaiBaseUrl: string;
+  openaiApiKey: string;
+  llmModel: string;
+  threadNum?: number;  // 并发数，默认 3
+  disableThinking?: boolean;  // 翻译任务默认关闭思考模式
+}
+
+export interface ApiConfig extends Partial<ApiProviderConfig> {
+  activeProviderId?: string;
+  providers?: ApiProviderConfig[];
   openaiBaseUrl: string;
   openaiApiKey: string;
   llmModel: string;
@@ -59,10 +74,12 @@ export interface TranslatorConfig {
   openaiBaseUrl: string;
   openaiApiKey: string;
   model: string;
+  providerType?: ApiProviderType;
   targetLanguage: string;
   maxWordCountEnglish: number;
   threadNum: number;
   batchSize: number;
+  disableThinking?: boolean;
   // 阈值倍数
   toleranceMultiplier: number;
   warningMultiplier: number;
@@ -114,12 +131,17 @@ export interface JsonSchemaResponseFormat {
   };
 }
 
+/** Chat API 的 JSON Object 输出格式 */
+export interface JsonObjectResponseFormat {
+  type: 'json_object';
+}
+
 /** Chat API 调用选项 */
 export interface ChatOptions {
   temperature?: number;
   timeout?: number;
   signal?: AbortSignal;
-  responseFormat?: JsonSchemaResponseFormat;
+  responseFormat?: JsonSchemaResponseFormat | JsonObjectResponseFormat;
 }
 
 // ========================================

@@ -174,7 +174,7 @@ class YouTubeSubtitleOverlay {
       const videoInfo = getVideoInfo();
 
       const result = await chrome.storage.local.get(['apiConfig']);
-      const apiConfig = (result.apiConfig as Record<string, string>) || {};
+      const apiConfig = (result.apiConfig as { targetLanguage?: string }) || {};
 
       chrome.runtime.sendMessage({
         action: 'startTranslation',

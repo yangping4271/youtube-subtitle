@@ -2,8 +2,11 @@
  * OpenAI API 客户端
  */
 
-import { withRetry } from '../utils/retry.js';
+import { classifyError, withRetry } from '../utils/retry.js';
+import { setupLogger } from '../utils/logger.js';
 import type { ChatOptions, TranslatorConfig } from '../types/index.js';
+
+const logger = setupLogger('openai-client');
 
 /**
  * OpenAI API 客户端
@@ -12,11 +15,92 @@ export class OpenAIClient {
   private baseUrl: string;
   private apiKey: string;
   private model: string;
+  private providerType: string;
+  private disableThinking: boolean;
 
   constructor(config: TranslatorConfig) {
     this.baseUrl = config.openaiBaseUrl;
     this.apiKey = config.openaiApiKey;
     this.model = config.model;
+    this.providerType = config.providerType || 'custom';
+    this.disableThinking = config.disableThinking !== false;
+  }
+
+  private getHostname(): string {
+    try {
+      return new URL(this.baseUrl).hostname;
+    } catch {
+      return this.baseUrl;
+    }
+  }
+
+  private shouldSendDeepSeekThinkingDisabled(): boolean {
+    if (!this.disableThinking) {
+      return false;
+    }
+
+    const model = this.model.toLowerCase();
+    if (!model.startsWith('deepseek-v4-')) {
+      return false;
+    }
+
+    return this.providerType === 'deepseek' || this.getHostname().endsWith('deepseek.com');
+  }
+
+  private shouldSendOpenRouterReasoningNone(): boolean {
+    if (!this.disableThinking) {
+      return false;
+    }
+
+    return this.providerType === 'openrouter' || this.getHostname().endsWith('openrouter.ai');
+  }
+
+  private getOpenAIReasoningEffort(): 'none' | 'minimal' | null {
+    if (!this.disableThinking) {
+      return null;
+    }
+
+    const isOpenAI = this.providerType === 'openai' || this.getHostname().endsWith('api.openai.com');
+    if (!isOpenAI) {
+      return null;
+    }
+
+    const model = this.model.toLowerCase();
+    if (model.startsWith('gpt-5.1') || model.startsWith('gpt-5.2')) {
+      return 'none';
+    }
+
+    if (model.startsWith('gpt-5') && !model.includes('pro')) {
+      return 'minimal';
+    }
+
+    return null;
+  }
+
+  private isRequestCompatibilityError(error: Error): boolean {
+    const message = error.message.toLowerCase();
+    const mentionsOptionalRequestParam =
+      message.includes('response_format') ||
+      message.includes('json_schema') ||
+      message.includes('json_object') ||
+      message.includes('reasoning_effort') ||
+      message.includes('thinking') ||
+      message.includes('reasoning');
+
+    if (!mentionsOptionalRequestParam) {
+      return false;
+    }
+
+    return [
+      'unsupported',
+      'not supported',
+      'unavailable',
+      'invalid parameter',
+      'unknown parameter',
+      'extra inputs are not permitted',
+      'invalid_request_error',
+      'not available',
+    ].some(pattern => message.includes(pattern));
   }
 
   /**
@@ -47,6 +131,25 @@ export class OpenAIClient {
     if (responseFormat) {
       body.response_format = responseFormat;
     }
+
+    const thinkingDisabled = this.shouldSendDeepSeekThinkingDisabled();
+    if (thinkingDisabled) {
+      body.thinking = { type: 'disabled' };
+    }
+
+    const openRouterReasoningDisabled = this.shouldSendOpenRouterReasoningNone();
+    if (openRouterReasoningDisabled) {
+      body.reasoning = { effort: 'none' };
+    }
+
+    const openAIReasoningEffort = this.getOpenAIReasoningEffort();
+    if (openAIReasoningEffort) {
+      body.reasoning_effort = openAIReasoningEffort;
+    }
+
+    logger.info(
+      `请求参数: provider=${this.providerType}, model=${this.model}, response_format=${responseFormat?.type || 'none'}, reasoning=${thinkingDisabled ? 'deepseek-disabled' : openRouterReasoningDisabled ? 'openrouter-none' : openAIReasoningEffort ? `openai-${openAIReasoningEffort}` : 'default'}`
+    );
 
     // 使用 withRetry 包装 API 调用，自动重试 2 次
     return withRetry(
@@ -108,6 +211,7 @@ export class OpenAIClient {
         maxRetries: 1,
         delays: [1000, 2000],
         operationName: `OpenAI API (${this.model})`,
+        shouldRetry: (error) => !this.isRequestCompatibilityError(error) && classifyError(error) === 'retryable',
         signal: externalSignal,
       }
     );

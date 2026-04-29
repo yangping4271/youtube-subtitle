@@ -192,25 +192,46 @@ export class TranslatorService {
     onBatchComplete?: () => void
   ): Promise<void> {
     const batchLabel = `批次${batchNumber}`;
+    const translationBatchSize = this.config.batchSize;
 
-    logger.info(`[${batchLabel}] 翻译开始: ${segments.length}条字幕`);
-
-    const subtitleMap: Record<string, string> = {};
-    for (let i = 0; i < segments.length; i++) {
-      subtitleMap[String(i + 1)] = segments[i].text;
-    }
-
-    const translated = await translator.translate(
-      subtitleMap,
-      {
-        videoTitle: options.videoTitle,
-        videoDescription: options.videoDescription,
-        aiSummary: options.aiSummary,
-      },
-      batchLabel,
-      options.signal, // 传递 signal
-      this.config.threadNum // 传递 threadNum 用于单条并发翻译
+    logger.info(
+      `[${batchLabel}] 翻译开始: ${segments.length}条字幕，翻译子批大小 ${translationBatchSize}`
     );
+
+    const translated: TranslatedEntry[] = [];
+    for (let start = 0; start < segments.length; start += translationBatchSize) {
+      this.checkAborted(options.signal);
+
+      const end = Math.min(start + translationBatchSize, segments.length);
+      const chunk = segments.slice(start, end);
+      const chunkIndex = Math.floor(start / translationBatchSize) + 1;
+      const chunkTotal = Math.ceil(segments.length / translationBatchSize);
+      const chunkLabel = chunkTotal > 1
+        ? `${batchLabel}-${chunkIndex}/${chunkTotal}`
+        : batchLabel;
+
+      const subtitleMap: Record<string, string> = {};
+      for (let i = 0; i < chunk.length; i++) {
+        subtitleMap[String(i + 1)] = chunk[i].text;
+      }
+
+      const translatedChunk = await translator.translate(
+        subtitleMap,
+        {
+          videoTitle: options.videoTitle,
+          videoDescription: options.videoDescription,
+          aiSummary: options.aiSummary,
+        },
+        chunkLabel,
+        options.signal, // 传递 signal
+        this.config.threadNum // 传递 threadNum 用于单条并发翻译
+      );
+
+      translated.push(...translatedChunk.map(entry => ({
+        ...entry,
+        index: start + entry.index,
+      })));
+    }
 
     const result = this.buildBilingualResult(segments, translated);
     logger.info(`[${batchLabel}] 翻译完成: ${result.english.length}条`);

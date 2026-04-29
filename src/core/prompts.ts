@@ -24,7 +24,7 @@ const STANDARD_TERMINOLOGY = `## Standard Terminology
 - co-pilots → co-pilots
 - MCP (Model Context Protocol) → 模型上下文协议 (Model Context Protocol/MCP)`;
 
-type BatchTranslateOutputFormat = 'json_schema' | 'json' | 'xml';
+type BatchTranslateOutputFormat = 'json_schema' | 'json_object' | 'json' | 'xml';
 
 function buildBatchTranslateOutputInstructions(
   outputFormat: BatchTranslateOutputFormat
@@ -45,7 +45,7 @@ Example:
 - Return ONLY the JSON object, no markdown, no code blocks, no explanations.`;
   }
 
-  if (outputFormat === 'json') {
+  if (outputFormat === 'json_object' || outputFormat === 'json') {
     return `## Output Format
 Return a single JSON object where each key is the input subtitle key and each value is the translated subtitle string.
 

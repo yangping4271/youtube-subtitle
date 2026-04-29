@@ -9,6 +9,7 @@ import { normalizeChinesePunctuation, isChinese } from '../utils/punctuation.js'
 import { parseLlmResponse } from '../utils/json-repair.js';
 import type {
   ChatOptions,
+  JsonObjectResponseFormat,
   JsonSchemaResponseFormat,
   TranslatorConfig,
   TranslatedEntry,
@@ -16,7 +17,7 @@ import type {
 
 const logger = setupLogger('translator');
 
-type BatchResponseFormat = 'json_schema' | 'json' | 'xml';
+type BatchResponseFormat = 'json_schema' | 'json_object' | 'json' | 'xml';
 
 class BatchResponseFormatError extends Error {
   constructor(message: string) {
@@ -36,11 +37,17 @@ function getBatchFormatLabel(format: BatchResponseFormat): string {
   switch (format) {
     case 'json_schema':
       return 'JSON Schema';
+    case 'json_object':
+      return 'JSON Object';
     case 'json':
       return 'JSON';
     case 'xml':
       return 'XML';
   }
+}
+
+function createBatchJsonObject(): JsonObjectResponseFormat {
+  return { type: 'json_object' };
 }
 
 function createBatchJsonSchema(keys: string[]): JsonSchemaResponseFormat {
@@ -262,6 +269,10 @@ export class Translator {
   }
 
   private getBatchFormatAttemptOrder(): BatchResponseFormat[] {
+    if (this.batchResponseFormat === 'json_object') {
+      return ['json_object', 'json', 'xml'];
+    }
+
     if (this.batchResponseFormat === 'json') {
       return ['json', 'xml'];
     }
@@ -270,7 +281,11 @@ export class Translator {
       return ['xml'];
     }
 
-    return ['json_schema', 'json', 'xml'];
+    if (this.config.providerType === 'deepseek') {
+      return ['json_object', 'json', 'xml'];
+    }
+
+    return ['json_schema', 'json_object', 'json', 'xml'];
   }
 
   private shouldFallbackToNextFormat(format: BatchResponseFormat, error: Error): boolean {
@@ -278,7 +293,7 @@ export class Translator {
       return format !== 'xml';
     }
 
-    if (format === 'json_schema') {
+    if (format === 'json_schema' || format === 'json_object') {
       return isJsonSchemaCompatibilityError(error);
     }
 
@@ -438,10 +453,11 @@ export class Translator {
         `${prefix}批量翻译输出格式: 当前优先 ${getBatchFormatLabel(this.batchResponseFormat)}`
       );
     } else {
-      logger.info(`${prefix}批量翻译输出格式探测: JSON Schema -> JSON -> XML`);
+      logger.info(`${prefix}批量翻译输出格式探测: ${attemptFormats.map(getBatchFormatLabel).join(' -> ')}`);
     }
 
     let lastError: Error | null = null;
+    let contentFallbackOccurred = false;
 
     for (let i = 0; i < attemptFormats.length; i++) {
       const format = attemptFormats[i];
@@ -460,7 +476,9 @@ export class Translator {
           prefix
         );
 
-        this.batchResponseFormat = format;
+        if (!contentFallbackOccurred) {
+          this.batchResponseFormat = format;
+        }
         logger.info(`${prefix}批量翻译输出格式: 使用 ${getBatchFormatLabel(format)} 完成解析`);
         return results;
       } catch (error) {
@@ -471,10 +489,17 @@ export class Translator {
           throw currentError;
         }
 
-        this.batchResponseFormat = nextFormat;
-        logger.warn(
-          `${prefix}${getBatchFormatLabel(format)} 不可用，降级到 ${getBatchFormatLabel(nextFormat)}: ${currentError.message}`
-        );
+        if (currentError.name === 'BatchResponseFormatError') {
+          contentFallbackOccurred = true;
+          logger.warn(
+            `${prefix}${getBatchFormatLabel(format)} 响应不完整，尝试 ${getBatchFormatLabel(nextFormat)}: ${currentError.message}`
+          );
+        } else {
+          this.batchResponseFormat = nextFormat;
+          logger.warn(
+            `${prefix}${getBatchFormatLabel(format)} 不可用，降级到 ${getBatchFormatLabel(nextFormat)}: ${currentError.message}`
+          );
+        }
       }
     }
 
@@ -546,12 +571,14 @@ export class Translator {
 
     if (format === 'json_schema') {
       options.responseFormat = createBatchJsonSchema(keys);
+    } else if (format === 'json_object') {
+      options.responseFormat = createBatchJsonObject();
     }
 
     const response = await this.client.callChat(systemPrompt, userPrompt, options);
     logger.info(`${prefix}${getBatchFormatLabel(format)} 原始返回数据:\n${response}`);
 
-    if (format === 'json_schema' || format === 'json') {
+    if (format === 'json_schema' || format === 'json_object' || format === 'json') {
       const translationMap = parseJsonTranslations(response, keys);
       return this.buildBatchResults(batch, translationMap, prefix);
     }

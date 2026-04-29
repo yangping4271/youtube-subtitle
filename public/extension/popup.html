@@ -77,6 +77,29 @@
                     </div>
 
                     <div class="settings-grid">
+                        <!-- Provider Profile -->
+                        <div class="setting-item">
+                            <div class="setting-label">
+                                <span class="setting-name">当前供应商</span>
+                            </div>
+                            <div class="provider-select-row">
+                                <select id="apiProviderSelect" class="setting-select">
+                                    <!-- 动态填充 -->
+                                </select>
+                                <button class="provider-icon-btn" id="addProviderBtn" title="新增供应商">+</button>
+                                <button class="provider-icon-btn danger" id="deleteProviderBtn" title="删除供应商">-</button>
+                            </div>
+                        </div>
+
+                        <!-- Provider Name -->
+                        <div class="setting-item">
+                            <div class="setting-label">
+                                <span class="setting-name">供应商名称</span>
+                            </div>
+                            <input type="text" id="apiProviderName" class="config-input"
+                                placeholder="例如：本地 Qwen">
+                        </div>
+
                         <!-- API Base URL -->
                         <div class="setting-item">
                             <div class="setting-label">
@@ -148,14 +171,6 @@
                     <div class="tip-item">
                         <span class="tip-number">1</span>
                         <span class="tip-text">支持 OpenAI 和本地兼容 API</span>
-                    </div>
-                    <div class="tip-item">
-                        <span class="tip-number">2</span>
-                        <span class="tip-text">首次连接新的 API 地址时，Chrome 会请求授权访问该地址</span>
-                    </div>
-                    <div class="tip-item">
-                        <span class="tip-number">3</span>
-                        <span class="tip-text">推荐本地模型：gemma-4-e2b-it、gemma-4-e4b-it</span>
                     </div>
                 </div>
             </div>

@@ -9,6 +9,8 @@ import type {
   ModelOption,
   LanguageOption,
   ApiConfig,
+  ApiProviderConfig,
+  ApiProviderType,
   TranslatorConfig,
 } from '../types';
 
@@ -21,13 +23,49 @@ declare const chrome: {
   };
 };
 
+export const DEFAULT_API_PROVIDERS: ApiProviderConfig[] = [
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    providerType: 'openai',
+    openaiBaseUrl: 'https://api.openai.com/v1',
+    openaiApiKey: '',
+    llmModel: 'gpt-4o-mini',
+    threadNum: 3,
+    disableThinking: true,
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    providerType: 'openrouter',
+    openaiBaseUrl: 'https://openrouter.ai/api/v1',
+    openaiApiKey: '',
+    llmModel: 'openai/gpt-4o-mini',
+    threadNum: 3,
+    disableThinking: true,
+  },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    providerType: 'deepseek',
+    openaiBaseUrl: 'https://api.deepseek.com',
+    openaiApiKey: '',
+    llmModel: 'deepseek-v4-flash',
+    threadNum: 3,
+    disableThinking: true,
+  },
+];
+
 /** 默认 API 配置 */
 export const DEFAULT_API_CONFIG: ApiConfig = {
+  activeProviderId: DEFAULT_API_PROVIDERS[0].id,
+  providers: DEFAULT_API_PROVIDERS,
   openaiBaseUrl: 'https://api.openai.com/v1',
   openaiApiKey: '',
-  llmModel: '',
+  llmModel: 'gpt-4o-mini',
   targetLanguage: 'zh',
   threadNum: 3,  // 默认并发数
+  disableThinking: true,
 };
 
 /** 默认翻译器配置 */
@@ -35,25 +73,113 @@ const DEFAULT_TRANSLATOR_CONFIG: TranslatorConfig = {
   openaiBaseUrl: 'https://api.openai.com/v1',
   openaiApiKey: '',
   model: 'gpt-4o',
+  providerType: 'openai',
   targetLanguage: 'zh',
   maxWordCountEnglish: 19,
   threadNum: 3,  // 默认并发数，降低以避免 rate limit
   batchSize: 20,
+  disableThinking: true,
   toleranceMultiplier: 1.2,
   warningMultiplier: 1.5,
   maxMultiplier: 2.0,
 };
 
+function inferProviderType(baseUrl = ''): ApiProviderType {
+  const normalizedBaseUrl = baseUrl.toLowerCase();
+  if (normalizedBaseUrl.includes('openrouter.ai')) return 'openrouter';
+  if (normalizedBaseUrl.includes('deepseek.com')) return 'deepseek';
+  if (normalizedBaseUrl.includes('api.openai.com')) return 'openai';
+  return 'custom';
+}
+
+function normalizeProvider(provider: ApiProviderConfig): ApiProviderConfig {
+  return {
+    id: provider.id,
+    name: provider.name || '未命名供应商',
+    providerType: provider.providerType || inferProviderType(provider.openaiBaseUrl),
+    openaiBaseUrl: provider.openaiBaseUrl || DEFAULT_TRANSLATOR_CONFIG.openaiBaseUrl,
+    openaiApiKey: provider.openaiApiKey || '',
+    llmModel: provider.llmModel || '',
+    threadNum: provider.threadNum || DEFAULT_TRANSLATOR_CONFIG.threadNum,
+    disableThinking: provider.disableThinking !== false,
+  };
+}
+
+function cloneDefaultProviders(): ApiProviderConfig[] {
+  return DEFAULT_API_PROVIDERS.map(provider => ({ ...provider }));
+}
+
+function ensureUniqueProviders(providers: ApiProviderConfig[]): ApiProviderConfig[] {
+  const result: ApiProviderConfig[] = [];
+  const seen = new Set<string>();
+
+  for (const provider of providers) {
+    const key = provider.providerType && provider.providerType !== 'custom'
+      ? `type:${provider.providerType}`
+      : `id:${provider.id}`;
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(provider);
+  }
+
+  return result;
+}
+
+export function normalizeApiConfig(apiConfig: Partial<ApiConfig> | null | undefined): ApiConfig {
+  const configuredProviders: ApiProviderConfig[] = Array.isArray(apiConfig?.providers)
+    ? apiConfig.providers
+      .filter((provider): provider is ApiProviderConfig => Boolean(provider?.id))
+      .map(normalizeProvider)
+    : [];
+
+  const providers = ensureUniqueProviders(
+    configuredProviders.length > 0 ? configuredProviders : cloneDefaultProviders()
+  );
+
+  const activeProviderId = apiConfig?.activeProviderId && providers.some(p => p.id === apiConfig.activeProviderId)
+    ? apiConfig.activeProviderId
+    : providers[0].id;
+  const activeProvider = providers.find(provider => provider.id === activeProviderId) || providers[0];
+
+  return {
+    activeProviderId,
+    providers,
+    openaiBaseUrl: activeProvider.openaiBaseUrl,
+    openaiApiKey: activeProvider.openaiApiKey,
+    llmModel: activeProvider.llmModel,
+    providerType: activeProvider.providerType,
+    targetLanguage: apiConfig?.targetLanguage || DEFAULT_TRANSLATOR_CONFIG.targetLanguage,
+    threadNum: activeProvider.threadNum || DEFAULT_TRANSLATOR_CONFIG.threadNum,
+    disableThinking: activeProvider.disableThinking !== false,
+  };
+}
+
+export function getActiveApiProvider(
+  apiConfig: Partial<ApiConfig> | null | undefined
+): ApiProviderConfig {
+  const normalized = normalizeApiConfig(apiConfig);
+  return normalized.providers!.find(provider => provider.id === normalized.activeProviderId)
+    || normalized.providers![0];
+}
+
 export function buildTranslatorConfig(
   apiConfig: Partial<ApiConfig> | null | undefined
 ): TranslatorConfig {
+  const normalized = normalizeApiConfig(apiConfig);
+
   return {
     ...DEFAULT_TRANSLATOR_CONFIG,
-    openaiBaseUrl: apiConfig?.openaiBaseUrl || DEFAULT_TRANSLATOR_CONFIG.openaiBaseUrl,
-    openaiApiKey: apiConfig?.openaiApiKey || '',
-    model: apiConfig?.llmModel || DEFAULT_TRANSLATOR_CONFIG.model,
-    targetLanguage: apiConfig?.targetLanguage || DEFAULT_TRANSLATOR_CONFIG.targetLanguage,
-    threadNum: apiConfig?.threadNum || DEFAULT_TRANSLATOR_CONFIG.threadNum,
+    openaiBaseUrl: normalized.openaiBaseUrl || DEFAULT_TRANSLATOR_CONFIG.openaiBaseUrl,
+    openaiApiKey: normalized.openaiApiKey || '',
+    model: normalized.llmModel || DEFAULT_TRANSLATOR_CONFIG.model,
+    providerType: normalized.providerType || inferProviderType(normalized.openaiBaseUrl),
+    targetLanguage: normalized.targetLanguage || DEFAULT_TRANSLATOR_CONFIG.targetLanguage,
+    threadNum: normalized.threadNum || DEFAULT_TRANSLATOR_CONFIG.threadNum,
+    disableThinking: normalized.disableThinking !== false,
   };
 }
 
@@ -214,6 +340,9 @@ declare global {
       validateSettings: typeof validateSettings;
       isEmptySettings: typeof isEmptySettings;
       DEFAULT_API_CONFIG: typeof DEFAULT_API_CONFIG;
+      DEFAULT_API_PROVIDERS: typeof DEFAULT_API_PROVIDERS;
+      normalizeApiConfig: typeof normalizeApiConfig;
+      getActiveApiProvider: typeof getActiveApiProvider;
       SUPPORTED_MODELS: typeof SUPPORTED_MODELS;
       SUPPORTED_LANGUAGES: typeof SUPPORTED_LANGUAGES;
     };
@@ -232,6 +361,9 @@ if (typeof window !== 'undefined') {
     validateSettings,
     isEmptySettings,
     DEFAULT_API_CONFIG,
+    DEFAULT_API_PROVIDERS,
+    normalizeApiConfig,
+    getActiveApiProvider,
     SUPPORTED_MODELS,
     SUPPORTED_LANGUAGES,
   };
