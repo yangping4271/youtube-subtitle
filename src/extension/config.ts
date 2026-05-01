@@ -84,11 +84,38 @@ const DEFAULT_TRANSLATOR_CONFIG: TranslatorConfig = {
   maxMultiplier: 2.0,
 };
 
+function getUrlParts(baseUrl = ''): { hostname: string; pathParts: Set<string> } {
+  try {
+    const parsed = new URL(baseUrl);
+    return {
+      hostname: parsed.hostname.toLowerCase(),
+      pathParts: new Set(
+        parsed.pathname
+          .split('/')
+          .map(part => part.trim().toLowerCase())
+          .filter(Boolean)
+      ),
+    };
+  } catch {
+    return {
+      hostname: '',
+      pathParts: new Set(
+        baseUrl
+          .toLowerCase()
+          .split(/[/?#]+/)
+          .map(part => part.trim())
+          .filter(Boolean)
+      ),
+    };
+  }
+}
+
 function inferProviderType(baseUrl = ''): ApiProviderType {
   const normalizedBaseUrl = baseUrl.toLowerCase();
-  if (normalizedBaseUrl.includes('openrouter.ai')) return 'openrouter';
-  if (normalizedBaseUrl.includes('deepseek.com')) return 'deepseek';
-  if (normalizedBaseUrl.includes('api.openai.com')) return 'openai';
+  const { hostname, pathParts } = getUrlParts(baseUrl);
+  if (hostname.endsWith('openrouter.ai') || pathParts.has('openrouter') || normalizedBaseUrl.includes('openrouter.ai')) return 'openrouter';
+  if (hostname.endsWith('deepseek.com') || normalizedBaseUrl.includes('deepseek.com')) return 'deepseek';
+  if (hostname === 'api.openai.com' || normalizedBaseUrl.includes('api.openai.com')) return 'openai';
   return 'custom';
 }
 

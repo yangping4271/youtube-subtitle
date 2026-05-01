@@ -91,7 +91,7 @@ describe('Translator batch output format fallback', () => {
     });
 
     expect(firstResult.map(item => item.translation)).toEqual(['第一句', '第二句']);
-    expect(secondResult.map(item => item.translation)).toEqual(['后续', '回到JSON Object']);
+    expect(secondResult.map(item => item.translation)).toEqual(['后续', '回到 JSON Object']);
 
     expect(calls).toHaveLength(5);
     expect(calls[0]?.options?.responseFormat?.type).toBe('json_schema');

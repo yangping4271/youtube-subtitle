@@ -92,6 +92,45 @@ describe('local OpenAI-compatible config', () => {
     expect(body.reasoning).toEqual({ effort: 'none' });
   });
 
+  it('OpenRouter 代理 URL 默认发送关闭 reasoning 参数', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: 'translated content' } }],
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new OpenAIClient(createConfig({
+      openaiBaseUrl: 'https://ai-proxy.chatwise.app/openrouter/api/v1',
+      model: 'openai/gpt-4o-mini',
+    }));
+    await client.callChat('system', 'user');
+
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+    expect(body.reasoning).toEqual({ effort: 'none' });
+  });
+
+  it('OpenRouter 代理 URL 会推断为 openrouter 供应商', () => {
+    const config = normalizeApiConfig({
+      activeProviderId: 'openrouter-proxy',
+      targetLanguage: 'zh',
+      providers: [
+        {
+          id: 'openrouter-proxy',
+          name: 'OpenRouter Proxy',
+          openaiBaseUrl: 'https://ai-proxy.chatwise.app/openrouter/api/v1',
+          openaiApiKey: 'proxy-key',
+          llmModel: 'openai/gpt-4o-mini',
+          threadNum: 3,
+        },
+      ],
+    });
+
+    expect(config.providerType).toBe('openrouter');
+    expect(config.openaiBaseUrl).toBe('https://ai-proxy.chatwise.app/openrouter/api/v1');
+  });
+
   it('OpenAI GPT-5.1 默认发送 reasoning_effort none', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

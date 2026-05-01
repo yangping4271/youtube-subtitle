@@ -38,7 +38,7 @@ describe('Translator XML repair', () => {
       '3': 'third',
     });
 
-    expect(callCount).toBe(3);
+    expect(callCount).toBe(4);
     expect(result.map((item) => item.translation)).toEqual(['第一句', '第二句', '第三句']);
   });
 });

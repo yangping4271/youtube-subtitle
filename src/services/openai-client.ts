@@ -28,9 +28,28 @@ export class OpenAIClient {
 
   private getHostname(): string {
     try {
-      return new URL(this.baseUrl).hostname;
+      return new URL(this.baseUrl).hostname.toLowerCase();
     } catch {
-      return this.baseUrl;
+      return this.baseUrl.toLowerCase();
+    }
+  }
+
+  private getPathParts(): Set<string> {
+    try {
+      return new Set(
+        new URL(this.baseUrl).pathname
+          .split('/')
+          .map(part => part.trim().toLowerCase())
+          .filter(Boolean)
+      );
+    } catch {
+      return new Set(
+        this.baseUrl
+          .toLowerCase()
+          .split(/[/?#]+/)
+          .map(part => part.trim())
+          .filter(Boolean)
+      );
     }
   }
 
@@ -52,7 +71,9 @@ export class OpenAIClient {
       return false;
     }
 
-    return this.providerType === 'openrouter' || this.getHostname().endsWith('openrouter.ai');
+    return this.providerType === 'openrouter'
+      || this.getHostname().endsWith('openrouter.ai')
+      || this.getPathParts().has('openrouter');
   }
 
   private getOpenAIReasoningEffort(): 'none' | 'minimal' | null {
