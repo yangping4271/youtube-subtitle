@@ -60,6 +60,13 @@
                         </div>
                     </div>
 
+                    <div class="target-language-card">
+                        <span class="target-language-label">目标语言</span>
+                        <select id="targetLanguage" class="setting-select target-language-select">
+                            <!-- 动态填充 -->
+                        </select>
+                    </div>
+
                     <!-- 翻译按钮组 -->
                     <div class="translate-btn-group">
                         <button class="translate-main-btn" id="translateBtn">
@@ -128,16 +135,6 @@
                                 <span class="setting-name">翻译模型</span>
                             </div>
                             <input type="text" id="llmModel" class="config-input" placeholder="输入模型名称" value="">
-                        </div>
-
-                        <!-- Target Language -->
-                        <div class="setting-item">
-                            <div class="setting-label">
-                                <span class="setting-name">目标语言</span>
-                            </div>
-                            <select id="targetLanguage" class="setting-select">
-                                <!-- 动态填充 -->
-                            </select>
                         </div>
 
                         <!-- 并发数 -->

@@ -1916,11 +1916,16 @@ class PopupController {
             });
         }
 
-        // 目标语言
+        // 主翻译区的目标语言
         const targetLanguage = document.getElementById('targetLanguage');
         if (targetLanguage) {
-            targetLanguage.addEventListener('change', (e) => {
+            targetLanguage.addEventListener('change', async (e) => {
                 this.apiConfig.targetLanguage = e.target.value;
+                try {
+                    await chrome.storage.local.set({ apiConfig: this.apiConfig });
+                } catch (error) {
+                    console.error('保存目标语言失败:', error);
+                }
             });
         }
 
