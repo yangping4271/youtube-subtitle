@@ -95,6 +95,21 @@ class PopupController {
         // UI状态
         this.currentTab = 'files';
         this.advancedExpanded = false;
+        this.themeMode = 'system';
+        this.themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        this.handleSystemThemeChange = () => {
+            if (this.themeMode === 'system') {
+                this.applyTheme();
+            }
+        };
+
+        if (typeof this.themeMediaQuery.addEventListener === 'function') {
+            this.themeMediaQuery.addEventListener('change', this.handleSystemThemeChange);
+        } else if (typeof this.themeMediaQuery.addListener === 'function') {
+            this.themeMediaQuery.addListener(this.handleSystemThemeChange);
+        }
+
+        this.applyTheme();
 
         this.init();
     }
@@ -225,6 +240,7 @@ class PopupController {
     async init() {
         // 从统一配置中心初始化 CSS 变量
         this.initCSSVariablesFromConfig();
+        await this.loadThemePreference();
 
         this.setupTabs();
         this.bindEvents();
@@ -314,6 +330,56 @@ class PopupController {
         root.style.setProperty('--chinese-text-stroke', config.chinese.textStroke || 'none');
         root.style.setProperty('--chinese-text-shadow', config.chinese.textShadow);
         root.style.setProperty('--chinese-line-height', config.chinese.lineHeight);
+    }
+
+    getEffectiveTheme() {
+        if (this.themeMode === 'light' || this.themeMode === 'dark') {
+            return this.themeMode;
+        }
+
+        return this.themeMediaQuery.matches ? 'dark' : 'light';
+    }
+
+    applyTheme() {
+        const root = document.documentElement;
+        const effectiveTheme = this.getEffectiveTheme();
+        root.dataset.themeMode = this.themeMode;
+        root.dataset.themeEffective = effectiveTheme;
+    }
+
+    async loadThemePreference() {
+        try {
+            const result = await chrome.storage.local.get(['popupThemeMode']);
+            const storedTheme = result.popupThemeMode;
+
+            if (storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system') {
+                this.themeMode = storedTheme;
+            } else {
+                this.themeMode = 'system';
+            }
+        } catch (error) {
+            console.error('加载主题设置失败:', error);
+            this.themeMode = 'system';
+        }
+
+        this.applyTheme();
+
+        const themeMode = document.getElementById('themeMode');
+        if (themeMode) {
+            this.setSelectValue(themeMode, this.themeMode);
+        }
+    }
+
+    async updateThemeMode(mode) {
+        this.themeMode = mode;
+        this.applyTheme();
+
+        try {
+            await chrome.storage.local.set({ popupThemeMode: mode });
+        } catch (error) {
+            console.error('保存主题设置失败:', error);
+            Toast.error('主题设置保存失败');
+        }
     }
 
     // 监听chrome.storage变化，保持计数同步与简化更新路径
@@ -670,6 +736,14 @@ class PopupController {
         if (englishTab && chineseTab) {
             englishTab.addEventListener('click', () => this.switchLanguage('english'));
             chineseTab.addEventListener('click', () => this.switchLanguage('chinese'));
+        }
+
+        const themeMode = document.getElementById('themeMode');
+        if (themeMode) {
+            this.setSelectValue(themeMode, this.themeMode);
+            themeMode.addEventListener('change', (e) => {
+                this.updateThemeMode(e.target.value);
+            });
         }
 
         // 设置控件
