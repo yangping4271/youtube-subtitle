@@ -3,7 +3,7 @@
  * 处理 YouTube 页面上的转录面板操作
  */
 
-import type { VideoInfo } from '../types';
+import type { SimpleSubtitleEntry, VideoInfo } from '../types';
 import { getVideoDescription, getAISummary } from './video-metadata.js';
 import { normalizeSubtitleFetchErrorMessage } from './subtitle-fetch-log.js';
 import {
@@ -15,6 +15,7 @@ import {
   getTranscriptSegmentElements,
   hasYouTubeLoginPrompt,
   isTranscriptReady,
+  parseTranscriptTimestamp,
   shouldForceLegacyTranscriptOpen,
 } from './youtube-subtitle-fetch.js';
 
@@ -113,22 +114,18 @@ export function getVideoInfo(): VideoInfo {
   return { ytTitle, channelName, uploadDate, videoURL, videoId, description, aiSummary };
 }
 
-function parseTimeSeconds(timeStr: string): number {
-  const parts = timeStr.split(':').map(Number);
-  let seconds = 0;
-  if (parts.length === 3) {
-    seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
-  } else if (parts.length === 2) {
-    seconds = parts[0] * 60 + parts[1];
-  }
-  return seconds;
-}
-
 function formatTimeSRT(seconds: number): string {
-  const date = new Date(0);
-  date.setSeconds(seconds);
-  const iso = date.toISOString().substring(11, 19);
-  return `${iso},000`;
+  const totalMilliseconds = Math.max(0, Math.round(seconds * 1000));
+  const hours = Math.floor(totalMilliseconds / 3600000);
+  const minutes = Math.floor((totalMilliseconds % 3600000) / 60000);
+  const wholeSeconds = Math.floor((totalMilliseconds % 60000) / 1000);
+  const milliseconds = totalMilliseconds % 1000;
+
+  return [
+    String(hours).padStart(2, '0'),
+    String(minutes).padStart(2, '0'),
+    String(wholeSeconds).padStart(2, '0'),
+  ].join(':') + `,${String(milliseconds).padStart(3, '0')}`;
 }
 
 function getTranscriptSegments(): TranscriptSegment[] {
@@ -272,38 +269,243 @@ function extractTranscriptTextFromXml(xml: string): string {
 
   return timedTextLines.join('\n');
 }
-function getTranscriptSRT(): string {
-  const segments = getTranscriptSegments();
-  if (segments.length === 0) return '';
+function buildSRTFromSubtitles(subtitles: SimpleSubtitleEntry[]): string {
+  if (subtitles.length === 0) {
+    return '';
+  }
 
-  let srtOutput = '';
-  segments.forEach((seg, index) => {
-    const startSeconds = parseTimeSeconds(seg.timeStr);
-    let endSeconds = startSeconds + 5;
-
-    if (index < segments.length - 1) {
-      const nextStart = parseTimeSeconds(segments[index + 1].timeStr);
-      if (nextStart > startSeconds) {
-        endSeconds = nextStart;
-      }
-    }
-
-    srtOutput += `${index + 1}\n`;
-    srtOutput += `${formatTimeSRT(startSeconds)} --> ${formatTimeSRT(endSeconds)}\n`;
-    srtOutput += `${seg.text}\n\n`;
-  });
-
-  return srtOutput;
+  return subtitles.map((subtitle, index) => {
+    return `${index + 1}\n${formatTimeSRT(subtitle.startTime)} --> ${formatTimeSRT(subtitle.endTime)}\n${subtitle.text}`;
+  }).join('\n\n') + '\n\n';
 }
 
-function downloadTranscriptAsSRT(): void {
-  const srtContent = getTranscriptSRT();
+function normalizeSubtitleTiming(subtitles: SimpleSubtitleEntry[]): SimpleSubtitleEntry[] {
+  if (subtitles.length === 0) {
+    return [];
+  }
+
+  return subtitles.map((subtitle, index) => {
+    const next = subtitles[index + 1];
+    let endTime = subtitle.endTime;
+
+    if (!Number.isFinite(endTime) || endTime <= subtitle.startTime) {
+      endTime = next && next.startTime > subtitle.startTime
+        ? next.startTime
+        : subtitle.startTime + 5;
+    }
+
+    return {
+      startTime: subtitle.startTime,
+      endTime,
+      text: subtitle.text,
+    };
+  });
+}
+
+function parseSrv3SpanSubtitles(doc: Document): SimpleSubtitleEntry[] {
+  const subtitles: SimpleSubtitleEntry[] = [];
+
+  doc.querySelectorAll('p').forEach((segment) => {
+    const paragraphStartMs = Number(segment.getAttribute('t'));
+    if (Number.isNaN(paragraphStartMs)) {
+      return;
+    }
+
+    const paragraphDurationMs = Number(segment.getAttribute('d'));
+    const paragraphEndMs = Number.isNaN(paragraphDurationMs)
+      ? null
+      : paragraphStartMs + paragraphDurationMs;
+
+    const spans = Array.from(segment.querySelectorAll('s'));
+    if (spans.length === 0) {
+      return;
+    }
+
+    const spanOffsets = spans.map((span) => {
+      const offsetMs = Number(span.getAttribute('t'));
+      return Number.isNaN(offsetMs) ? null : offsetMs;
+    });
+
+    if (!spanOffsets.some((offsetMs) => offsetMs !== null)) {
+      return;
+    }
+
+    spans.forEach((span, index) => {
+      const text = (span.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!text) {
+        return;
+      }
+
+      const relativeStartMs =
+        spanOffsets[index] ?? (index === 0 ? 0 : spanOffsets[index - 1] ?? 0);
+      let relativeEndMs: number | null = null;
+
+      for (let nextIndex = index + 1; nextIndex < spanOffsets.length; nextIndex++) {
+        if (spanOffsets[nextIndex] !== null) {
+          relativeEndMs = spanOffsets[nextIndex];
+          break;
+        }
+      }
+
+      const startMs = paragraphStartMs + relativeStartMs;
+      let endMs = relativeEndMs !== null
+        ? paragraphStartMs + relativeEndMs
+        : paragraphEndMs ?? startMs;
+
+      if (endMs <= startMs) {
+        endMs = paragraphEndMs && paragraphEndMs > startMs
+          ? paragraphEndMs
+          : startMs;
+      }
+
+      subtitles.push({
+        startTime: startMs / 1000,
+        endTime: endMs / 1000,
+        text,
+      });
+    });
+  });
+
+  return subtitles;
+}
+
+function parseSrv3ParagraphSubtitles(doc: Document): SimpleSubtitleEntry[] {
+  const subtitles: SimpleSubtitleEntry[] = [];
+
+  doc.querySelectorAll('p').forEach((segment) => {
+    const startMs = Number(segment.getAttribute('t'));
+    if (Number.isNaN(startMs)) {
+      return;
+    }
+
+    const durationMs = Number(segment.getAttribute('d'));
+    const textParts = Array.from(segment.querySelectorAll('s'))
+      .map((part) => part.textContent || '')
+      .join('');
+    const rawText = textParts || segment.textContent || '';
+    const text = rawText.replace(/\s+/g, ' ').trim();
+
+    if (!text) {
+      return;
+    }
+
+    subtitles.push({
+      startTime: startMs / 1000,
+      endTime: Number.isNaN(durationMs) ? startMs / 1000 : (startMs + durationMs) / 1000,
+      text,
+    });
+  });
+
+  return subtitles;
+}
+
+function parseTimedTextSubtitles(doc: Document): SimpleSubtitleEntry[] {
+  const subtitles: SimpleSubtitleEntry[] = [];
+
+  doc.querySelectorAll('text').forEach((segment) => {
+    const start = Number(segment.getAttribute('start'));
+    if (Number.isNaN(start)) {
+      return;
+    }
+
+    const duration = Number(segment.getAttribute('dur'));
+    const text = (segment.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!text) {
+      return;
+    }
+
+    subtitles.push({
+      startTime: start,
+      endTime: Number.isNaN(duration) ? start : start + duration,
+      text,
+    });
+  });
+
+  return subtitles;
+}
+
+function parseSubtitleEntriesFromXml(xml: string): SimpleSubtitleEntry[] {
+  const doc = new DOMParser().parseFromString(xml, 'text/xml');
+  if (doc.querySelector('parsererror')) {
+    throw new Error('字幕 XML 解析失败');
+  }
+
+  const timedSpanSubtitles = parseSrv3SpanSubtitles(doc);
+  if (timedSpanSubtitles.length > 0) {
+    return normalizeSubtitleTiming(timedSpanSubtitles);
+  }
+
+  const paragraphSubtitles = parseSrv3ParagraphSubtitles(doc);
+  if (paragraphSubtitles.length > 0) {
+    return normalizeSubtitleTiming(paragraphSubtitles);
+  }
+
+  return normalizeSubtitleTiming(parseTimedTextSubtitles(doc));
+}
+
+function getTranscriptSubtitlesFromPanel(): SimpleSubtitleEntry[] {
+  const segments = getTranscriptSegments();
+  if (segments.length === 0) {
+    return [];
+  }
+
+  return normalizeSubtitleTiming(segments.map((segment) => ({
+    startTime: parseTranscriptTimestamp(segment.timeStr),
+    endTime: 0,
+    text: segment.text,
+  })));
+}
+
+async function downloadTranscriptAsSRT(): Promise<void> {
+  const { ytTitle, channelName, videoId } = getVideoInfo();
+  let subtitleEntries: SimpleSubtitleEntry[] = [];
+  let captionTrackError: Error | null = null;
+
+  if (videoId) {
+    try {
+      const resolution = await resolveCaptionTrackText(videoId);
+      subtitleEntries = parseSubtitleEntriesFromXml(resolution.trackText);
+      if (subtitleEntries.length > 0) {
+        logTranscriptCopyFetch('caption-tracks', subtitleEntries.length, {
+          strategy: resolution.source,
+          trackLanguageCode: resolution.trackLanguageCode,
+          trackKind: resolution.trackKind,
+          fallbackReason: resolution.fallbackReason
+            ? normalizeSubtitleFetchErrorMessage(resolution.fallbackReason)
+            : undefined,
+        });
+      }
+    } catch (error) {
+      captionTrackError = error instanceof Error ? error : new Error(String(error));
+      console.log('通过字幕轨接口下载 SRT 失败，回退到 transcript 面板:', error);
+    }
+  }
+
+  if (subtitleEntries.length === 0) {
+    subtitleEntries = getTranscriptSubtitlesFromPanel();
+
+    if (subtitleEntries.length === 0) {
+      const loaded = await ensureTranscriptLoaded();
+      if (loaded) {
+        subtitleEntries = getTranscriptSubtitlesFromPanel();
+      }
+    }
+  }
+
+  const srtContent = buildSRTFromSubtitles(subtitleEntries);
   if (!srtContent) {
+    if (captionTrackError) {
+      logTranscriptCopyFetch('unavailable', 0, {
+        captionTrackError: normalizeSubtitleFetchErrorMessage(captionTrackError.message),
+      });
+      showNotification(getTranscriptUnavailableMessage());
+      return;
+    }
+
     showNotification('字幕为空');
     return;
   }
 
-  const { ytTitle, channelName, videoId } = getVideoInfo();
   const blob = new Blob([srtContent], { type: 'text/plain' });
 
   const sanitize = (str: string) => str.replace(/[<>:"/\\|?*]+/g, '');
@@ -470,7 +672,7 @@ function waitForTranscript(callback: () => void, retries = 0): void {
 }
 
 function handleDownloadClick(): void {
-  handleTranscriptAction(downloadTranscriptAsSRT);
+  void downloadTranscriptAsSRT();
 }
 
 function handleCopyClick(): void {
