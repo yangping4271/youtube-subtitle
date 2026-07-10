@@ -131,7 +131,34 @@ describe('local OpenAI-compatible config', () => {
     expect(config.openaiBaseUrl).toBe('https://ai-proxy.chatwise.app/openrouter/api/v1');
   });
 
-  it('OpenAI GPT-5.1 默认发送 reasoning_effort none', async () => {
+  it.each([
+    ['OpenAI 官方端点', 'https://api.openai.com/v1', 'openai', 'gpt-5.6'],
+    ['自定义端点', 'https://example.com/v1', 'custom', 'gpt-6'],
+    ['第三方端点', 'https://third-party.example/v1', 'custom', 'GPT-7-fast'],
+  ] as const)(
+    '%s使用 GPT 开头的模型时发送 reasoning_effort none',
+    async (_name, openaiBaseUrl, providerType, model) => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: 'translated content' } }],
+        }),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const client = new OpenAIClient(createConfig({
+        openaiBaseUrl,
+        model,
+        providerType,
+      }));
+      await client.callChat('system', 'user');
+
+      const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+      expect(body.reasoning_effort).toBe('none');
+    }
+  );
+
+  it('OpenRouter 的 GPT 模型只发送 OpenRouter reasoning 参数', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -141,17 +168,18 @@ describe('local OpenAI-compatible config', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const client = new OpenAIClient(createConfig({
-      openaiBaseUrl: 'https://api.openai.com/v1',
-      model: 'gpt-5.1',
-      providerType: 'openai',
+      openaiBaseUrl: 'https://openrouter.ai/api/v1',
+      model: 'gpt-6',
+      providerType: 'openrouter',
     }));
     await client.callChat('system', 'user');
 
     const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
-    expect(body.reasoning_effort).toBe('none');
+    expect(body.reasoning).toEqual({ effort: 'none' });
+    expect(body).not.toHaveProperty('reasoning_effort');
   });
 
-  it('非 reasoning 接口不发送非标准思考参数', async () => {
+  it('非 GPT 模型不发送 GPT 思考参数', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -162,7 +190,7 @@ describe('local OpenAI-compatible config', () => {
 
     const client = new OpenAIClient(createConfig({
       openaiBaseUrl: 'https://api.openai.com/v1',
-      model: 'gpt-4o',
+      model: 'gemini-3-flash',
       providerType: 'openai',
     }));
     await client.callChat('system', 'user');

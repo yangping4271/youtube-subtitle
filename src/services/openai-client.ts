@@ -76,26 +76,12 @@ export class OpenAIClient {
       || this.getPathParts().has('openrouter');
   }
 
-  private getOpenAIReasoningEffort(): 'none' | 'minimal' | null {
+  private shouldSendGPTReasoningNone(): boolean {
     if (!this.disableThinking) {
-      return null;
+      return false;
     }
 
-    const isOpenAI = this.providerType === 'openai' || this.getHostname().endsWith('api.openai.com');
-    if (!isOpenAI) {
-      return null;
-    }
-
-    const model = this.model.toLowerCase();
-    if (model.startsWith('gpt-5.1') || model.startsWith('gpt-5.2')) {
-      return 'none';
-    }
-
-    if (model.startsWith('gpt-5') && !model.includes('pro')) {
-      return 'minimal';
-    }
-
-    return null;
+    return this.model.trim().toLowerCase().startsWith('gpt');
   }
 
   private isRequestCompatibilityError(error: Error): boolean {
@@ -163,13 +149,13 @@ export class OpenAIClient {
       body.reasoning = { effort: 'none' };
     }
 
-    const openAIReasoningEffort = this.getOpenAIReasoningEffort();
-    if (openAIReasoningEffort) {
-      body.reasoning_effort = openAIReasoningEffort;
+    const gptReasoningDisabled = !openRouterReasoningDisabled && this.shouldSendGPTReasoningNone();
+    if (gptReasoningDisabled) {
+      body.reasoning_effort = 'none';
     }
 
     logger.info(
-      `请求参数: provider=${this.providerType}, model=${this.model}, response_format=${responseFormat?.type || 'none'}, reasoning=${thinkingDisabled ? 'deepseek-disabled' : openRouterReasoningDisabled ? 'openrouter-none' : openAIReasoningEffort ? `openai-${openAIReasoningEffort}` : 'default'}`
+      `请求参数: provider=${this.providerType}, model=${this.model}, response_format=${responseFormat?.type || 'none'}, reasoning=${thinkingDisabled ? 'deepseek-disabled' : openRouterReasoningDisabled ? 'openrouter-none' : gptReasoningDisabled ? 'gpt-none' : 'default'}`
     );
 
     // 使用 withRetry 包装 API 调用，自动重试 2 次
