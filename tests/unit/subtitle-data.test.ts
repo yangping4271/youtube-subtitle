@@ -98,5 +98,24 @@ describe('SubtitleData', () => {
       expect(texts).toContain('?');
       expect(texts).toContain('!');
     });
+
+    it('应该保留模型版本号、小数和语义版本号中的点号', () => {
+      const input: SubtitleEntry[] = [
+        {
+          index: 1,
+          startTime: 0,
+          endTime: 3000,
+          text: 'GPT-5.6 uses Python 3.12.1 and scores 9.8.'
+        }
+      ];
+
+      const segments = new SubtitleData(input).splitToWordSegments().getSegments();
+      const texts = segments.map(segment => segment.text);
+
+      expect(texts).toContain('5.6');
+      expect(texts).toContain('3.12.1');
+      expect(texts).toContain('9.8');
+      expect(texts.filter(text => text === '.')).toHaveLength(1);
+    });
   });
 });

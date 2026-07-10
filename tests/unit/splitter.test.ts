@@ -6,6 +6,7 @@ import {
   presplitByPunctuation,
   batchBySentenceCount,
   mergeSegmentsWithinBatch,
+  splitByEndMarks,
 } from '../../src/core/splitter.js';
 import type { SubtitleEntry, PreSplitSentence, TranslatorConfig } from '../../src/types/index.js';
 
@@ -72,6 +73,45 @@ describe('presplitByPunctuation', () => {
     expect(result.length).toBeGreaterThanOrEqual(2);
     expect(result[0].text).toContain('First');
     expect(result[result.length - 1].text).toContain('Third');
+  });
+
+  it('不应在数字之间的点号处分割版本号', () => {
+    const wordSegments: SubtitleEntry[] = [
+      { index: 1, startTime: 0, endTime: 100, text: 'GPT' },
+      { index: 2, startTime: 100, endTime: 150, text: '5' },
+      { index: 3, startTime: 150, endTime: 180, text: '.' },
+      { index: 4, startTime: 180, endTime: 230, text: '6' },
+      { index: 5, startTime: 230, endTime: 330, text: 'is' },
+      { index: 6, startTime: 330, endTime: 450, text: 'available' },
+      { index: 7, startTime: 450, endTime: 480, text: '.' },
+      { index: 8, startTime: 480, endTime: 580, text: 'This' },
+      { index: 9, startTime: 580, endTime: 680, text: 'is' },
+      { index: 10, startTime: 680, endTime: 780, text: 'next' },
+      { index: 11, startTime: 780, endTime: 810, text: '.' },
+    ];
+
+    const result = presplitByPunctuation(wordSegments);
+
+    expect(result).toHaveLength(2);
+    expect(result[0].text).toBe('GPT 5 . 6 is available .');
+    expect(result[0].wordEndIndex).toBe(7);
+    expect(result[1].text).toBe('This is next .');
+  });
+});
+
+describe('splitByEndMarks', () => {
+  it('保留连续文本中的版本号和小数', () => {
+    expect(splitByEndMarks('GPT 5.6 scores 9.8 points. This is the next sentence.')).toEqual([
+      'GPT 5.6 scores 9.8 points.',
+      'This is the next sentence.',
+    ]);
+  });
+
+  it('数字后的真正句号仍然可以断句', () => {
+    expect(splitByEndMarks('There are 6. This is the next sentence.')).toEqual([
+      'There are 6.',
+      'This is the next sentence.',
+    ]);
   });
 });
 

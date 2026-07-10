@@ -78,6 +78,7 @@ export class SubtitleData {
         "|[\\u0370-\\u03ff]+" +  // 希腊语
         "|[\\u0600-\\u06ff]+" +  // 阿拉伯语
         "|[\\u0590-\\u05ff]+" +  // 希伯来语
+        "|\\d+(?:\\.\\d+)+" +  // 小数、模型版本号和语义版本号（如 3.14、GPT-5.6、3.12.1）
         "|\\d+" +  // 数字
         // 以单字形式出现的语言(单字提取)
         "|[\\u4e00-\\u9fff]" +  // 中文
@@ -105,7 +106,7 @@ export class SubtitleData {
       const totalPhonemes = matches.reduce((sum, match) => {
         const token = match[0];
         // 如果是标点符号，算作0.5个音素
-        if (/[.,!?;:…。，！？；：、]/.test(token)) {
+        if (/^[.,!?;:…。，！？；：、]$/.test(token)) {
           return sum + 0.5;
         }
         return sum + Math.ceil(token.length / CHARS_PER_PHONEME);
@@ -122,7 +123,7 @@ export class SubtitleData {
         const token = match[0];
 
         // 判断是否是标点符号
-        const isPunctuation = /[.,!?;:…。，！？；：、]/.test(token);
+        const isPunctuation = /^[.,!?;:…。，！？；：、]$/.test(token);
 
         // 计算当前token的音素数量
         const tokenPhonemes = isPunctuation ? 0.5 : Math.ceil(token.length / CHARS_PER_PHONEME);

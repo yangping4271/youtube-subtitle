@@ -416,27 +416,28 @@ export function countWords(text: string): number {
  * 按明确的句子结束标记拆分句子
  */
 export function splitByEndMarks(sentence: string): string[] {
-  const endMarks = ['. ', '! ', '? ', '.', '!', '?'];  // 包含有空格和无空格的版本
   const positions: number[] = [];
 
-  // 查找句子结束标记的位置
-  for (const mark of endMarks) {
-    let start = 0;
-    while (true) {
-      const pos = sentence.indexOf(mark, start);
-      if (pos === -1) break;
-
-      // 确保不是小数点
-      if ((mark === '. ' || mark === '.') && pos > 0 && /\d/.test(sentence[pos - 1])) {
-        start = pos + 1;
-        continue;
-      }
-
-      // 记录标点后的位置（如果有空格则跳过空格）
-      const markLen = mark.length;
-      positions.push(pos + markLen);
-      start = pos + 1;
+  const nearestNonWhitespace = (start: number, direction: -1 | 1): string => {
+    for (let i = start; i >= 0 && i < sentence.length; i += direction) {
+      if (!/\s/.test(sentence[i])) return sentence[i];
     }
+    return '';
+  };
+
+  for (let i = 0; i < sentence.length; i++) {
+    const mark = sentence[i];
+    if (mark !== '.' && mark !== '!' && mark !== '?') continue;
+
+    if (mark === '.') {
+      const previous = nearestNonWhitespace(i - 1, -1);
+      const next = nearestNonWhitespace(i + 1, 1);
+      if (/\d/.test(previous) && /\d/.test(next)) continue;
+    }
+
+    let end = i + 1;
+    while (end < sentence.length && /\s/.test(sentence[end])) end++;
+    positions.push(end);
   }
 
   // 如果没有找到结束标记，返回原句子
