@@ -86,6 +86,7 @@ class PopupController {
 
         // API配置（独立版本）
         this.apiConfig = this.normalizeApiConfig(window.SubtitleConfig?.DEFAULT_API_CONFIG);
+        this.newApiProviderDraft = null;
         this.isTranslating = false;
 
         // 使用默认设置初始化（从统一配置中心加载）
@@ -130,13 +131,13 @@ class PopupController {
 
     createDefaultApiProvider(overrides = {}) {
         return {
-            id: overrides.id || `provider-${Date.now()}`,
-            name: overrides.name || '新供应商',
+            id: overrides.id || `provider-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            name: overrides.name ?? '',
             providerType: overrides.providerType,
-            openaiBaseUrl: overrides.openaiBaseUrl || 'https://api.openai.com/v1',
-            openaiApiKey: overrides.openaiApiKey || '',
-            llmModel: overrides.llmModel || '',
-            threadNum: overrides.threadNum || 3,
+            openaiBaseUrl: overrides.openaiBaseUrl ?? '',
+            openaiApiKey: overrides.openaiApiKey ?? '',
+            llmModel: overrides.llmModel ?? '',
+            threadNum: overrides.threadNum ?? 3,
             disableThinking: overrides.disableThinking !== false
         };
     }
@@ -151,7 +152,7 @@ class PopupController {
                 id: provider.id,
                 name: provider.name || '未命名供应商',
                 providerType: provider.providerType,
-                openaiBaseUrl: provider.openaiBaseUrl || 'https://api.openai.com/v1',
+                openaiBaseUrl: typeof provider.openaiBaseUrl === 'string' ? provider.openaiBaseUrl : '',
                 openaiApiKey: provider.openaiApiKey || '',
                 llmModel: provider.llmModel || '',
                 threadNum: provider.threadNum || 3,
@@ -201,6 +202,10 @@ class PopupController {
             || this.apiConfig.providers[0];
     }
 
+    getEditingApiProvider() {
+        return this.newApiProviderDraft || this.getActiveApiProvider();
+    }
+
     syncActiveProviderFields() {
         const provider = this.getActiveApiProvider();
         this.apiConfig.openaiBaseUrl = provider.openaiBaseUrl;
@@ -211,7 +216,7 @@ class PopupController {
     }
 
     collectActiveProviderFromUI() {
-        const provider = this.getActiveApiProvider();
+        const provider = this.getEditingApiProvider();
         const providerName = document.getElementById('apiProviderName');
         const apiBaseUrl = document.getElementById('apiBaseUrl');
         const apiKey = document.getElementById('apiKey');
@@ -225,7 +230,10 @@ class PopupController {
         if (llmModel) provider.llmModel = llmModel.value.trim();
         if (targetLanguage) this.apiConfig.targetLanguage = targetLanguage.value;
         if (threadNum) provider.threadNum = parseInt(threadNum.value, 10) || 3;
-        this.syncActiveProviderFields();
+        if (!this.newApiProviderDraft) {
+            this.syncActiveProviderFields();
+        }
+        return provider;
     }
 
     escapeHtml(text) {
@@ -1815,7 +1823,7 @@ class PopupController {
 
     loadApiConfigToUI() {
         this.apiConfig = this.normalizeApiConfig(this.apiConfig);
-        const activeProvider = this.getActiveApiProvider();
+        const activeProvider = this.getEditingApiProvider();
         const providerSelect = document.getElementById('apiProviderSelect');
         const providerName = document.getElementById('apiProviderName');
         const apiBaseUrl = document.getElementById('apiBaseUrl');
@@ -1826,10 +1834,16 @@ class PopupController {
         const threadNumValue = document.getElementById('threadNumValue');
 
         if (providerSelect) {
-            providerSelect.innerHTML = this.apiConfig.providers.map(provider =>
+            const providers = this.newApiProviderDraft
+                ? [...this.apiConfig.providers, this.newApiProviderDraft]
+                : this.apiConfig.providers;
+            providerSelect.innerHTML = providers.map(provider =>
                 `<option value="${this.escapeHtml(provider.id)}">${this.escapeHtml(provider.name || '未命名供应商')}</option>`
             ).join('');
-            this.setSelectValue(providerSelect, this.apiConfig.activeProviderId);
+            this.setSelectValue(
+                providerSelect,
+                this.newApiProviderDraft?.id || this.apiConfig.activeProviderId
+            );
         }
         if (providerName) providerName.value = activeProvider.name || '';
         if (apiBaseUrl) apiBaseUrl.value = activeProvider.openaiBaseUrl;
@@ -1842,17 +1856,30 @@ class PopupController {
         }
 
         const deleteProviderBtn = document.getElementById('deleteProviderBtn');
-        if (deleteProviderBtn) deleteProviderBtn.disabled = this.apiConfig.providers.length <= 1;
+        if (deleteProviderBtn) {
+            deleteProviderBtn.disabled = Boolean(this.newApiProviderDraft) || this.apiConfig.providers.length <= 1;
+        }
 
         // 检查API状态
-        this.checkApiStatus();
+        if (this.newApiProviderDraft) {
+            const apiStatus = document.getElementById('apiStatus');
+            if (apiStatus) apiStatus.style.display = 'none';
+            this.updateTranslateStatus('unconfigured', '新供应商未保存', '填写配置后点击保存');
+        } else {
+            this.checkApiStatus();
+        }
     }
 
     bindApiSettingsEvents() {
         const providerSelect = document.getElementById('apiProviderSelect');
         if (providerSelect) {
             providerSelect.addEventListener('change', (e) => {
-                this.collectActiveProviderFromUI();
+                if (this.newApiProviderDraft) {
+                    if (e.target.value === this.newApiProviderDraft.id) return;
+                    this.newApiProviderDraft = null;
+                } else {
+                    this.collectActiveProviderFromUI();
+                }
                 this.apiConfig.activeProviderId = e.target.value;
                 this.syncActiveProviderFields();
                 this.loadApiConfigToUI();
@@ -1872,7 +1899,7 @@ class PopupController {
         const providerName = document.getElementById('apiProviderName');
         if (providerName) {
             providerName.addEventListener('input', (e) => {
-                const provider = this.getActiveApiProvider();
+                const provider = this.getEditingApiProvider();
                 provider.name = e.target.value.trim() || '未命名供应商';
                 this.loadApiProviderOptions();
             });
@@ -1882,9 +1909,9 @@ class PopupController {
         const apiBaseUrl = document.getElementById('apiBaseUrl');
         if (apiBaseUrl) {
             apiBaseUrl.addEventListener('change', (e) => {
-                const provider = this.getActiveApiProvider();
+                const provider = this.getEditingApiProvider();
                 provider.openaiBaseUrl = e.target.value.trim();
-                this.syncActiveProviderFields();
+                if (!this.newApiProviderDraft) this.syncActiveProviderFields();
             });
         }
 
@@ -1892,9 +1919,9 @@ class PopupController {
         const apiKey = document.getElementById('apiKey');
         if (apiKey) {
             apiKey.addEventListener('change', (e) => {
-                const provider = this.getActiveApiProvider();
+                const provider = this.getEditingApiProvider();
                 provider.openaiApiKey = e.target.value.trim();
-                this.syncActiveProviderFields();
+                if (!this.newApiProviderDraft) this.syncActiveProviderFields();
             });
         }
 
@@ -1910,9 +1937,9 @@ class PopupController {
         const llmModel = document.getElementById('llmModel');
         if (llmModel) {
             llmModel.addEventListener('input', (e) => {
-                const provider = this.getActiveApiProvider();
+                const provider = this.getEditingApiProvider();
                 provider.llmModel = e.target.value.trim();
-                this.syncActiveProviderFields();
+                if (!this.newApiProviderDraft) this.syncActiveProviderFields();
             });
         }
 
@@ -1935,9 +1962,9 @@ class PopupController {
         if (threadNum) {
             threadNum.addEventListener('input', (e) => {
                 const value = parseInt(e.target.value, 10);
-                const provider = this.getActiveApiProvider();
+                const provider = this.getEditingApiProvider();
                 provider.threadNum = value;
-                this.syncActiveProviderFields();
+                if (!this.newApiProviderDraft) this.syncActiveProviderFields();
                 if (threadNumValue) threadNumValue.textContent = value;
             });
         }
@@ -1965,21 +1992,20 @@ class PopupController {
         const providerSelect = document.getElementById('apiProviderSelect');
         if (!providerSelect) return;
 
-        providerSelect.innerHTML = this.apiConfig.providers.map(provider =>
+        const providers = this.newApiProviderDraft
+            ? [...this.apiConfig.providers, this.newApiProviderDraft]
+            : this.apiConfig.providers;
+        providerSelect.innerHTML = providers.map(provider =>
             `<option value="${this.escapeHtml(provider.id)}">${this.escapeHtml(provider.name || '未命名供应商')}</option>`
         ).join('');
-        this.setSelectValue(providerSelect, this.apiConfig.activeProviderId);
+        this.setSelectValue(
+            providerSelect,
+            this.newApiProviderDraft?.id || this.apiConfig.activeProviderId
+        );
     }
 
     addApiProvider() {
-        this.collectActiveProviderFromUI();
-
-        const newProvider = this.createDefaultApiProvider({
-            name: `供应商 ${this.apiConfig.providers.length + 1}`
-        });
-        this.apiConfig.providers.push(newProvider);
-        this.apiConfig.activeProviderId = newProvider.id;
-        this.syncActiveProviderFields();
+        this.newApiProviderDraft = this.createDefaultApiProvider();
         this.loadApiConfigToUI();
     }
 
@@ -1997,28 +2023,36 @@ class PopupController {
     }
 
     async saveApiConfigFromUI() {
-        this.collectActiveProviderFromUI();
+        const provider = this.collectActiveProviderFromUI();
+        if (this.newApiProviderDraft) {
+            provider.name = provider.name || '未命名供应商';
+            this.apiConfig.providers.push({ ...provider });
+            this.apiConfig.activeProviderId = provider.id;
+            this.newApiProviderDraft = null;
+            this.syncActiveProviderFields();
+        }
         await this.saveApiConfig();
+        this.loadApiConfigToUI();
     }
 
     async testApiConnection() {
         this.showApiStatus('loading', '测试连接中...');
-        this.collectActiveProviderFromUI();
+        const provider = this.collectActiveProviderFromUI();
 
         try {
             // 临时更新translator配置
-            if (typeof translatorService !== 'undefined') {
+            if (!this.newApiProviderDraft && typeof translatorService !== 'undefined') {
                 await chrome.storage.local.set({ apiConfig: this.apiConfig });
             }
 
             const headers = {
                 'Content-Type': 'application/json'
             };
-            if (this.apiConfig.openaiApiKey) {
-                headers.Authorization = `Bearer ${this.apiConfig.openaiApiKey}`;
+            if (provider.openaiApiKey) {
+                headers.Authorization = `Bearer ${provider.openaiApiKey}`;
             }
 
-            const response = await fetch(`${this.apiConfig.openaiBaseUrl}/models`, {
+            const response = await fetch(`${provider.openaiBaseUrl}/models`, {
                 method: 'GET',
                 headers
             });

@@ -192,6 +192,55 @@ describe('local OpenAI-compatible config', () => {
     });
   });
 
+  it('保留新增供应商的空白配置，不从已有供应商填充', () => {
+    const config = normalizeApiConfig({
+      activeProviderId: 'new-provider',
+      targetLanguage: 'zh',
+      providers: [
+        {
+          id: 'saved-provider',
+          name: '已保存供应商',
+          openaiBaseUrl: 'https://saved.example/v1',
+          openaiApiKey: 'saved-key',
+          llmModel: 'saved-model',
+          threadNum: 3,
+        },
+        {
+          id: 'new-provider',
+          name: '未命名供应商',
+          openaiBaseUrl: '',
+          openaiApiKey: '',
+          llmModel: '',
+          threadNum: 3,
+        },
+      ],
+    });
+
+    expect(config.providers?.[0]).toMatchObject({
+      openaiBaseUrl: 'https://saved.example/v1',
+      openaiApiKey: 'saved-key',
+      llmModel: 'saved-model',
+    });
+    expect(config.providers?.[1]).toMatchObject({
+      openaiBaseUrl: '',
+      openaiApiKey: '',
+      llmModel: '',
+    });
+    expect(config).toMatchObject({
+      activeProviderId: 'new-provider',
+      openaiBaseUrl: '',
+      openaiApiKey: '',
+      llmModel: '',
+    });
+
+    expect(buildTranslatorConfig(config)).toMatchObject({
+      openaiBaseUrl: '',
+      openaiApiKey: '',
+      model: '',
+      providerType: 'custom',
+    });
+  });
+
   it('供应商列表按内置 providerType 去重', () => {
     const config = normalizeApiConfig({
       activeProviderId: 'openrouter-custom',

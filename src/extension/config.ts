@@ -124,7 +124,7 @@ function normalizeProvider(provider: ApiProviderConfig): ApiProviderConfig {
     id: provider.id,
     name: provider.name || '未命名供应商',
     providerType: provider.providerType || inferProviderType(provider.openaiBaseUrl),
-    openaiBaseUrl: provider.openaiBaseUrl || DEFAULT_TRANSLATOR_CONFIG.openaiBaseUrl,
+    openaiBaseUrl: typeof provider.openaiBaseUrl === 'string' ? provider.openaiBaseUrl : '',
     openaiApiKey: provider.openaiApiKey || '',
     llmModel: provider.llmModel || '',
     threadNum: provider.threadNum || DEFAULT_TRANSLATOR_CONFIG.threadNum,
@@ -200,9 +200,9 @@ export function buildTranslatorConfig(
 
   return {
     ...DEFAULT_TRANSLATOR_CONFIG,
-    openaiBaseUrl: normalized.openaiBaseUrl || DEFAULT_TRANSLATOR_CONFIG.openaiBaseUrl,
+    openaiBaseUrl: normalized.openaiBaseUrl,
     openaiApiKey: normalized.openaiApiKey || '',
-    model: normalized.llmModel || DEFAULT_TRANSLATOR_CONFIG.model,
+    model: normalized.llmModel,
     providerType: normalized.providerType || inferProviderType(normalized.openaiBaseUrl),
     targetLanguage: normalized.targetLanguage || DEFAULT_TRANSLATOR_CONFIG.targetLanguage,
     threadNum: normalized.threadNum || DEFAULT_TRANSLATOR_CONFIG.threadNum,
