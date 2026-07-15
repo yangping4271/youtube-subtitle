@@ -40,7 +40,6 @@ interface UserConfig {
   buttonIcons: {
     download: string;
     copy: string;
-    translate: string;
   };
   fileNamingFormat: string;
   includeTimestamps: boolean;
@@ -52,7 +51,6 @@ const USER_CONFIG: UserConfig = {
   buttonIcons: {
     download: '↓',
     copy: '📋',
-    translate: '🚀',
   },
   fileNamingFormat: 'title-channel',
   includeTimestamps: true,
@@ -679,15 +677,6 @@ function handleCopyClick(): void {
   void selectAndCopyTranscript();
 }
 
-function handleTranslateClick(): void {
-  triggerExtensionTranslation();
-}
-
-function triggerExtensionTranslation(): void {
-  showNotification('正在启动翻译...');
-  window.dispatchEvent(new CustomEvent('YTSP_StartTranslation'));
-}
-
 interface ButtonConfig {
   id: string;
   text: string;
@@ -762,12 +751,6 @@ function createButtons(): void {
       text: USER_CONFIG.buttonIcons.copy,
       clickHandler: handleCopyClick,
       tooltip: '复制字幕',
-    },
-    {
-      id: 'transcript-translate-button',
-      text: USER_CONFIG.buttonIcons.translate,
-      clickHandler: handleTranslateClick,
-      tooltip: '开始翻译',
     },
   ];
 
