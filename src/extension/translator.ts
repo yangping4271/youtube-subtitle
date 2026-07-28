@@ -148,4 +148,4 @@ export class TranslationSessionAdapter {
   }
 }
 
-export const translationSession = new TranslationSessionAdapter();
+export const translationSessionAdapter = new TranslationSessionAdapter();

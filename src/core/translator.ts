@@ -7,6 +7,7 @@ import { buildTranslatePrompt, buildSingleTranslatePrompt } from './prompts.js';
 import { getLanguageName } from '../utils/language.js';
 import { normalizeChinesePunctuation, isChinese } from '../utils/punctuation.js';
 import { parseLlmResponse } from '../utils/json-repair.js';
+import type { CancellationSignal } from '../utils/cancellation.js';
 import type {
   ChatOptions,
   JsonObjectResponseFormat,
@@ -311,7 +312,7 @@ export class Translator {
     subtitles: Record<string, string>,
     context?: { videoTitle?: string; videoDescription?: string; aiSummary?: string | null },
     batchLabel?: string,
-    signal?: AbortSignal,
+    signal?: CancellationSignal,
     threadNum?: number
   ): Promise<TranslatedEntry[]> {
     const currentBatchLabel = batchLabel || '';
@@ -438,7 +439,7 @@ export class Translator {
     targetLanguage: string,
     context: { videoTitle?: string; videoDescription?: string; aiSummary?: string | null } | undefined,
     batchLabel: string,
-    signal?: AbortSignal
+    signal?: CancellationSignal
   ): Promise<TranslatedEntry[]> {
     const prefix = batchLabel ? `[${batchLabel}] ` : '';
     logger.info(`${prefix}翻译 ${batch.length} 条字幕`);
@@ -553,7 +554,7 @@ export class Translator {
     inputObj: Record<string, string>,
     targetLanguage: string,
     context: { videoTitle?: string; videoDescription?: string; aiSummary?: string | null } | undefined,
-    signal: AbortSignal | undefined,
+    signal: CancellationSignal | undefined,
     format: BatchResponseFormat,
     prefix: string
   ): Promise<TranslatedEntry[]> {
@@ -599,7 +600,7 @@ export class Translator {
     batch: [string, string][],
     targetLanguage: string,
     concurrency: number,
-    signal?: AbortSignal
+    signal?: CancellationSignal
   ): Promise<TranslatedEntry[]> {
     logger.info(`单条并发翻译: 共 ${batch.length} 条字幕，并发数 ${concurrency}`);
 

@@ -5,7 +5,7 @@
 
 import { getDefaultEnglishSettings, getDefaultChineseSettings } from './config';
 import { formatSubtitleFetchLog } from './subtitle-fetch-log';
-import { translationSession } from './translator';
+import { translationSessionAdapter } from './translator';
 import { extractErrorMessage } from '../utils/error-handler';
 import type {
   SimpleSubtitleEntry,
@@ -561,7 +561,7 @@ class SubtitleExtensionBackground {
       const videoDescription = request.videoInfo?.description;
       const aiSummary = request.videoInfo?.aiSummary;
 
-      const result = await translationSession.translate(
+      const result = await translationSessionAdapter.translate(
         {
           subtitles,
           targetLanguage: targetLanguage || 'zh',

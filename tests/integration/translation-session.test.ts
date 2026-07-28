@@ -9,6 +9,7 @@ import type {
   SubtitleEntry,
   TranslatorConfig,
 } from '../../src/types/index.js';
+import type { CancellationSignal } from '../../src/utils/cancellation.js';
 
 function createConfig(): TranslatorConfig {
   return {
@@ -200,14 +201,17 @@ describe('TranslationSession interface', () => {
       'SRT文件为空，无法进行翻译'
     );
 
-    const controller = new AbortController();
-    controller.abort();
+    const cancelledSignal: CancellationSignal = {
+      aborted: true,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
     await expect(
       session.translate({
         subtitles: [
           { index: 1, startTime: 0, endTime: 1_000, text: 'subtitle' },
         ],
-        signal: controller.signal,
+        signal: cancelledSignal,
       })
     ).rejects.toMatchObject({ name: 'AbortError' });
   });

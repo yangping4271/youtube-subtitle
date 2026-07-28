@@ -3,6 +3,10 @@
  */
 
 import { setupLogger } from './logger.js';
+import {
+  createCancellationError,
+  type CancellationSignal,
+} from './cancellation.js';
 
 const logger = setupLogger('retry');
 
@@ -18,7 +22,7 @@ export interface RetryOptions {
   /** 操作名称，用于日志 */
   operationName?: string;
   /** 取消信号 */
-  signal?: AbortSignal;
+  signal?: CancellationSignal;
 }
 
 /** 致命错误模式 - 不应重试 */
@@ -74,7 +78,7 @@ export async function withRetry<T>(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     // 检查是否已取消
     if (signal?.aborted) {
-      throw new DOMException('操作已取消', 'AbortError');
+      throw createCancellationError('操作已取消');
     }
 
     try {
@@ -85,7 +89,7 @@ export async function withRetry<T>(
 
         // 延迟后再次检查是否已取消
         if (signal?.aborted) {
-          throw new DOMException('操作已取消', 'AbortError');
+          throw createCancellationError('操作已取消');
         }
       }
 
@@ -122,4 +126,3 @@ export async function withRetry<T>(
 
   throw lastError || new Error(`${operationName} 失败`);
 }
-

@@ -4,6 +4,8 @@
  * 时间单位标准：所有时间戳使用毫秒（整数）
  */
 
+import type { CancellationSignal } from '../utils/cancellation.js';
+
 /** 原始字幕条目 */
 export interface SubtitleEntry {
   index: number;
@@ -114,7 +116,7 @@ export interface JsonObjectResponseFormat {
 export interface ChatOptions {
   temperature?: number;
   timeout?: number;
-  signal?: AbortSignal;
+  signal?: CancellationSignal;
   responseFormat?: JsonSchemaResponseFormat | JsonObjectResponseFormat;
 }
 

@@ -6,6 +6,7 @@ import { setupLogger } from '../utils/logger.js';
 import { buildSplitPrompt } from './prompts.js';
 import { SubtitleData } from './subtitle-data.js';
 import { findBestMatch } from '../utils/similarity.js';
+import type { CancellationSignal } from '../utils/cancellation.js';
 import type { TranslatorConfig, SplitStats, SubtitleEntry, PreSplitSentence } from '../types/index.js';
 
 const logger = setupLogger('splitter');
@@ -192,7 +193,7 @@ export async function mergeSegmentsWithinBatch(
   client: OpenAIClient,
   config: TranslatorConfig,
   batchIndex?: number,
-  signal?: AbortSignal
+  signal?: CancellationSignal
 ): Promise<SubtitleData> {
   if (preSplitSentences.length === 0) {
     return new SubtitleData([]);
@@ -699,7 +700,7 @@ interface OpenAIClient {
   callChat(systemPrompt: string, userPrompt: string, options?: {
     temperature?: number;
     timeout?: number;
-    signal?: AbortSignal;
+    signal?: CancellationSignal;
   }): Promise<string>;
 }
 
@@ -715,7 +716,7 @@ export async function splitByLLM(
   client: OpenAIClient,
   config: TranslatorConfig,
   batchIndex?: number,
-  signal?: AbortSignal
+  signal?: CancellationSignal
 ): Promise<string[]> {
   const { maxWordCountEnglish, toleranceMultiplier, warningMultiplier, maxMultiplier } = config;
 

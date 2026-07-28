@@ -4,6 +4,7 @@
 
 import { classifyError, withRetry } from '../utils/retry.js';
 import { setupLogger } from '../utils/logger.js';
+import { createCancellationError } from '../utils/cancellation.js';
 import type { ChatOptions, TranslatorConfig } from '../types/index.js';
 
 const logger = setupLogger('openai-client');
@@ -204,7 +205,7 @@ export class OpenAIClient {
           if (error instanceof Error && error.name === 'AbortError') {
             // 区分是超时还是外部取消
             if (externalSignal?.aborted) {
-              throw new DOMException('翻译已取消', 'AbortError');
+              throw createCancellationError('翻译已取消');
             }
             throw new Error('请求超时');
           }

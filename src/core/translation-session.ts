@@ -4,6 +4,10 @@
 
 import { extractErrorMessage } from '../utils/error-handler.js';
 import { setupLogger } from '../utils/logger.js';
+import {
+  createCancellationError,
+  type CancellationSignal,
+} from '../utils/cancellation.js';
 import { presplitByPunctuation, batchBySentenceCount, mergeSegmentsWithinBatch } from './splitter.js';
 import { SubtitleData } from './subtitle-data.js';
 import { Translator } from './translator.js';
@@ -30,7 +34,7 @@ export interface TranslationSessionRequest {
   videoTitle?: string;
   videoDescription?: string;
   aiSummary?: string | null;
-  signal?: AbortSignal;
+  signal?: CancellationSignal;
 }
 
 export interface TranslationSessionObserver {
@@ -75,19 +79,19 @@ export class TranslationSession {
 
     logger.info('字幕断句处理开始');
 
-    const processData = subtitleData.splitToWordSegments();
-    logger.info(`转换为单词: ${processData.length()} 个单词`);
+    const wordSegmentData = subtitleData.splitToWordSegments();
+    logger.info(`转换为单词: ${wordSegmentData.length()} 个单词`);
     logger.info(`使用模型: ${this.config.model}`);
 
-    return this.translateWithPipeline(processData, request, observer);
+    return this.translateWithPipeline(wordSegmentData, request, observer);
   }
 
   /**
    * 检查取消信号，如果已取消则抛出 AbortError
    */
-  private checkAborted(signal?: AbortSignal): void {
+  private checkAborted(signal?: CancellationSignal): void {
     if (signal?.aborted) {
-      throw new DOMException('翻译已取消', 'AbortError');
+      throw createCancellationError('翻译已取消');
     }
   }
 
@@ -95,7 +99,7 @@ export class TranslationSession {
    * 流水线模式：所有批次并行处理（带并发控制）
    */
   private async translateWithPipeline(
-    processData: SubtitleData,
+    wordSegmentData: SubtitleData,
     request: TranslationSessionRequest,
     observer: TranslationSessionObserver
   ): Promise<BilingualSubtitles> {
@@ -104,7 +108,7 @@ export class TranslationSession {
     const { signal } = request;
     this.checkAborted(signal);
 
-    const wordSegments = processData.getSegments();
+    const wordSegments = wordSegmentData.getSegments();
     logger.info(`单词级字幕: ${wordSegments.length} 个单词`);
 
     const preSplitSentences = presplitByPunctuation(wordSegments);
@@ -217,7 +221,7 @@ export class TranslationSession {
     tasks: Array<() => Promise<T>>,
     concurrency: number,
     onOrderedResult: (result: T) => Promise<void>,
-    signal?: AbortSignal
+    signal?: CancellationSignal
   ): Promise<T[]> {
     const normalizedConcurrency = Number.isFinite(concurrency) && concurrency > 0
       ? Math.floor(concurrency)
