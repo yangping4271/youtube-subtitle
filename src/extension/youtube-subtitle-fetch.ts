@@ -1,3 +1,16 @@
+import {
+  createYouTubeSubtitleAcquirer,
+  normalizeSubtitleTiming,
+} from '../core/subtitle-acquisition.js';
+import type {
+  ResolvedCaptionTrackText,
+  SubtitleAcquisitionReport,
+  SubtitleAcquisitionResult,
+  TimedTextDocument,
+} from '../core/subtitle-acquisition.js';
+import type { SimpleSubtitleEntry } from '../types/index.js';
+import { normalizeSubtitleFetchErrorMessage } from './subtitle-fetch-log.js';
+
 export interface CaptionTrackResponseLike {
   playabilityStatus?: {
     status?: string;
@@ -44,12 +57,14 @@ export interface TranscriptPanelState {
   hasContinuation?: boolean;
 }
 
-export interface ResolvedCaptionTrackText {
-  trackText: string;
-  source: 'page-player-response' | 'youtubei-player';
-  fallbackReason?: string;
-  trackLanguageCode?: string;
-  trackKind?: string;
+export interface PageCaptionTrackResolutionOptions {
+  requestPageResponse?: () => Promise<CaptionTrackResponseLike | null>;
+  requestTrackText?: (track: CaptionTrackLike) => Promise<string>;
+}
+
+export interface PlayerCaptionTrackResolutionOptions {
+  requestPlayerResponse?: (videoId: string) => Promise<CaptionTrackResponseLike>;
+  requestTrackText?: (track: CaptionTrackLike) => Promise<string>;
 }
 
 const TRANSCRIPT_PANEL_SELECTOR =
@@ -198,37 +213,31 @@ export async function fetchCaptionTrackText(track: CaptionTrackLike): Promise<st
   return text;
 }
 
-export async function resolveCaptionTrackText(
-  videoId: string,
-  options: {
-    requestPageResponse?: () => Promise<CaptionTrackResponseLike | null>;
-    requestPlayerResponse?: (videoId: string) => Promise<CaptionTrackResponseLike>;
-    requestTrackText?: (track: CaptionTrackLike) => Promise<string>;
-  } = {}
+export async function resolvePageCaptionTrackText(
+  options: PageCaptionTrackResolutionOptions = {}
 ): Promise<ResolvedCaptionTrackText> {
   const requestPageResponse = options.requestPageResponse || requestPageCaptionTrackResponse;
-  const requestPlayerResponse = options.requestPlayerResponse || fetchYouTubePlayerResponse;
   const requestTrackText = options.requestTrackText || fetchCaptionTrackText;
-  let pageTrackError: Error | null = null;
-
   const pagePlayerResponse = await requestPageResponse();
-  const pageTracks = extractCaptionTracks(pagePlayerResponse);
-  if (pageTracks.length > 0) {
-    const track = pickPreferredCaptionTrack(pageTracks);
-    if (track?.baseUrl) {
-      try {
-        return {
-          trackText: await requestTrackText(track),
-          source: 'page-player-response',
-          trackLanguageCode: track.languageCode,
-          trackKind: track.kind,
-        };
-      } catch (error) {
-        pageTrackError = error instanceof Error ? error : new Error(String(error));
-      }
-    }
+  const track = pickPreferredCaptionTrack(extractCaptionTracks(pagePlayerResponse));
+  if (!track?.baseUrl) {
+    throw new Error('页面 player response 未提供字幕轨');
   }
 
+  return {
+    trackText: await requestTrackText(track),
+    source: 'page-player-response',
+    trackLanguageCode: track.languageCode,
+    trackKind: track.kind,
+  };
+}
+
+export async function resolvePlayerCaptionTrackText(
+  videoId: string,
+  options: PlayerCaptionTrackResolutionOptions = {}
+): Promise<ResolvedCaptionTrackText> {
+  const requestPlayerResponse = options.requestPlayerResponse || fetchYouTubePlayerResponse;
+  const requestTrackText = options.requestTrackText || fetchCaptionTrackText;
   const playerResponse = await requestPlayerResponse(videoId);
   const responseClassification = classifyCaptionTrackResponse(playerResponse);
   if (responseClassification.kind === 'login_required') {
@@ -237,44 +246,20 @@ export async function resolveCaptionTrackText(
 
   const tracks = extractCaptionTracks(playerResponse);
   if (tracks.length === 0) {
-    const reason = responseClassification.message || 'player 响应未提供字幕轨';
-    if (pageTrackError) {
-      throw new Error(
-        `页面字幕轨失败: ${pageTrackError.message}; youtubei/player 未提供字幕轨: ${reason}`
-      );
-    }
-
-    throw new Error(reason);
+    throw new Error(responseClassification.message || 'player 响应未提供字幕轨');
   }
 
   const track = pickPreferredCaptionTrack(tracks);
   if (!track?.baseUrl) {
-    const error = new Error('字幕轨缺少 baseUrl');
-    if (pageTrackError) {
-      throw new Error(`页面字幕轨失败: ${pageTrackError.message}; ${error.message}`);
-    }
-
-    throw error;
+    throw new Error('字幕轨缺少 baseUrl');
   }
 
-  try {
-    return {
-      trackText: await requestTrackText(track),
-      source: 'youtubei-player',
-      fallbackReason: pageTrackError?.message,
-      trackLanguageCode: track.languageCode,
-      trackKind: track.kind,
-    };
-  } catch (error) {
-    const normalizedError = error instanceof Error ? error : new Error(String(error));
-    if (pageTrackError) {
-      throw new Error(
-        `页面字幕轨失败: ${pageTrackError.message}; youtubei/player 字幕轨失败: ${normalizedError.message}`
-      );
-    }
-
-    throw normalizedError;
-  }
+  return {
+    trackText: await requestTrackText(track),
+    source: 'youtubei-player',
+    trackLanguageCode: track.languageCode,
+    trackKind: track.kind,
+  };
 }
 
 export function findTranscriptTrigger(root: TranscriptQueryRoot): QueryElementLike | null {
@@ -340,6 +325,13 @@ export function shouldForceLegacyTranscriptOpen(
   hasTranscriptPanel: boolean
 ): boolean {
   return !clickedTranscriptTrigger && hasTranscriptPanel;
+}
+
+export function shouldWaitForTranscriptPanel(
+  clickedTranscriptTrigger: boolean,
+  hasTranscriptPanel: boolean
+): boolean {
+  return clickedTranscriptTrigger || hasTranscriptPanel;
 }
 
 function getTranscriptTimestampElement(segment: QueryElementLike): QueryElementLike | null {
@@ -452,4 +444,148 @@ function readElementLabel(element: QueryElementLike): string {
 
 function isTranscriptTriggerLabel(label: string): boolean {
   return TRANSCRIPT_TRIGGER_PATTERNS.some((pattern) => pattern.test(label));
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readTranscriptPanelSubtitles(): SimpleSubtitleEntry[] {
+  const segments = getTranscriptSegmentElements(document);
+  const subtitles: SimpleSubtitleEntry[] = [];
+
+  segments.forEach((segment, index) => {
+    const segmentData = extractTranscriptSegmentData(segment);
+    const fallbackDivs = segment.querySelectorAll('div');
+    const timestampText =
+      segmentData?.timestampText ||
+      (fallbackDivs[0]?.textContent || '').trim();
+    const text =
+      segmentData?.bodyText ||
+      (fallbackDivs[1]?.textContent || '').trim();
+
+    if (!timestampText || !text) {
+      return;
+    }
+
+    const startTime =
+      extractTranscriptSegmentStartTime(segment) ??
+      parseTranscriptTimestamp(timestampText);
+    const nextSegment = segments[index + 1];
+    const nextData = nextSegment ? extractTranscriptSegmentData(nextSegment) : null;
+    const nextTimestampText =
+      nextData?.timestampText ||
+      (nextSegment?.querySelector('div')?.textContent || '').trim();
+    const endTime = nextSegment && nextTimestampText
+      ? extractTranscriptSegmentStartTime(nextSegment) ??
+        parseTranscriptTimestamp(nextTimestampText)
+      : startTime + 5;
+
+    subtitles.push({ startTime, endTime, text });
+  });
+
+  return normalizeSubtitleTiming(subtitles);
+}
+
+async function acquireTranscriptPanelSubtitles(): Promise<SimpleSubtitleEntry[]> {
+  if (!isTranscriptReady(getTranscriptPanelState(document))) {
+    const moreButton = document.querySelector('#expand') as HTMLElement | null;
+    if (moreButton) {
+      moreButton.click();
+      await delay(400);
+    }
+
+    let clickedTranscriptTrigger = false;
+    const transcriptTrigger = findTranscriptTrigger(document);
+    if (transcriptTrigger instanceof HTMLElement) {
+      transcriptTrigger.click();
+      clickedTranscriptTrigger = true;
+      await delay(400);
+    }
+
+    const transcriptPanel = getTranscriptPanel(document);
+    if (shouldForceLegacyTranscriptOpen(clickedTranscriptTrigger, !!transcriptPanel)) {
+      window.dispatchEvent(new CustomEvent('YTSP_OpenTranscript'));
+    }
+
+    if (!shouldWaitForTranscriptPanel(clickedTranscriptTrigger, !!transcriptPanel)) {
+      if (hasYouTubeLoginPrompt(document)) {
+        throw new Error('YouTube 当前要求先登录以确认不是机器人，请登录后刷新页面再试。');
+      }
+
+      throw new Error('转写面板已打开，但字幕内容尚未加载完成，请稍后重试。');
+    }
+
+    for (let retry = 0; retry < 20; retry += 1) {
+      if (isTranscriptReady(getTranscriptPanelState(document))) {
+        break;
+      }
+      await delay(500);
+    }
+  }
+
+  const subtitles = readTranscriptPanelSubtitles();
+  if (subtitles.length > 0) {
+    return subtitles;
+  }
+
+  if (hasYouTubeLoginPrompt(document)) {
+    throw new Error('YouTube 当前要求先登录以确认不是机器人，请登录后刷新页面再试。');
+  }
+
+  throw new Error('转写面板已打开，但字幕内容尚未加载完成，请稍后重试。');
+}
+
+async function reportAcquisition(
+  videoId: string,
+  report: SubtitleAcquisitionReport
+): Promise<void> {
+  const runtime = (
+    globalThis as typeof globalThis & {
+      chrome?: {
+        runtime?: {
+          id?: string;
+          sendMessage?: (message: unknown) => Promise<unknown>;
+        };
+      };
+    }
+  ).chrome?.runtime;
+
+  if (!runtime?.id || typeof runtime.sendMessage !== 'function') {
+    return;
+  }
+
+  const diagnostics = Object.fromEntries(
+    Object.entries(report.diagnostics).map(([key, value]) => [
+      key,
+      typeof value === 'string' ? normalizeSubtitleFetchErrorMessage(value) : value,
+    ])
+  );
+
+  await runtime.sendMessage({
+    action: 'logSubtitleFetchSource',
+    videoId,
+    data: {
+      source: report.source,
+      subtitleCount: report.subtitleCount,
+      ...diagnostics,
+    },
+  });
+}
+
+const defaultSubtitleAcquirer = createYouTubeSubtitleAcquirer({
+  captionTrackStrategies: [
+    () => resolvePageCaptionTrackText(),
+    (videoId) => resolvePlayerCaptionTrackText(videoId),
+  ],
+  parseCaptionTrackDocument: (xml): TimedTextDocument =>
+    new DOMParser().parseFromString(xml, 'text/xml'),
+  acquireTranscriptPanelSubtitles,
+  reportAcquisition,
+});
+
+export function acquireYouTubeSubtitles(
+  videoId: string
+): Promise<SubtitleAcquisitionResult> {
+  return defaultSubtitleAcquirer.acquire(videoId);
 }

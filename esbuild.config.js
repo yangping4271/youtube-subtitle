@@ -18,11 +18,6 @@ const browserConfig = {
 
 const extensionEntries = [
   {
-    entryPoints: ['src/extension/translator.ts'],
-    outfile: `${outDir}/translator.js`,
-    globalName: 'TranslatorModule',
-  },
-  {
     entryPoints: ['src/extension/config.ts'],
     outfile: `${outDir}/config.js`,
     globalName: 'ConfigModule',

@@ -5,7 +5,8 @@
 
 import { getDefaultEnglishSettings, getDefaultChineseSettings } from './config';
 import { formatSubtitleFetchLog } from './subtitle-fetch-log';
-import { translatorService } from './translator';
+import { translationSession } from './translator';
+import { extractErrorMessage } from '../utils/error-handler';
 import type {
   SimpleSubtitleEntry,
   SubtitleStyleSettings,
@@ -544,65 +545,54 @@ class SubtitleExtensionBackground {
 
     sendResponse({ success: true, message: '翻译已在后台启动' });
 
+    let sessionAbortController: AbortController | null = null;
     try {
       // 先取消之前的翻译（如果有）
       if (translationAbortController) {
         translationAbortController.abort();
       }
 
-      // 强制重置翻译服务状态
-      translatorService.cancelTranslation();
-
       // 创建新的取消控制器
-      translationAbortController = new AbortController();
+      sessionAbortController = new AbortController();
+      translationAbortController = sessionAbortController;
 
       // 提取视频元数据
       const videoTitle = request.videoInfo?.ytTitle;
       const videoDescription = request.videoInfo?.description;
       const aiSummary = request.videoInfo?.aiSummary;
 
-      // 累积所有翻译结果
-      const allEnglishSubtitles: SimpleSubtitleEntry[] = [];
-      const allChineseSubtitles: SimpleSubtitleEntry[] = [];
-
-      const result = await translatorService.translateFull(
-        subtitles,
-        targetLanguage || 'zh',
-        null,
-        videoDescription,
-        aiSummary,
-        videoTitle,
-        // 渐进式结果回调
-        async (partial) => {
-          // 累积字幕
-          allEnglishSubtitles.push(...partial.english);
-          allChineseSubtitles.push(...partial.chinese);
-
-          if (sourceTabId) {
-            try {
-              await chrome.tabs.sendMessage(sourceTabId, {
-                action: 'appendBilingualSubtitles',
-                englishSubtitles: partial.english,
-                chineseSubtitles: partial.chinese,
-              });
-            } catch (error) {
-              console.log('发送部分结果失败，等待最终结果同步:', error);
-            }
-          }
+      const result = await translationSession.translate(
+        {
+          subtitles,
+          targetLanguage: targetLanguage || 'zh',
+          videoDescription,
+          aiSummary,
+          videoTitle,
+          signal: sessionAbortController.signal,
+          apiConfig: apiConfig as Partial<ApiConfig> | undefined,
         },
-        translationAbortController.signal,
-        apiConfig as Partial<ApiConfig> | undefined
+        {
+          onPartialResult: async (partial) => {
+            if (sourceTabId) {
+              try {
+                await chrome.tabs.sendMessage(sourceTabId, {
+                  action: 'appendBilingualSubtitles',
+                  englishSubtitles: partial.english,
+                  chineseSubtitles: partial.chinese,
+                });
+              } catch (error) {
+                console.log('发送部分结果失败，等待最终结果同步:', error);
+              }
+            }
+          },
+        }
       );
 
-      // 使用累积的结果或返回的结果
-      const finalEnglish = allEnglishSubtitles.length > 0 ? allEnglishSubtitles : result.english;
-      const finalChinese = allChineseSubtitles.length > 0 ? allChineseSubtitles : result.chinese;
-
-      if (videoId && (finalEnglish.length > 0 || finalChinese.length > 0)) {
+      if (videoId && (result.english.length > 0 || result.chinese.length > 0)) {
         await this.saveVideoSubtitles(
           videoId,
-          finalEnglish,
-          finalChinese,
+          result.english,
+          result.chinese,
           undefined
         );
       }
@@ -620,10 +610,14 @@ class SubtitleExtensionBackground {
       await chrome.storage.local.set({
         translationProgress: {
           isTranslating: false,
-          error: (error as Error).message,
+          error: extractErrorMessage(error),
           timestamp: Date.now(),
         } as TranslationProgress,
       });
+    } finally {
+      if (translationAbortController === sessionAbortController) {
+        translationAbortController = null;
+      }
     }
   }
 
@@ -633,9 +627,6 @@ class SubtitleExtensionBackground {
       translationAbortController.abort();
       translationAbortController = null;
     }
-
-    // 取消翻译服务中的状态
-    translatorService.cancelTranslation();
 
     // 清除翻译进度
     await chrome.storage.local.remove('translationProgress');

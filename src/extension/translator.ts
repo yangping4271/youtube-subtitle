@@ -1,197 +1,151 @@
 /**
- * Chrome Extension 适配层
- * 保持与现有 translator.js 相同的全局接口
+ * Chrome Extension translation session adapter.
+ * 负责配置加载、秒/毫秒转换和进度持久化。
  */
 
-import { TranslatorService } from '../services/translator-service.js';
-import { buildTranslatorConfig, loadConfig } from './config.js';
-import { getLanguageName, LANGUAGE_MAPPING } from '../utils/language.js';
+import {
+  TranslationSession,
+  type TranslationSessionObserver,
+} from '../core/translation-session.js';
+import { OpenAIClient } from '../services/openai-client.js';
+import { extractErrorMessage } from '../utils/error-handler.js';
 import type {
-  TranslatorConfig,
-  SubtitleEntry,
-  BilingualSubtitles,
   ApiConfig,
+  BilingualSubtitles,
+  SimpleSubtitleEntry,
+  SubtitleEntry,
 } from '../types/index.js';
+import { buildTranslatorConfig, loadConfig } from './config.js';
 
-// Chrome API 类型声明
 declare const chrome: {
   storage?: {
     local: {
       set: (items: Record<string, unknown>) => Promise<void>;
-      remove: (keys: string | string[]) => void;
+      remove: (keys: string | string[]) => Promise<void>;
     };
   };
 };
 
-/** 秒转毫秒 */
+export interface ExtensionTranslationRequest {
+  subtitles: SimpleSubtitleEntry[];
+  targetLanguage?: string;
+  videoDescription?: string;
+  aiSummary?: string | null;
+  videoTitle?: string;
+  signal?: AbortSignal;
+  apiConfig?: Partial<ApiConfig>;
+}
+
+export interface ExtensionTranslationObserver {
+  onProgress?: (
+    step: string,
+    current: number,
+    total: number
+  ) => Promise<void> | void;
+  onPartialResult?: (
+    partial: BilingualSubtitles
+  ) => Promise<void> | void;
+}
+
 function secondsToMs(seconds: number): number {
   return Math.round(seconds * 1000);
 }
 
-/** 毫秒转秒 */
 function msToSeconds(ms: number): number {
   return ms / 1000;
 }
 
-/**
- * 翻译服务包装器 - 保持与现有接口兼容
- */
-class TranslatorServiceWrapper {
-  private service: TranslatorService | null = null;
-  private config: TranslatorConfig | null = null;
-  public isTranslating = false;
+function toCoreSubtitles(subtitles: SimpleSubtitleEntry[]): SubtitleEntry[] {
+  return subtitles.map((subtitle, index) => ({
+    index: index + 1,
+    startTime: secondsToMs(subtitle.startTime),
+    endTime: secondsToMs(subtitle.endTime),
+    text: subtitle.text,
+  }));
+}
 
-  /**
-   * 加载 API 配置
-   */
-  async loadConfig(apiConfigOverride?: Partial<ApiConfig>): Promise<TranslatorConfig> {
-    this.config = apiConfigOverride ? buildTranslatorConfig(apiConfigOverride) : await loadConfig();
-    this.service = new TranslatorService(this.config);
-    return this.config;
-  }
+function toExtensionSubtitles(result: BilingualSubtitles): BilingualSubtitles {
+  return {
+    english: result.english.map((entry) => ({
+      ...entry,
+      startTime: msToSeconds(entry.startTime),
+      endTime: msToSeconds(entry.endTime),
+    })),
+    chinese: result.chinese.map((entry) => ({
+      ...entry,
+      startTime: msToSeconds(entry.startTime),
+      endTime: msToSeconds(entry.endTime),
+    })),
+  };
+}
 
-  /**
-   * 获取目标语言名称
-   */
-  getTargetLanguageName(langCode: string): string {
-    return getLanguageName(langCode);
-  }
-
-  /**
-   * 执行完整翻译流程
-   * @param subtitles 原始字幕数组（时间戳单位：秒）
-   * @param targetLang 目标语言代码
-   * @param onProgress 进度回调
-   * @param videoDescription 视频说明
-   * @param aiSummary AI 生成的摘要
-   * @param videoTitle 视频标题
-   * @param onPartialResult 部分结果回调
-   * @param signal AbortSignal 用于取消翻译
-   */
-  async translateFull(
-    subtitles: Array<{ startTime: number; endTime: number; text: string }>,
-    targetLang = 'zh',
-    onProgress: ((step: string, current: number, total: number) => void) | null = null,
-    videoDescription?: string,
-    aiSummary?: string | null,
-    videoTitle?: string,
-    onPartialResult?: (partial: BilingualSubtitles, isFirst: boolean) => void,
-    signal?: AbortSignal,
-    apiConfigOverride?: Partial<ApiConfig>
+export class TranslationSessionAdapter {
+  async translate(
+    request: ExtensionTranslationRequest,
+    observer: ExtensionTranslationObserver = {}
   ): Promise<BilingualSubtitles> {
-    // 强制重置状态（开始新翻译前）
-    this.isTranslating = true;
+    const config = request.apiConfig
+      ? buildTranslatorConfig(request.apiConfig)
+      : await loadConfig();
+    config.targetLanguage = request.targetLanguage || 'zh';
 
-    // 保存翻译状态到 storage
-    const saveProgress = async (step: string, current: number, total: number): Promise<void> => {
-      if (typeof chrome !== 'undefined' && chrome.storage) {
-        await chrome.storage.local.set({
-          translationProgress: {
-            isTranslating: true,
-            step,
-            current,
-            total,
-            timestamp: Date.now(),
-          },
-        });
-      }
-      if (onProgress) onProgress(step, current, total);
+    const session = new TranslationSession(config, new OpenAIClient(config));
+    const coreObserver: TranslationSessionObserver = {
+      onProgress: async (step, current, total) => {
+        try {
+          await this.saveProgress(step, current, total);
+        } catch (error) {
+          console.warn(`保存翻译进度失败，继续翻译: ${extractErrorMessage(error)}`);
+        }
+        await observer.onProgress?.(step, current, total);
+      },
+      onPartialResult: async (partial) => {
+        await observer.onPartialResult?.(toExtensionSubtitles(partial));
+      },
     };
 
     try {
-      // 每次翻译前都重新加载配置，确保 popup 中刚保存的模型立即生效
-      await this.loadConfig(apiConfigOverride);
-
-      // 更新目标语言
-      this.config!.targetLanguage = targetLang;
-      this.service = new TranslatorService(this.config!);
-
-      // 转换字幕格式，同时将秒转换为毫秒
-      const entries: SubtitleEntry[] = subtitles.map((sub, idx) => ({
-        index: idx + 1,
-        startTime: secondsToMs(sub.startTime),
-        endTime: secondsToMs(sub.endTime),
-        text: sub.text,
-      }));
-
-      // 执行翻译
-      const result = await this.service!.translateFull(entries, {
-        videoTitle,
-        videoDescription,
-        aiSummary,
-        signal,
-        onProgress: async (step, current, total) => {
-          await saveProgress(step, current, total);
+      const result = await session.translate(
+        {
+          subtitles: toCoreSubtitles(request.subtitles),
+          videoTitle: request.videoTitle,
+          videoDescription: request.videoDescription,
+          aiSummary: request.aiSummary,
+          signal: request.signal,
         },
-        onPartialResult: onPartialResult ? (partial, isFirst) => {
-          // 将部分结果的时间戳从毫秒转换回秒
-          const convertedPartial: BilingualSubtitles = {
-            english: partial.english.map(entry => ({
-              ...entry,
-              startTime: msToSeconds(entry.startTime),
-              endTime: msToSeconds(entry.endTime),
-            })),
-            chinese: partial.chinese.map(entry => ({
-              ...entry,
-              startTime: msToSeconds(entry.startTime),
-              endTime: msToSeconds(entry.endTime),
-            })),
-          };
-          onPartialResult(convertedPartial, isFirst);
-        } : undefined,
-      });
-
-      await saveProgress('complete', 2, 2);
-
-      // 将翻译结果的时间戳从毫秒转换回秒（用于与视频 currentTime 比较）
-      const convertedResult: BilingualSubtitles = {
-        english: result.english.map(entry => ({
-          ...entry,
-          startTime: msToSeconds(entry.startTime),
-          endTime: msToSeconds(entry.endTime),
-        })),
-        chinese: result.chinese.map(entry => ({
-          ...entry,
-          startTime: msToSeconds(entry.startTime),
-          endTime: msToSeconds(entry.endTime),
-        })),
-      };
-
-      return convertedResult;
-
+        coreObserver
+      );
+      return toExtensionSubtitles(result);
     } finally {
-      this.isTranslating = false;
       if (typeof chrome !== 'undefined' && chrome.storage) {
-        chrome.storage.local.remove('translationProgress');
+        try {
+          await chrome.storage.local.remove('translationProgress');
+        } catch (error) {
+          console.warn(`清理翻译进度失败: ${extractErrorMessage(error)}`);
+        }
       }
     }
   }
 
-  /**
-   * 取消翻译
-   */
-  cancelTranslation(): void {
-    this.isTranslating = false;
-    if (this.service) {
-      this.service.cancel();
+  private async saveProgress(
+    step: string,
+    current: number,
+    total: number
+  ): Promise<void> {
+    if (typeof chrome === 'undefined' || !chrome.storage) {
+      return;
     }
+
+    await chrome.storage.local.set({
+      translationProgress: {
+        isTranslating: true,
+        step,
+        current,
+        total,
+        timestamp: Date.now(),
+      },
+    });
   }
 }
 
-// 创建全局实例
-const translatorService = new TranslatorServiceWrapper();
-
-// 导出到全局（支持浏览器和 Service Worker）
-interface GlobalExports {
-  TranslatorService: typeof TranslatorServiceWrapper;
-  translatorService: TranslatorServiceWrapper;
-  LANGUAGE_MAPPING: typeof LANGUAGE_MAPPING;
-}
-
-const globalExports = globalThis as unknown as GlobalExports;
-globalExports.TranslatorService = TranslatorServiceWrapper;
-globalExports.translatorService = translatorService;
-globalExports.LANGUAGE_MAPPING = LANGUAGE_MAPPING;
-
-// 导出模块
-export { TranslatorServiceWrapper as TranslatorService, translatorService, LANGUAGE_MAPPING };
+export const translationSession = new TranslationSessionAdapter();

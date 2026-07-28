@@ -86,32 +86,6 @@ export interface TranslatorConfig {
   maxMultiplier: number;
 }
 
-/** 翻译进度回调 */
-export type ProgressCallback = (
-  step: 'split' | 'translate' | 'complete',
-  current: number,
-  total: number
-) => void;
-
-/** 部分结果回调 */
-export type PartialResultCallback = (
-  partial: BilingualSubtitles,
-  isFirst: boolean
-) => void;
-
-/** 翻译选项 */
-export interface TranslateOptions {
-  inputFile?: string;
-  videoTitle?: string;
-  videoDescription?: string;      // 视频说明（直接使用，不通过 Summarizer）
-  aiSummary?: string | null;      // AI 生成的摘要（直接使用，不通过 Summarizer）
-  debug?: boolean;
-  signal?: AbortSignal;            // 取消信号
-  onProgress?: ProgressCallback;
-  onPartialResult?: PartialResultCallback;  // 渐进式结果回调
-  firstBatchSize?: number;        // 首批字幕数量，默认 10
-}
-
 /** LLM API 响应 */
 export interface LLMResponse {
   choices: Array<{

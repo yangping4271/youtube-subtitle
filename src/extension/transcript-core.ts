@@ -4,47 +4,15 @@
  */
 
 import type { SimpleSubtitleEntry, VideoInfo } from '../types';
+import { extractErrorMessage } from '../utils/error-handler.js';
 import { getVideoDescription, getAISummary } from './video-metadata.js';
-import { normalizeSubtitleFetchErrorMessage } from './subtitle-fetch-log.js';
-import {
-  extractTranscriptSegmentData,
-  resolveCaptionTrackText,
-  findTranscriptTrigger,
-  getTranscriptPanel,
-  getTranscriptPanelState,
-  getTranscriptSegmentElements,
-  hasYouTubeLoginPrompt,
-  isTranscriptReady,
-  parseTranscriptTimestamp,
-  shouldForceLegacyTranscriptOpen,
-} from './youtube-subtitle-fetch.js';
-
-interface TranscriptSegment {
-  timeStr: string;
-  text: string;
-}
-
-interface YouTubeCaptionTrack {
-  baseUrl?: string;
-  languageCode?: string;
-}
-
-declare const chrome: {
-  runtime?: {
-    id?: string;
-    sendMessage?: (message: unknown) => Promise<unknown>;
-  };
-};
+import { acquireYouTubeSubtitles } from './youtube-subtitle-fetch.js';
 
 interface UserConfig {
   buttonIcons: {
     download: string;
     copy: string;
   };
-  fileNamingFormat: string;
-  includeTimestamps: boolean;
-  includeChapterHeaders: boolean;
-  settingsGuide: boolean;
 }
 
 const USER_CONFIG: UserConfig = {
@@ -52,10 +20,6 @@ const USER_CONFIG: UserConfig = {
     download: '↓',
     copy: '📋',
   },
-  fileNamingFormat: 'title-channel',
-  includeTimestamps: true,
-  includeChapterHeaders: true,
-  settingsGuide: false,
 };
 
 function getWatchFlexyElement(): HTMLElement | null {
@@ -126,147 +90,6 @@ function formatTimeSRT(seconds: number): string {
   ].join(':') + `,${String(milliseconds).padStart(3, '0')}`;
 }
 
-function getTranscriptSegments(): TranscriptSegment[] {
-  const segments: TranscriptSegment[] = [];
-  getTranscriptSegmentElements(document).forEach((element) => {
-    const segmentData = extractTranscriptSegmentData(element);
-    if (segmentData) {
-      segments.push({
-        timeStr: segmentData.timestampText,
-        text: segmentData.bodyText.replace(/\s+/g, ' ').trim(),
-      });
-    }
-  });
-
-  return segments;
-}
-
-function getTranscriptTextOnly(): string {
-  const lines: string[] = [];
-
-  getTranscriptSegmentElements(document).forEach((element) => {
-    if (element.tagName === 'YTD-TRANSCRIPT-SECTION-HEADER-RENDERER') {
-      if (USER_CONFIG.includeChapterHeaders) {
-        const chapterTitle = element.querySelector('h2 > span')?.textContent?.trim();
-        if (chapterTitle) lines.push(`\nChapter: ${chapterTitle}`);
-      }
-      return;
-    }
-
-    const segmentData = extractTranscriptSegmentData(element);
-    if (segmentData) {
-      lines.push(segmentData.bodyText.replace(/\s+/g, ' ').trim());
-    }
-  });
-
-  return lines.join('\n');
-}
-
-function getTranscriptUnavailableMessage(): string {
-  if (hasYouTubeLoginPrompt(document)) {
-    return 'YouTube 当前要求先登录以确认不是机器人，请登录后刷新页面再试。';
-  }
-
-  return '转写面板已打开，但字幕内容尚未加载完成，请稍后重试。';
-}
-
-function getTranscriptSegmentContainer(): Element | null {
-  const watchFlexyElement = getWatchFlexyElement();
-  if (!watchFlexyElement) return null;
-
-  return watchFlexyElement.querySelector(
-    'ytd-transcript-segment-list-renderer #segments-container'
-  );
-}
-
-async function ensureTranscriptLoaded(): Promise<boolean> {
-  if (isTranscriptReady(getTranscriptPanelState(document))) {
-    return true;
-  }
-
-  if (!openTranscript()) {
-    return false;
-  }
-
-  return waitForTranscriptContent();
-}
-
-async function getTranscriptTextFromCaptionTracks(videoId: string): Promise<{
-  text: string;
-  resolution: {
-    source: 'page-player-response' | 'youtubei-player';
-    fallbackReason?: string;
-    trackLanguageCode?: string;
-    trackKind?: string;
-  };
-}> {
-  const resolution = await resolveCaptionTrackText(videoId);
-  return {
-    text: extractTranscriptTextFromXml(resolution.trackText),
-    resolution,
-  };
-}
-
-function logTranscriptCopyFetch(
-  source: 'caption-tracks' | 'transcript-panel' | 'unavailable',
-  subtitleCount: number,
-  details: {
-    strategy?: string;
-    trackLanguageCode?: string;
-    trackKind?: string;
-    fallbackReason?: string;
-    captionTrackError?: string;
-    panelError?: string;
-  } = {}
-): void {
-  if (!chrome.runtime?.id || typeof chrome.runtime.sendMessage !== 'function') {
-    return;
-  }
-
-  const { videoId, videoURL } = getVideoInfo();
-  if (!videoId || !videoURL) {
-    return;
-  }
-
-  void chrome.runtime.sendMessage({
-    action: 'logSubtitleFetchSource',
-    videoId,
-    data: {
-      source,
-      subtitleCount,
-      ...details,
-    },
-  }).catch((error: unknown) => {
-    console.log('发送复制字幕来源日志失败:', error);
-  });
-}
-
-function extractTranscriptTextFromXml(xml: string): string {
-  const doc = new DOMParser().parseFromString(xml, 'text/xml');
-  if (doc.querySelector('parsererror')) {
-    throw new Error('字幕 XML 解析失败');
-  }
-
-  const srv3Lines = Array.from(doc.querySelectorAll('p'))
-    .map((segment) => {
-      const textParts = Array.from(segment.querySelectorAll('s'))
-        .map((part) => part.textContent || '')
-        .join('');
-      const rawText = textParts || segment.textContent || '';
-      return rawText.replace(/\s+/g, ' ').trim();
-    })
-    .filter((line) => line.length > 0);
-
-  if (srv3Lines.length > 0) {
-    return srv3Lines.join('\n');
-  }
-
-  const timedTextLines = Array.from(doc.querySelectorAll('text'))
-    .map((segment) => (segment.textContent || '').replace(/\s+/g, ' ').trim())
-    .filter((line) => line.length > 0);
-
-  return timedTextLines.join('\n');
-}
 function buildSRTFromSubtitles(subtitles: SimpleSubtitleEntry[]): string {
   if (subtitles.length === 0) {
     return '';
@@ -277,233 +100,22 @@ function buildSRTFromSubtitles(subtitles: SimpleSubtitleEntry[]): string {
   }).join('\n\n') + '\n\n';
 }
 
-function normalizeSubtitleTiming(subtitles: SimpleSubtitleEntry[]): SimpleSubtitleEntry[] {
-  if (subtitles.length === 0) {
-    return [];
-  }
-
-  return subtitles.map((subtitle, index) => {
-    const next = subtitles[index + 1];
-    let endTime = subtitle.endTime;
-
-    if (!Number.isFinite(endTime) || endTime <= subtitle.startTime) {
-      endTime = next && next.startTime > subtitle.startTime
-        ? next.startTime
-        : subtitle.startTime + 5;
-    }
-
-    return {
-      startTime: subtitle.startTime,
-      endTime,
-      text: subtitle.text,
-    };
-  });
-}
-
-function parseSrv3SpanSubtitles(doc: Document): SimpleSubtitleEntry[] {
-  const subtitles: SimpleSubtitleEntry[] = [];
-
-  doc.querySelectorAll('p').forEach((segment) => {
-    const paragraphStartMs = Number(segment.getAttribute('t'));
-    if (Number.isNaN(paragraphStartMs)) {
-      return;
-    }
-
-    const paragraphDurationMs = Number(segment.getAttribute('d'));
-    const paragraphEndMs = Number.isNaN(paragraphDurationMs)
-      ? null
-      : paragraphStartMs + paragraphDurationMs;
-
-    const spans = Array.from(segment.querySelectorAll('s'));
-    if (spans.length === 0) {
-      return;
-    }
-
-    const spanOffsets = spans.map((span) => {
-      const offsetMs = Number(span.getAttribute('t'));
-      return Number.isNaN(offsetMs) ? null : offsetMs;
-    });
-
-    if (!spanOffsets.some((offsetMs) => offsetMs !== null)) {
-      return;
-    }
-
-    spans.forEach((span, index) => {
-      const text = (span.textContent || '').replace(/\s+/g, ' ').trim();
-      if (!text) {
-        return;
-      }
-
-      const relativeStartMs =
-        spanOffsets[index] ?? (index === 0 ? 0 : spanOffsets[index - 1] ?? 0);
-      let relativeEndMs: number | null = null;
-
-      for (let nextIndex = index + 1; nextIndex < spanOffsets.length; nextIndex++) {
-        if (spanOffsets[nextIndex] !== null) {
-          relativeEndMs = spanOffsets[nextIndex];
-          break;
-        }
-      }
-
-      const startMs = paragraphStartMs + relativeStartMs;
-      let endMs = relativeEndMs !== null
-        ? paragraphStartMs + relativeEndMs
-        : paragraphEndMs ?? startMs;
-
-      if (endMs <= startMs) {
-        endMs = paragraphEndMs && paragraphEndMs > startMs
-          ? paragraphEndMs
-          : startMs;
-      }
-
-      subtitles.push({
-        startTime: startMs / 1000,
-        endTime: endMs / 1000,
-        text,
-      });
-    });
-  });
-
-  return subtitles;
-}
-
-function parseSrv3ParagraphSubtitles(doc: Document): SimpleSubtitleEntry[] {
-  const subtitles: SimpleSubtitleEntry[] = [];
-
-  doc.querySelectorAll('p').forEach((segment) => {
-    const startMs = Number(segment.getAttribute('t'));
-    if (Number.isNaN(startMs)) {
-      return;
-    }
-
-    const durationMs = Number(segment.getAttribute('d'));
-    const textParts = Array.from(segment.querySelectorAll('s'))
-      .map((part) => part.textContent || '')
-      .join('');
-    const rawText = textParts || segment.textContent || '';
-    const text = rawText.replace(/\s+/g, ' ').trim();
-
-    if (!text) {
-      return;
-    }
-
-    subtitles.push({
-      startTime: startMs / 1000,
-      endTime: Number.isNaN(durationMs) ? startMs / 1000 : (startMs + durationMs) / 1000,
-      text,
-    });
-  });
-
-  return subtitles;
-}
-
-function parseTimedTextSubtitles(doc: Document): SimpleSubtitleEntry[] {
-  const subtitles: SimpleSubtitleEntry[] = [];
-
-  doc.querySelectorAll('text').forEach((segment) => {
-    const start = Number(segment.getAttribute('start'));
-    if (Number.isNaN(start)) {
-      return;
-    }
-
-    const duration = Number(segment.getAttribute('dur'));
-    const text = (segment.textContent || '').replace(/\s+/g, ' ').trim();
-    if (!text) {
-      return;
-    }
-
-    subtitles.push({
-      startTime: start,
-      endTime: Number.isNaN(duration) ? start : start + duration,
-      text,
-    });
-  });
-
-  return subtitles;
-}
-
-function parseSubtitleEntriesFromXml(xml: string): SimpleSubtitleEntry[] {
-  const doc = new DOMParser().parseFromString(xml, 'text/xml');
-  if (doc.querySelector('parsererror')) {
-    throw new Error('字幕 XML 解析失败');
-  }
-
-  const timedSpanSubtitles = parseSrv3SpanSubtitles(doc);
-  if (timedSpanSubtitles.length > 0) {
-    return normalizeSubtitleTiming(timedSpanSubtitles);
-  }
-
-  const paragraphSubtitles = parseSrv3ParagraphSubtitles(doc);
-  if (paragraphSubtitles.length > 0) {
-    return normalizeSubtitleTiming(paragraphSubtitles);
-  }
-
-  return normalizeSubtitleTiming(parseTimedTextSubtitles(doc));
-}
-
-function getTranscriptSubtitlesFromPanel(): SimpleSubtitleEntry[] {
-  const segments = getTranscriptSegments();
-  if (segments.length === 0) {
-    return [];
-  }
-
-  return normalizeSubtitleTiming(segments.map((segment) => ({
-    startTime: parseTranscriptTimestamp(segment.timeStr),
-    endTime: 0,
-    text: segment.text,
-  })));
-}
-
 async function downloadTranscriptAsSRT(): Promise<void> {
   const { ytTitle, channelName, videoId } = getVideoInfo();
-  let subtitleEntries: SimpleSubtitleEntry[] = [];
-  let captionTrackError: Error | null = null;
-
-  if (videoId) {
-    try {
-      const resolution = await resolveCaptionTrackText(videoId);
-      subtitleEntries = parseSubtitleEntriesFromXml(resolution.trackText);
-      if (subtitleEntries.length > 0) {
-        logTranscriptCopyFetch('caption-tracks', subtitleEntries.length, {
-          strategy: resolution.source,
-          trackLanguageCode: resolution.trackLanguageCode,
-          trackKind: resolution.trackKind,
-          fallbackReason: resolution.fallbackReason
-            ? normalizeSubtitleFetchErrorMessage(resolution.fallbackReason)
-            : undefined,
-        });
-      }
-    } catch (error) {
-      captionTrackError = error instanceof Error ? error : new Error(String(error));
-      console.log('通过字幕轨接口下载 SRT 失败，回退到 transcript 面板:', error);
-    }
-  }
-
-  if (subtitleEntries.length === 0) {
-    subtitleEntries = getTranscriptSubtitlesFromPanel();
-
-    if (subtitleEntries.length === 0) {
-      const loaded = await ensureTranscriptLoaded();
-      if (loaded) {
-        subtitleEntries = getTranscriptSubtitlesFromPanel();
-      }
-    }
-  }
-
-  const srtContent = buildSRTFromSubtitles(subtitleEntries);
-  if (!srtContent) {
-    if (captionTrackError) {
-      logTranscriptCopyFetch('unavailable', 0, {
-        captionTrackError: normalizeSubtitleFetchErrorMessage(captionTrackError.message),
-      });
-      showNotification(getTranscriptUnavailableMessage());
-      return;
-    }
-
-    showNotification('字幕为空');
+  if (!videoId) {
+    showNotification('无法获取视频ID');
     return;
   }
 
+  let subtitleEntries: SimpleSubtitleEntry[];
+  try {
+    subtitleEntries = (await acquireYouTubeSubtitles(videoId)).subtitles;
+  } catch (error) {
+    showNotification(extractErrorMessage(error) || '无法获取字幕');
+    return;
+  }
+
+  const srtContent = buildSRTFromSubtitles(subtitleEntries);
   const blob = new Blob([srtContent], { type: 'text/plain' });
 
   const sanitize = (str: string) => str.replace(/[<>:"/\\|?*]+/g, '');
@@ -534,139 +146,23 @@ async function copyTranscriptText(finalText: string): Promise<void> {
   }
 }
 
-function waitForTranscriptContent(retries = 0): Promise<boolean> {
-  const maxRetries = 20;
-  const interval = 500;
-
-  return new Promise((resolve) => {
-    if (isTranscriptReady(getTranscriptPanelState(document))) {
-      resolve(true);
-    } else if (retries < maxRetries) {
-      setTimeout(() => {
-        void waitForTranscriptContent(retries + 1).then(resolve);
-      }, interval);
-    } else {
-      resolve(false);
-    }
-  });
-}
-
 async function selectAndCopyTranscript(): Promise<void> {
   const { videoId } = getVideoInfo();
-  let captionTrackError: Error | null = null;
-
-  if (videoId) {
-    try {
-      const { text, resolution } = await getTranscriptTextFromCaptionTracks(videoId);
-      if (text) {
-        logTranscriptCopyFetch('caption-tracks', text.split('\n').filter(Boolean).length, {
-          strategy: resolution.source,
-          trackLanguageCode: resolution.trackLanguageCode,
-          trackKind: resolution.trackKind,
-          fallbackReason: resolution.fallbackReason
-            ? normalizeSubtitleFetchErrorMessage(resolution.fallbackReason)
-            : undefined,
-        });
-        await copyTranscriptText(text);
-        return;
-      }
-    } catch (error) {
-      captionTrackError = error instanceof Error ? error : new Error(String(error));
-      console.log('通过字幕轨接口复制字幕失败，回退到 transcript 面板:', error);
-    }
-  }
-
-  let finalText = getTranscriptTextOnly();
-  if (!finalText) {
-    const loaded = await ensureTranscriptLoaded();
-    if (!loaded) {
-      logTranscriptCopyFetch('unavailable', 0, {
-        captionTrackError: captionTrackError
-          ? normalizeSubtitleFetchErrorMessage(captionTrackError.message)
-          : undefined,
-      });
-      showNotification(getTranscriptUnavailableMessage());
-      return;
-    }
-
-    finalText = getTranscriptTextOnly();
-  }
-
-  if (!finalText) {
-    logTranscriptCopyFetch('unavailable', 0, {
-      captionTrackError: captionTrackError
-        ? normalizeSubtitleFetchErrorMessage(captionTrackError.message)
-        : undefined,
-      panelError: normalizeSubtitleFetchErrorMessage(getTranscriptUnavailableMessage()),
-    });
-    showNotification(getTranscriptUnavailableMessage());
+  if (!videoId) {
+    showNotification('无法获取视频ID');
     return;
   }
 
-  logTranscriptCopyFetch('transcript-panel', finalText.split('\n').filter(Boolean).length, {
-    fallbackReason: captionTrackError
-      ? normalizeSubtitleFetchErrorMessage(captionTrackError.message)
-      : undefined,
-  });
+  let finalText: string;
+  try {
+    const result = await acquireYouTubeSubtitles(videoId);
+    finalText = result.subtitles.map((subtitle) => subtitle.text).join('\n');
+  } catch (error) {
+    showNotification(extractErrorMessage(error) || '无法获取字幕');
+    return;
+  }
+
   await copyTranscriptText(finalText);
-}
-
-function openTranscript(): boolean {
-  const transcriptButton = findTranscriptTrigger(document);
-
-  if (transcriptButton) {
-    (transcriptButton as HTMLButtonElement).click();
-    const engagementPanel = getTranscriptPanel(document) as HTMLElement | null;
-    if (shouldForceLegacyTranscriptOpen(true, !!engagementPanel)) {
-      window.dispatchEvent(new CustomEvent('YTSP_OpenTranscript'));
-    }
-    return true;
-  }
-
-  const engagementPanel = getTranscriptPanel(document) as HTMLElement | null;
-
-  if (shouldForceLegacyTranscriptOpen(false, !!engagementPanel)) {
-    window.dispatchEvent(new CustomEvent('YTSP_OpenTranscript'));
-    return true;
-  }
-
-  return false;
-}
-
-function handleTranscriptAction(callback: () => void): void {
-  const watchFlexyElement = getWatchFlexyElement();
-  if (!watchFlexyElement) return;
-
-  const transcriptContainer = getTranscriptSegmentContainer();
-  if (transcriptContainer && transcriptContainer.children.length > 0) {
-    callback();
-    return;
-  }
-
-  if (openTranscript()) {
-    showNotification('正在打开文字记录...');
-    waitForTranscript(callback);
-  } else {
-    alert('无法获取文字记录，请确保视频有字幕');
-  }
-}
-
-function waitForTranscript(callback: () => void, retries = 0): void {
-  const maxRetries = 20;
-  const interval = 500;
-
-  const transcriptContainer = getWatchFlexyElement()?.querySelector(
-    'ytd-transcript-segment-list-renderer #segments-container'
-  );
-
-  if (transcriptContainer && transcriptContainer.children.length > 0) {
-    callback();
-  } else if (retries < maxRetries) {
-    setTimeout(() => waitForTranscript(callback, retries + 1), interval);
-  } else {
-    showNotification('加载失败');
-    alert('加载失败，请手动打开文字记录面板后重试');
-  }
 }
 
 function handleDownloadClick(): void {

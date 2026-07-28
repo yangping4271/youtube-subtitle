@@ -6,7 +6,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { TranslatorService } from '../../src/services/translator-service.js';
+import { TranslationSession } from '../../src/core/translation-session.js';
+import { OpenAIClient } from '../../src/services/openai-client.js';
 import type { BilingualSubtitles, SubtitleEntry, TranslatorConfig } from '../../src/types/index.js';
 
 // 从 .env 文件加载配置
@@ -121,26 +122,24 @@ describe('真实字幕文件集成测试', () => {
       return;
     }
 
-    const service = new TranslatorService(config);
+    const session = new TranslationSession(config, new OpenAIClient(config));
 
     // 记录回调结果
-    const partialResults: Array<{ isFirst: boolean; count: number }> = [];
+    const partialResults: Array<{ count: number }> = [];
     let totalReceived = 0;
 
     // 执行渐进式翻译
     console.log('🚀 开始渐进式翻译...\n');
 
-    const result = await service.translateFull(subtitles, {
-      firstBatchSize: 10,
-      onPartialResult: (partial: BilingualSubtitles, isFirst: boolean) => {
+    const result = await session.translate({ subtitles }, {
+      onPartialResult: (partial: BilingualSubtitles) => {
         partialResults.push({
-          isFirst,
           count: partial.english.length,
         });
         totalReceived += partial.english.length;
 
         console.log(
-          `${isFirst ? '🎯 首批' : '📦 批次'} 翻译完成: ${partial.english.length} 条 (累计: ${totalReceived}/${subtitles.length})`
+          `📦 批次翻译完成: ${partial.english.length} 条 (累计: ${totalReceived}/${subtitles.length})`
         );
 
         // 显示第一条翻译结果
@@ -154,23 +153,16 @@ describe('真实字幕文件集成测试', () => {
     // 验证结果
     console.log('\n✅ 翻译完成，验证结果...\n');
 
-    // 1. 验证首批是第一个回调
+    // 1. 验证至少有一个按顺序观察到的批次
     expect(partialResults.length).toBeGreaterThan(0);
-    expect(partialResults[0].isFirst).toBe(true);
-    expect(partialResults[0].count).toBeLessThanOrEqual(10);
 
-    // 2. 验证后续批次
-    for (let i = 1; i < partialResults.length; i++) {
-      expect(partialResults[i].isFirst).toBe(false);
-    }
-
-    // 3. 验证总数（注意：断句后的数量可能与原始字幕数量不同）
+    // 2. 验证总数（注意：断句后的数量可能与原始字幕数量不同）
     expect(totalReceived).toBeGreaterThan(0);
     console.log(`📊 统计信息:`);
     console.log(`  - 原始字幕数: ${subtitles.length}`);
     console.log(`  - 断句后字幕数: ${totalReceived}`);
     console.log(`  - 回调次数: ${partialResults.length}`);
-    console.log(`  - 首批大小: ${partialResults[0].count}`);
+    console.log(`  - 第一批大小: ${partialResults[0].count}`);
     console.log(`  - 累计接收: ${totalReceived}`);
 
   }, 300000); // 5分钟超时

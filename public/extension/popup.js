@@ -85,7 +85,9 @@ class PopupController {
         this.currentLanguage = 'english';
 
         // API配置（独立版本）
-        this.apiConfig = this.normalizeApiConfig(window.SubtitleConfig?.DEFAULT_API_CONFIG);
+        this.apiConfig = window.SubtitleConfig.normalizeApiConfig(
+            window.SubtitleConfig.DEFAULT_API_CONFIG
+        );
         this.newApiProviderDraft = null;
         this.isTranslating = false;
 
@@ -142,62 +144,8 @@ class PopupController {
         };
     }
 
-    normalizeApiConfig(config = {}) {
-        if (window.SubtitleConfig?.normalizeApiConfig) {
-            return window.SubtitleConfig.normalizeApiConfig(config);
-        }
-
-        let providers = Array.isArray(config.providers)
-            ? config.providers.filter(provider => provider && provider.id).map(provider => ({
-                id: provider.id,
-                name: provider.name || '未命名供应商',
-                providerType: provider.providerType,
-                openaiBaseUrl: typeof provider.openaiBaseUrl === 'string' ? provider.openaiBaseUrl : '',
-                openaiApiKey: provider.openaiApiKey || '',
-                llmModel: provider.llmModel || '',
-                threadNum: provider.threadNum || 3,
-                disableThinking: provider.disableThinking !== false
-            }))
-            : [];
-
-        if (providers.length === 0) {
-            const defaults = window.SubtitleConfig?.DEFAULT_API_PROVIDERS;
-            if (Array.isArray(defaults) && defaults.length > 0) {
-                providers.push(...defaults.map(provider => ({ ...provider })));
-            }
-        }
-
-        const seen = new Set();
-        providers = providers.filter(provider => {
-            const key = provider.providerType && provider.providerType !== 'custom'
-                ? `type:${provider.providerType}`
-                : `id:${provider.id}`;
-            if (seen.has(key)) {
-                return false;
-            }
-            seen.add(key);
-            return true;
-        });
-
-        const activeProviderId = config.activeProviderId && providers.some(provider => provider.id === config.activeProviderId)
-            ? config.activeProviderId
-            : providers[0].id;
-        const activeProvider = providers.find(provider => provider.id === activeProviderId) || providers[0];
-
-        return {
-            activeProviderId,
-            providers,
-            openaiBaseUrl: activeProvider.openaiBaseUrl,
-            openaiApiKey: activeProvider.openaiApiKey,
-            llmModel: activeProvider.llmModel,
-            targetLanguage: config.targetLanguage || 'zh',
-            threadNum: activeProvider.threadNum || 3,
-            disableThinking: activeProvider.disableThinking !== false
-        };
-    }
-
     getActiveApiProvider() {
-        this.apiConfig = this.normalizeApiConfig(this.apiConfig);
+        this.apiConfig = window.SubtitleConfig.normalizeApiConfig(this.apiConfig);
         return this.apiConfig.providers.find(provider => provider.id === this.apiConfig.activeProviderId)
             || this.apiConfig.providers[0];
     }
@@ -294,8 +242,7 @@ class PopupController {
         this.initApiSettingsUI();
 
         // 初始化翻译模式
-        this.initAutoLoadMode();
-        this.checkApiStatus();
+        this.initCurrentVideoState();
 
         // 主动检查一次当前视频的字幕状态，初始化计数
         this.checkCurrentVideoSubtitleStatus();
@@ -1063,9 +1010,6 @@ class PopupController {
                     }
                 }
 
-                // 🔧 修复：确保执行顺序，避免竞态条件
-                await this.loadAutoLoadSettings();
-
                 // 延迟执行字幕统计更新，确保DOM完全就绪
                 await this.updateSubtitleInfoWithRetry();
 
@@ -1440,215 +1384,6 @@ class PopupController {
         Toast.success('已恢复默认设置');
     }
 
-    // ========================================
-    // 自动加载相关方法
-    // ========================================
-    bindAutoLoadEvents() {
-        // 自动加载开关
-        const autoLoadToggle = document.getElementById('autoLoadToggle');
-        if (autoLoadToggle) {
-            autoLoadToggle.addEventListener('change', (e) => {
-                this.toggleAutoLoad(e.target.checked);
-            });
-        }
-
-        // 服务器地址配置
-        const serverUrl = document.getElementById('serverUrl');
-        if (serverUrl) {
-            serverUrl.addEventListener('change', (e) => {
-                this.updateServerUrl(e.target.value);
-            });
-        }
-
-        // 测试连接按钮
-        const testServer = document.getElementById('testServer');
-        if (testServer) {
-            testServer.addEventListener('click', () => {
-                this.testServerConnection();
-            });
-        }
-
-        // 配置折叠按钮
-        const configToggle = document.getElementById('configToggle');
-        const configPanel = document.getElementById('configPanel');
-        if (configToggle && configPanel) {
-            configToggle.addEventListener('click', () => {
-                const isExpanded = configPanel.classList.contains('expanded');
-
-                if (isExpanded) {
-                    configPanel.classList.remove('expanded');
-                    configToggle.classList.remove('expanded');
-                } else {
-                    configPanel.classList.add('expanded');
-                    configToggle.classList.add('expanded');
-                }
-            });
-        }
-    }
-
-    initAutoLoadMode() {
-        // 获取当前视频信息
-        this.getCurrentVideoInfo();
-    }
-
-    async loadAutoLoadSettings() {
-        try {
-            const result = await chrome.storage.local.get(['autoLoadEnabled', 'serverUrl']);
-            this.autoLoadEnabled = result.autoLoadEnabled || false;
-            this.serverUrl = result.serverUrl || 'http://127.0.0.1:8888';
-
-            const autoLoadToggle = document.getElementById('autoLoadToggle');
-            const serverUrlInput = document.getElementById('serverUrl');
-
-            if (autoLoadToggle) autoLoadToggle.checked = this.autoLoadEnabled;
-            if (serverUrlInput) serverUrlInput.value = this.serverUrl;
-
-            // 🔧 修复：主动检测服务器状态
-            await this.checkServerStatus();
-
-        } catch (error) {
-            console.error('加载自动加载设置失败:', error);
-            this.updateServerStatus('error', '设置加载失败', error.message);
-        }
-    }
-
-    async toggleAutoLoad(enabled) {
-        this.autoLoadEnabled = enabled;
-
-        try {
-            // 保存设置
-            await chrome.storage.local.set({ autoLoadEnabled: enabled });
-
-            // 通知content script
-            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                if (tabs[0]) {
-                    chrome.tabs.sendMessage(tabs[0].id, {
-                        action: 'toggleAutoLoad',
-                        enabled: enabled
-                    });
-                }
-            });
-
-            Toast.show(
-                enabled ? '自动加载已启用' : '自动加载已禁用',
-                enabled ? 'success' : 'info'
-            );
-
-            if (enabled) {
-                this.checkServerStatus();
-            }
-
-        } catch (error) {
-            console.error('切换自动加载状态失败:', error);
-            Toast.error('设置失败: ' + error.message);
-        }
-    }
-
-    async updateServerUrl(url) {
-        this.serverUrl = url;
-
-        try {
-            await chrome.storage.local.set({ serverUrl: url });
-
-            // 通知content script
-            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                if (tabs[0]) {
-                    chrome.tabs.sendMessage(tabs[0].id, {
-                        action: 'updateServerUrl',
-                        url: url
-                    });
-                }
-            });
-        } catch (error) {
-            console.error('更新服务器地址失败:', error);
-        }
-    }
-
-    async checkServerStatus() {
-        // 设置检查状态
-        this.updateServerStatus('connecting', '检查服务器状态中...');
-
-        try {
-            const response = await fetch(`${this.serverUrl}/health`, {
-                method: 'GET',
-                timeout: 5000
-            });
-
-            if (response.ok) {
-                const result = await response.json();
-                this.updateServerStatus('connected', '服务器已连接');
-            } else {
-                this.updateServerStatus('error', `服务器错误 (${response.status})`);
-            }
-
-        } catch (error) {
-            this.updateServerStatus('error', '服务器连接失败');
-        }
-    }
-
-    updateServerStatus(status, message) {
-        this.serverStatus = status;
-
-        const statusText = document.getElementById('statusText');
-        const statusSubtext = document.getElementById('statusSubtext');
-        const statusCircle = document.querySelector('.status-circle');
-        const statusIcon = document.getElementById('statusIcon');
-
-        // 更新主状态文本
-        if (statusText) statusText.textContent = message;
-
-        // 根据状态更新圆圈样式和图标
-        if (statusCircle && statusIcon) {
-            statusCircle.className = `status-circle ${status}`;
-
-            switch (status) {
-                case 'connected':
-                    statusIcon.textContent = '✅';
-                    if (statusSubtext) statusSubtext.textContent = '服务器运行正常';
-                    break;
-                case 'disconnected':
-                case 'error':
-                    statusIcon.textContent = '❌';
-                    if (statusSubtext) statusSubtext.textContent = '无法连接到服务器';
-                    break;
-                case 'connecting':
-                    statusIcon.textContent = '⚡';
-                    if (statusSubtext) statusSubtext.textContent = '正在检查连接状态';
-                    break;
-                default:
-                    statusIcon.textContent = '❓';
-                    if (statusSubtext) statusSubtext.textContent = '服务器状态未知';
-            }
-        }
-    }
-
-    async testServerConnection() {
-        const testButton = document.getElementById('testServer');
-        const testText = testButton?.querySelector('.test-text');
-        const originalText = testText?.textContent || '测试';
-
-        if (testButton && testText) {
-            testText.textContent = '测试中...';
-            testButton.disabled = true;
-            testButton.style.opacity = '0.6';
-        }
-
-        await this.checkServerStatus();
-
-        if (testButton && testText) {
-            testText.textContent = originalText;
-            testButton.disabled = false;
-            testButton.style.opacity = '1';
-        }
-
-        // 显示测试结果
-        if (this.serverStatus === 'connected') {
-            Toast.success('服务器连接正常');
-        } else {
-            Toast.error('服务器连接失败，请检查服务器是否启动');
-        }
-    }
-
     updateAutoLoadStatus(message, type) {
         const autoLoadStatus = document.getElementById('autoLoadStatus');
         if (autoLoadStatus) {
@@ -1788,9 +1523,12 @@ class PopupController {
         try {
             const result = await chrome.storage.local.get(['apiConfig']);
             if (result.apiConfig) {
-                this.apiConfig = this.normalizeApiConfig({ ...this.apiConfig, ...result.apiConfig });
+                this.apiConfig = window.SubtitleConfig.normalizeApiConfig({
+                    ...this.apiConfig,
+                    ...result.apiConfig
+                });
             } else {
-                this.apiConfig = this.normalizeApiConfig(this.apiConfig);
+                this.apiConfig = window.SubtitleConfig.normalizeApiConfig(this.apiConfig);
             }
         } catch (error) {
             console.error('加载API配置失败:', error);
@@ -1822,7 +1560,7 @@ class PopupController {
     }
 
     loadApiConfigToUI() {
-        this.apiConfig = this.normalizeApiConfig(this.apiConfig);
+        this.apiConfig = window.SubtitleConfig.normalizeApiConfig(this.apiConfig);
         const activeProvider = this.getEditingApiProvider();
         const providerSelect = document.getElementById('apiProviderSelect');
         const providerName = document.getElementById('apiProviderName');
@@ -1864,9 +1602,6 @@ class PopupController {
         if (this.newApiProviderDraft) {
             const apiStatus = document.getElementById('apiStatus');
             if (apiStatus) apiStatus.style.display = 'none';
-            this.updateTranslateStatus('unconfigured', '新供应商未保存', '填写配置后点击保存');
-        } else {
-            this.checkApiStatus();
         }
     }
 
@@ -1981,11 +1716,6 @@ class PopupController {
             saveApiBtn.addEventListener('click', () => this.saveApiConfigFromUI());
         }
 
-        // 自动翻译模式中的测试按钮
-        const testServer = document.getElementById('testServer');
-        if (testServer) {
-            testServer.addEventListener('click', () => this.testApiConnection());
-        }
     }
 
     loadApiProviderOptions() {
@@ -2040,8 +1770,8 @@ class PopupController {
         const provider = this.collectActiveProviderFromUI();
 
         try {
-            // 临时更新translator配置
-            if (!this.newApiProviderDraft && typeof translatorService !== 'undefined') {
+            // 测试现有供应商时同步最新配置
+            if (!this.newApiProviderDraft) {
                 await chrome.storage.local.set({ apiConfig: this.apiConfig });
             }
 
@@ -2059,15 +1789,12 @@ class PopupController {
 
             if (response.ok) {
                 this.showApiStatus('success', 'API连接成功');
-                this.updateTranslateStatus('connected', 'API已连接', '可以开始翻译');
             } else {
                 const error = await response.json().catch(() => ({}));
                 this.showApiStatus('error', `连接失败: ${error.error?.message || response.statusText}`);
-                this.updateTranslateStatus('error', 'API连接失败', '请检查配置');
             }
         } catch (error) {
             this.showApiStatus('error', `网络错误: ${error.message}`);
-            this.updateTranslateStatus('error', '网络错误', error.message);
         }
     }
 
@@ -2082,34 +1809,6 @@ class PopupController {
         if (apiStatusText) {
             apiStatusText.textContent = message;
         }
-    }
-
-    checkApiStatus() {
-        if (this.apiConfig.openaiBaseUrl) {
-            this.updateTranslateStatus('ready', 'API已配置', '支持本地兼容服务，API Key 可留空');
-        } else {
-            this.updateTranslateStatus('unconfigured', '未配置API', '请先填写 API 地址');
-        }
-    }
-
-    updateTranslateStatus(status, title, subtitle) {
-        const statusIcon = document.getElementById('statusIcon');
-        const statusText = document.getElementById('statusText');
-        const statusSubtext = document.getElementById('statusSubtext');
-
-        if (statusIcon) {
-            const icons = {
-                'connected': '✅',
-                'ready': '🔑',
-                'unconfigured': '⚠️',
-                'translating': '⏳',
-                'error': '❌',
-                'success': '✅'
-            };
-            statusIcon.textContent = icons[status] || '🔑';
-        }
-        if (statusText) statusText.textContent = title;
-        if (statusSubtext) statusSubtext.textContent = subtitle;
     }
 
     // ========================================
@@ -2562,106 +2261,6 @@ class PopupController {
         });
     }
 
-    async translateSubtitlesWithProgress(subtitles, onProgress) {
-        const batchSize = 15;
-        const englishSubtitles = [];
-        const chineseSubtitles = [];
-
-        const targetLanguageName = this.getTargetLanguageName(this.apiConfig.targetLanguage);
-
-        for (let i = 0; i < subtitles.length; i += batchSize) {
-            const batch = subtitles.slice(i, i + batchSize);
-
-            // 构建批次对象
-            const batchObj = {};
-            batch.forEach((sub, idx) => {
-                batchObj[String(i + idx + 1)] = sub.text;
-            });
-
-            // 调用翻译API
-            const translations = await this.callTranslateApi(batchObj, targetLanguageName);
-
-            // 处理翻译结果
-            batch.forEach((sub, idx) => {
-                const key = String(i + idx + 1);
-                const translation = translations[key] || '';
-
-                englishSubtitles.push({
-                    start: sub.start,
-                    end: sub.end,
-                    text: sub.text
-                });
-
-                chineseSubtitles.push({
-                    start: sub.start,
-                    end: sub.end,
-                    text: translation
-                });
-            });
-
-            // 进度回调
-            if (onProgress) {
-                onProgress(Math.min(i + batchSize, subtitles.length), subtitles.length);
-            }
-
-            // 延迟避免限流
-            if (i + batchSize < subtitles.length) {
-                await new Promise(resolve => setTimeout(resolve, 500));
-            }
-        }
-
-        return { english: englishSubtitles, chinese: chineseSubtitles };
-    }
-
-    async callTranslateApi(batchObj, targetLanguage) {
-        const systemPrompt = `You are an expert subtitle translator. Translate the following subtitles into ${targetLanguage}.
-
-Return translations using XML-style numbered tags. Each tag number must match the input subtitle key exactly.
-
-Example:
-<1>翻译内容</1>
-<2>翻译内容</2>
-
-Return ONLY the XML tags, no other text.`;
-
-        const headers = {
-            'Content-Type': 'application/json'
-        };
-        if (this.apiConfig.openaiApiKey) {
-            headers.Authorization = `Bearer ${this.apiConfig.openaiApiKey}`;
-        }
-
-        const response = await fetch(`${this.apiConfig.openaiBaseUrl}/chat/completions`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                model: this.apiConfig.llmModel,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: JSON.stringify(batchObj) }
-                ],
-                temperature: 0.3
-            })
-        });
-
-        if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.error?.message || `API错误: ${response.status}`);
-        }
-
-        const data = await response.json();
-        const content = data.choices[0]?.message?.content || '';
-
-        // 用正则解析 XML 标签格式: <1>翻译内容</1>
-        const result = {};
-        const xmlRegex = /<(\d+)>([\s\S]*?)<\/\1>/g;
-        let match;
-        while ((match = xmlRegex.exec(content)) !== null) {
-            result[match[1]] = match[2].trim();
-        }
-        return result;
-    }
-
     getTargetLanguageName(langCode) {
         const mapping = {
             'zh': '简体中文',
@@ -2677,10 +2276,9 @@ Return ONLY the XML tags, no other text.`;
         return mapping[langCode.toLowerCase()] || langCode;
     }
 
-    initAutoLoadMode() {
+    initCurrentVideoState() {
         // 获取当前视频信息
         this.getCurrentVideoInfo();
-        this.checkApiStatus();
     }
 }
 

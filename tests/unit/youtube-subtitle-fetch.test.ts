@@ -11,8 +11,8 @@ import {
   isTranscriptReady,
   parseTranscriptTimestamp,
   pickPreferredCaptionTrack,
-  resolveCaptionTrackText,
   shouldForceLegacyTranscriptOpen,
+  shouldWaitForTranscriptPanel,
 } from '../../src/extension/youtube-subtitle-fetch.js';
 
 describe('youtube subtitle fetch helpers', () => {
@@ -84,6 +84,12 @@ describe('youtube subtitle fetch helpers', () => {
     expect(shouldForceLegacyTranscriptOpen(false, true)).toBe(true);
   });
 
+  it('找不到 transcript 入口和 panel 时不进入轮询等待', () => {
+    expect(shouldWaitForTranscriptPanel(false, false)).toBe(false);
+    expect(shouldWaitForTranscriptPanel(true, false)).toBe(true);
+    expect(shouldWaitForTranscriptPanel(false, true)).toBe(true);
+  });
+
   it('优先选择人工英文字幕轨而不是 asr', () => {
     const track = pickPreferredCaptionTrack([
       { languageCode: 'en', kind: 'asr', baseUrl: 'https://www.youtube.com/api/timedtext?v=1&kind=asr' },
@@ -108,43 +114,6 @@ describe('youtube subtitle fetch helpers', () => {
     await expect(fetchCaptionTrackText({
       baseUrl: 'https://www.youtube.com/api/timedtext?v=1',
     })).rejects.toThrow('content-type: text/html; charset=UTF-8');
-  });
-
-  it('页面字幕轨失败后回退到 youtubei/player', async () => {
-    const result = await resolveCaptionTrackText('video-id', {
-      requestPageResponse: async () => ({
-        captions: {
-          playerCaptionsTracklistRenderer: {
-            captionTracks: [
-              { languageCode: 'en', baseUrl: 'https://www.youtube.com/api/timedtext?v=page' },
-            ],
-          },
-        },
-      }),
-      requestPlayerResponse: async () => ({
-        playabilityStatus: {
-          status: 'OK',
-        },
-        captions: {
-          playerCaptionsTracklistRenderer: {
-            captionTracks: [
-              { languageCode: 'en', baseUrl: 'https://www.youtube.com/api/timedtext?v=player&fmt=srv3' },
-            ],
-          },
-        },
-      }),
-      requestTrackText: async (track) => {
-        if (track.baseUrl?.includes('v=page')) {
-          throw new Error('字幕轨返回空响应 (content-type: text/html; charset=UTF-8)');
-        }
-
-        return '<timedtext><text start="0" dur="1">hello</text></timedtext>';
-      },
-    });
-
-    expect(result.source).toBe('youtubei-player');
-    expect(result.trackText).toContain('<timedtext>');
-    expect(result.fallbackReason).toContain('text/html');
   });
 
   it('解析新的 transcript-segment-view-model 节点', () => {

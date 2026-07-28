@@ -6,7 +6,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { config as loadDotenv } from 'dotenv';
-import { TranslatorService } from '../../src/services/translator-service.js';
+import { TranslationSession } from '../../src/core/translation-session.js';
+import { OpenAIClient } from '../../src/services/openai-client.js';
 import type { SubtitleEntry, TranslatorConfig } from '../../src/types/index.js';
 
 loadDotenv();
@@ -67,14 +68,13 @@ describe('XML 格式翻译集成测试', () => {
 
     console.log(`加载了 ${subtitles.length} 条字幕`);
 
-    const service = new TranslatorService(config);
+    const session = new TranslationSession(config, new OpenAIClient(config));
     let totalReceived = 0;
 
-    await service.translateFull(subtitles.slice(0, 20), {
-      firstBatchSize: 10,
-      onPartialResult: (partial, isFirst) => {
+    await session.translate({ subtitles: subtitles.slice(0, 20) }, {
+      onPartialResult: (partial) => {
         totalReceived += partial.english.length;
-        console.log(`${isFirst ? '首批' : '批次'} 完成: ${partial.english.length} 条 (累计: ${totalReceived})`);
+        console.log(`批次完成: ${partial.english.length} 条 (累计: ${totalReceived})`);
 
         // 验证英文字幕不为空
         for (const e of partial.english) {
