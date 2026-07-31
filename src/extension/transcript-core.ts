@@ -4,6 +4,7 @@
  */
 
 import type { SimpleSubtitleEntry, VideoInfo } from '../types';
+import { buildPlainTextTranscript } from '../core/transcript-text.js';
 import { extractErrorMessage } from '../utils/error-handler.js';
 import { getVideoDescription, getAISummary } from './video-metadata.js';
 import { acquireYouTubeSubtitles } from './youtube-subtitle-fetch.js';
@@ -156,7 +157,7 @@ async function selectAndCopyTranscript(): Promise<void> {
   let finalText: string;
   try {
     const result = await acquireYouTubeSubtitles(videoId);
-    finalText = result.subtitles.map((subtitle) => subtitle.text).join('\n');
+    finalText = buildPlainTextTranscript(result.subtitles);
   } catch (error) {
     showNotification(extractErrorMessage(error) || '无法获取字幕');
     return;
