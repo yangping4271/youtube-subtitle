@@ -4,6 +4,37 @@
 
 import type { SubtitleEntry } from '../types/index.js';
 
+const NON_SPEECH_CUES = new Set([
+  'applause',
+  'background noise',
+  'cheering',
+  'cheers',
+  'chuckling',
+  'chuckles',
+  'clapping',
+  'coughing',
+  'coughs',
+  'inaudible',
+  'laughing',
+  'laughter',
+  'laughs',
+  'music',
+  'noise',
+  'sighing',
+  'sighs',
+  'silence',
+  'snort',
+  'snorts',
+]);
+
+function isNonSpeechCue(text: string): boolean {
+  const match = text.trim().match(/^(?:\[([^\]]+)\]|\(([^)]+)\))$/);
+  if (!match) return false;
+
+  const cue = (match[1] || match[2]).trim().toLowerCase();
+  return NON_SPEECH_CUES.has(cue);
+}
+
 /**
  * 字幕数据容器类
  * 提供字幕类型检测和转换功能
@@ -14,7 +45,7 @@ export class SubtitleData {
   constructor(segments: SubtitleEntry[]) {
     // 过滤空字幕并按时间排序
     this.segments = segments
-      .filter(seg => seg.text && seg.text.trim())
+      .filter(seg => seg.text && seg.text.trim() && !isNonSpeechCue(seg.text))
       .sort((a, b) => a.startTime - b.startTime);
   }
 
@@ -78,8 +109,7 @@ export class SubtitleData {
         "|[\\u0370-\\u03ff]+" +  // 希腊语
         "|[\\u0600-\\u06ff]+" +  // 阿拉伯语
         "|[\\u0590-\\u05ff]+" +  // 希伯来语
-        "|\\d+(?:\\.\\d+)+" +  // 小数、模型版本号和语义版本号（如 3.14、GPT-5.6、3.12.1）
-        "|\\d+" +  // 数字
+        "|\\d+(?:\\.\\d+)*%?" +  // 整数、小数、版本号和百分比（如 30%、3.14、3.12.1）
         // 以单字形式出现的语言(单字提取)
         "|[\\u4e00-\\u9fff]" +  // 中文
         "|[\\u3040-\\u309f]" +  // 日文平假名

@@ -128,7 +128,7 @@ function normalizeProvider(provider: ApiProviderConfig): ApiProviderConfig {
     openaiApiKey: provider.openaiApiKey || '',
     llmModel: provider.llmModel || '',
     threadNum: provider.threadNum || DEFAULT_TRANSLATOR_CONFIG.threadNum,
-    disableThinking: provider.disableThinking !== false,
+    disableThinking: true,
   };
 }
 
@@ -181,7 +181,7 @@ export function normalizeApiConfig(apiConfig: Partial<ApiConfig> | null | undefi
     providerType: activeProvider.providerType,
     targetLanguage: apiConfig?.targetLanguage || DEFAULT_TRANSLATOR_CONFIG.targetLanguage,
     threadNum: activeProvider.threadNum || DEFAULT_TRANSLATOR_CONFIG.threadNum,
-    disableThinking: activeProvider.disableThinking !== false,
+    disableThinking: true,
   };
 }
 
@@ -206,7 +206,7 @@ export function buildTranslatorConfig(
     providerType: normalized.providerType || inferProviderType(normalized.openaiBaseUrl),
     targetLanguage: normalized.targetLanguage || DEFAULT_TRANSLATOR_CONFIG.targetLanguage,
     threadNum: normalized.threadNum || DEFAULT_TRANSLATOR_CONFIG.threadNum,
-    disableThinking: normalized.disableThinking !== false,
+    disableThinking: true,
   };
 }
 

@@ -42,6 +42,7 @@ npm run build
 - 支持 OpenAI 及兼容 API，例如 LM Studio、Azure、OpenRouter
 - `API Base URL` 可填写任意 OpenAI-compatible endpoint，例如 `http://127.0.0.1:1234/v1`
 - 对于 LM Studio 这类本地服务，`API Key` 通常可以留空
+- 所有翻译请求都会优先关闭模型思考模式；服务或模型不支持关闭参数时，会自动使用其默认思考模式继续翻译
 - 首次连接新的 API 地址时，扩展会按该地址动态请求访问权限，而不是默认申请所有网站权限
 - 推荐本地模型：`gemma-4-e2b-it`、`gemma-4-e4b-it`
 
@@ -63,6 +64,17 @@ npm run typecheck     # 类型检查
 npm run test          # 运行默认测试（不含 manual）
 npm run test:manual   # 运行手动测试
 ```
+
+## 真实 SRT 本地测试
+
+使用 `~/.config/subtitle-translator/.env` 中的真实 API 配置运行完整流水线：
+
+```bash
+bun run test:real-srt -- --srt "/path/to/subtitle.srt"
+```
+
+可通过 `--env` 指定其他配置文件，通过 `--output` 指定输出根目录。默认在
+`log/real-srt/` 下保存完整日志、中文字幕 SRT 和双语 SRT；API Key 不会写入日志。
 
 ## 版本与发布
 

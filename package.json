@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:manual": "vitest run --config vitest.manual.config.ts"
+    "test:manual": "vitest run --config vitest.manual.config.ts",
+    "test:real-srt": "bun scripts/test-real-srt.ts"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

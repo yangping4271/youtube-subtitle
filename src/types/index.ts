@@ -58,7 +58,8 @@ export interface ApiProviderConfig {
   openaiApiKey: string;
   llmModel: string;
   threadNum?: number;  // 并发数，默认 3
-  disableThinking?: boolean;  // 翻译任务默认关闭思考模式
+  /** @deprecated 保留用于读取旧配置；翻译请求会优先尝试关闭思考模式。 */
+  disableThinking?: boolean;
 }
 
 export interface ApiConfig extends Partial<ApiProviderConfig> {
@@ -81,6 +82,7 @@ export interface TranslatorConfig {
   maxWordCountEnglish: number;
   threadNum: number;
   batchSize: number;
+  /** 固定为 true；表示请求会优先尝试关闭思考模式。 */
   disableThinking?: boolean;
   // 阈值倍数
   toleranceMultiplier: number;

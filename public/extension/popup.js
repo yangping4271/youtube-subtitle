@@ -140,7 +140,7 @@ class PopupController {
             openaiApiKey: overrides.openaiApiKey ?? '',
             llmModel: overrides.llmModel ?? '',
             threadNum: overrides.threadNum ?? 3,
-            disableThinking: overrides.disableThinking !== false
+            disableThinking: true
         };
     }
 
@@ -160,7 +160,7 @@ class PopupController {
         this.apiConfig.openaiApiKey = provider.openaiApiKey;
         this.apiConfig.llmModel = provider.llmModel;
         this.apiConfig.threadNum = provider.threadNum || 3;
-        this.apiConfig.disableThinking = provider.disableThinking !== false;
+        this.apiConfig.disableThinking = true;
     }
 
     collectActiveProviderFromUI() {

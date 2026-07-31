@@ -52,45 +52,55 @@ describe('local OpenAI-compatible config', () => {
     expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty('Authorization');
   });
 
-  it('DeepSeek V4 默认发送关闭思考模式参数', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        choices: [{ message: { content: 'translated content' } }],
-      }),
-    });
-    vi.stubGlobal('fetch', fetchMock);
+  it.each(['deepseek-v4-flash', 'deepseek-chat', 'custom-deepseek-model'])(
+    'DeepSeek 供应商的任意模型都发送关闭思考模式参数: %s',
+    async (model) => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: 'translated content' } }],
+        }),
+      });
+      vi.stubGlobal('fetch', fetchMock);
 
-    const client = new OpenAIClient(createConfig({
-      openaiBaseUrl: 'https://api.deepseek.com',
-      model: 'deepseek-v4-flash',
-      providerType: 'deepseek',
-    }));
-    await client.callChat('system', 'user');
+      const client = new OpenAIClient(createConfig({
+        openaiBaseUrl: 'https://api.deepseek.com',
+        model,
+        providerType: 'deepseek',
+      }));
+      await client.callChat('system', 'user');
 
-    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
-    expect(body.thinking).toEqual({ type: 'disabled' });
-  });
+      const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+      expect(body.thinking).toEqual({ type: 'disabled' });
+      expect(body).not.toHaveProperty('reasoning');
+      expect(body).not.toHaveProperty('reasoning_effort');
+    }
+  );
 
-  it('OpenRouter 默认发送关闭 reasoning 参数', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        choices: [{ message: { content: 'translated content' } }],
-      }),
-    });
-    vi.stubGlobal('fetch', fetchMock);
+  it.each(['openai/gpt-4o-mini', 'google/gemini-flash', 'qwen/qwen3'])(
+    'OpenRouter 的任意模型都发送关闭 reasoning 参数: %s',
+    async (model) => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: 'translated content' } }],
+        }),
+      });
+      vi.stubGlobal('fetch', fetchMock);
 
-    const client = new OpenAIClient(createConfig({
-      openaiBaseUrl: 'https://openrouter.ai/api/v1',
-      model: 'openai/gpt-4o-mini',
-      providerType: 'openrouter',
-    }));
-    await client.callChat('system', 'user');
+      const client = new OpenAIClient(createConfig({
+        openaiBaseUrl: 'https://openrouter.ai/api/v1',
+        model,
+        providerType: 'openrouter',
+      }));
+      await client.callChat('system', 'user');
 
-    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
-    expect(body.reasoning).toEqual({ effort: 'none' });
-  });
+      const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+      expect(body.reasoning).toEqual({ effort: 'none' });
+      expect(body).not.toHaveProperty('thinking');
+      expect(body).not.toHaveProperty('reasoning_effort');
+    }
+  );
 
   it('OpenRouter 代理 URL 默认发送关闭 reasoning 参数', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
@@ -133,10 +143,12 @@ describe('local OpenAI-compatible config', () => {
 
   it.each([
     ['OpenAI 官方端点', 'https://api.openai.com/v1', 'openai', 'gpt-5.6'],
-    ['自定义端点', 'https://example.com/v1', 'custom', 'gpt-6'],
-    ['第三方端点', 'https://third-party.example/v1', 'custom', 'GPT-7-fast'],
+    ['OpenAI 非推理模型', 'https://api.openai.com/v1', 'openai', 'gpt-4o-mini'],
+    ['自定义 Gemini 端点', 'https://example.com/v1', 'custom', 'gemini-3-flash'],
+    ['本地 Qwen 端点', 'http://127.0.0.1:1234/v1', 'custom', 'Qwen3.6-35B-A3B'],
+    ['未知兼容模型', 'https://third-party.example/v1', 'custom', 'vendor/model'],
   ] as const)(
-    '%s使用 GPT 开头的模型时发送 reasoning_effort none',
+    '%s始终发送 reasoning_effort none',
     async (_name, openaiBaseUrl, providerType, model) => {
       const fetchMock = vi.fn().mockResolvedValue({
         ok: true,
@@ -179,7 +191,7 @@ describe('local OpenAI-compatible config', () => {
     expect(body).not.toHaveProperty('reasoning_effort');
   });
 
-  it('非 GPT 模型不发送 GPT 思考参数', async () => {
+  it('旧配置不能通过 disableThinking false 重新开启思考模式', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -192,14 +204,73 @@ describe('local OpenAI-compatible config', () => {
       openaiBaseUrl: 'https://api.openai.com/v1',
       model: 'gemini-3-flash',
       providerType: 'openai',
+      disableThinking: false,
     }));
     await client.callChat('system', 'user');
 
     const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
-    expect(body).not.toHaveProperty('thinking');
-    expect(body).not.toHaveProperty('reasoning');
-    expect(body).not.toHaveProperty('reasoning_effort');
+    expect(body.reasoning_effort).toBe('none');
   });
+
+  it.each([
+    [
+      'OpenAI-compatible',
+      'https://compatible.example/v1',
+      'custom',
+      "Unsupported parameter: 'reasoning_effort'",
+      'reasoning_effort',
+    ],
+    [
+      'OpenRouter',
+      'https://openrouter.ai/api/v1',
+      'openrouter',
+      "Unknown parameter: 'reasoning'",
+      'reasoning',
+    ],
+    [
+      'DeepSeek',
+      'https://api.deepseek.com',
+      'deepseek',
+      "Parameter 'thinking' is not supported",
+      'thinking',
+    ],
+  ] as const)(
+    '%s 不支持关闭参数时移除该参数并按默认模式继续',
+    async (_name, openaiBaseUrl, providerType, errorMessage, parameterName) => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 400,
+          json: async () => ({
+            error: { message: errorMessage },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            choices: [{ message: { content: 'translated with default thinking' } }],
+          }),
+        });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const client = new OpenAIClient(createConfig({
+        openaiBaseUrl,
+        model: 'legacy-reasoning-model',
+        providerType,
+      }));
+
+      await expect(client.callChat('system', 'user'))
+        .resolves.toBe('translated with default thinking');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      const firstBody = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+      const fallbackBody = JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string);
+      expect(firstBody).toHaveProperty(parameterName);
+      expect(fallbackBody).not.toHaveProperty('reasoning_effort');
+      expect(fallbackBody).not.toHaveProperty('reasoning');
+      expect(fallbackBody).not.toHaveProperty('thinking');
+    }
+  );
 
   it('旧版单 API 字段不再迁移，直接使用预设供应商', () => {
     const config = normalizeApiConfig({
@@ -217,6 +288,7 @@ describe('local OpenAI-compatible config', () => {
     expect(config).toMatchObject({
       openaiBaseUrl: 'https://api.openai.com/v1',
       llmModel: 'gpt-4o-mini',
+      disableThinking: true,
     });
   });
 

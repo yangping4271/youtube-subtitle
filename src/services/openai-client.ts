@@ -9,6 +9,8 @@ import type { ChatOptions, TranslatorConfig } from '../types/index.js';
 
 const logger = setupLogger('openai-client');
 
+type ThinkingDisableMode = 'deepseek' | 'openrouter' | 'openai-compatible';
+
 /**
  * OpenAI API 客户端
  */
@@ -17,14 +19,12 @@ export class OpenAIClient {
   private apiKey: string;
   private model: string;
   private providerType: string;
-  private disableThinking: boolean;
 
   constructor(config: TranslatorConfig) {
     this.baseUrl = config.openaiBaseUrl;
     this.apiKey = config.openaiApiKey;
     this.model = config.model;
     this.providerType = config.providerType || 'custom';
-    this.disableThinking = config.disableThinking !== false;
   }
 
   private getHostname(): string {
@@ -54,35 +54,49 @@ export class OpenAIClient {
     }
   }
 
-  private shouldSendDeepSeekThinkingDisabled(): boolean {
-    if (!this.disableThinking) {
-      return false;
-    }
-
-    const model = this.model.toLowerCase();
-    if (!model.startsWith('deepseek-v4-')) {
-      return false;
-    }
-
-    return this.providerType === 'deepseek' || this.getHostname().endsWith('deepseek.com');
-  }
-
-  private shouldSendOpenRouterReasoningNone(): boolean {
-    if (!this.disableThinking) {
-      return false;
-    }
-
-    return this.providerType === 'openrouter'
-      || this.getHostname().endsWith('openrouter.ai')
+  /**
+   * 初次请求选择一种关闭思考模式的参数格式。
+   * URL 识别优先于存储的 providerType，避免代理地址与旧配置不一致时发送错误格式。
+   */
+  private getThinkingDisableMode(): ThinkingDisableMode {
+    const isOpenRouter = this.getHostname().endsWith('openrouter.ai')
       || this.getPathParts().has('openrouter');
-  }
-
-  private shouldSendGPTReasoningNone(): boolean {
-    if (!this.disableThinking) {
-      return false;
+    if (isOpenRouter || this.providerType === 'openrouter') {
+      return 'openrouter';
     }
 
-    return this.model.trim().toLowerCase().startsWith('gpt');
+    if (this.getHostname().endsWith('deepseek.com') || this.providerType === 'deepseek') {
+      return 'deepseek';
+    }
+
+    return 'openai-compatible';
+  }
+
+  private isThinkingCompatibilityError(
+    error: Error,
+    mode: ThinkingDisableMode
+  ): boolean {
+    const message = error.message.toLowerCase();
+    const parameterName = mode === 'deepseek'
+      ? 'thinking'
+      : mode === 'openrouter'
+        ? 'reasoning'
+        : 'reasoning_effort';
+
+    return message.includes(parameterName) && this.isRequestCompatibilityError(error);
+  }
+
+  private removeThinkingDisableParameter(
+    body: Record<string, unknown>,
+    mode: ThinkingDisableMode
+  ): void {
+    if (mode === 'deepseek') {
+      delete body.thinking;
+    } else if (mode === 'openrouter') {
+      delete body.reasoning;
+    } else {
+      delete body.reasoning_effort;
+    }
   }
 
   private isRequestCompatibilityError(error: Error): boolean {
@@ -140,23 +154,21 @@ export class OpenAIClient {
       body.response_format = responseFormat;
     }
 
-    const thinkingDisabled = this.shouldSendDeepSeekThinkingDisabled();
-    if (thinkingDisabled) {
+    const thinkingDisableMode = this.getThinkingDisableMode();
+    if (thinkingDisableMode === 'deepseek') {
       body.thinking = { type: 'disabled' };
     }
 
-    const openRouterReasoningDisabled = this.shouldSendOpenRouterReasoningNone();
-    if (openRouterReasoningDisabled) {
+    if (thinkingDisableMode === 'openrouter') {
       body.reasoning = { effort: 'none' };
     }
 
-    const gptReasoningDisabled = !openRouterReasoningDisabled && this.shouldSendGPTReasoningNone();
-    if (gptReasoningDisabled) {
+    if (thinkingDisableMode === 'openai-compatible') {
       body.reasoning_effort = 'none';
     }
 
     logger.info(
-      `请求参数: provider=${this.providerType}, model=${this.model}, response_format=${responseFormat?.type || 'none'}, reasoning=${thinkingDisabled ? 'deepseek-disabled' : openRouterReasoningDisabled ? 'openrouter-none' : gptReasoningDisabled ? 'gpt-none' : 'default'}`
+      `请求参数: provider=${this.providerType}, model=${this.model}, response_format=${responseFormat?.type || 'none'}, reasoning=${thinkingDisableMode}-disabled`
     );
 
     // 使用 withRetry 包装 API 调用，自动重试 2 次
@@ -177,30 +189,48 @@ export class OpenAIClient {
             headers.Authorization = `Bearer ${this.apiKey}`;
           }
 
-          const response = await fetch(url, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body),
-            signal: controller.signal,
-          });
+          const sendRequest = async (): Promise<string> => {
+            const response = await fetch(url, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(body),
+              signal: controller.signal,
+            });
 
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            const errorMessage = (errorData as { error?: { message?: string } })?.error?.message ||
-              `API 请求失败: ${response.status}`;
-            throw new Error(errorMessage);
-          }
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              const errorMessage = (errorData as { error?: { message?: string } })?.error?.message ||
+                `API 请求失败: ${response.status}`;
+              throw new Error(errorMessage);
+            }
 
-          const data = await response.json() as {
-            choices?: Array<{ message?: { content?: string } }>;
+            const data = await response.json() as {
+              choices?: Array<{ message?: { content?: string } }>;
+            };
+
+            const content = data.choices?.[0]?.message?.content;
+            if (!content) {
+              throw new Error('API 返回内容为空');
+            }
+
+            return content;
           };
 
-          const content = data.choices?.[0]?.message?.content;
-          if (!content) {
-            throw new Error('API 返回内容为空');
+          try {
+            return await sendRequest();
+          } catch (error) {
+            if (
+              error instanceof Error &&
+              this.isThinkingCompatibilityError(error, thinkingDisableMode)
+            ) {
+              this.removeThinkingDisableParameter(body, thinkingDisableMode);
+              logger.warn(
+                `模型或服务不支持关闭思考参数，改用默认思考模式: provider=${this.providerType}, model=${this.model}`
+              );
+              return sendRequest();
+            }
+            throw error;
           }
-
-          return content;
         } catch (error) {
           if (error instanceof Error && error.name === 'AbortError') {
             // 区分是超时还是外部取消

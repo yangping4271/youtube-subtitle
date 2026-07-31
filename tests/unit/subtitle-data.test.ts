@@ -117,5 +117,41 @@ describe('SubtitleData', () => {
       expect(texts).toContain('9.8');
       expect(texts.filter(text => text === '.')).toHaveLength(1);
     });
+
+    it('应该完整保留百分比 token', () => {
+      const input: SubtitleEntry[] = [
+        {
+          index: 1,
+          startTime: 0,
+          endTime: 3000,
+          text: '30% increased to 95% while GPT-5.6 stayed stable.'
+        }
+      ];
+
+      const texts = new SubtitleData(input)
+        .splitToWordSegments()
+        .getSegments()
+        .map(segment => segment.text);
+
+      expect(texts).toContain('30%');
+      expect(texts).toContain('95%');
+      expect(texts).toContain('5.6');
+    });
+
+    it('应该过滤整段声音提示，但保留其他方括号文本', () => {
+      const input: SubtitleEntry[] = [
+        { index: 1, startTime: 0, endTime: 100, text: '[music]' },
+        { index: 2, startTime: 100, endTime: 200, text: '[React]' },
+        { index: 3, startTime: 200, endTime: 300, text: '(snorts)' },
+        { index: 4, startTime: 300, endTime: 400, text: 'works' },
+      ];
+
+      const texts = new SubtitleData(input)
+        .splitToWordSegments()
+        .getSegments()
+        .map(segment => segment.text);
+
+      expect(texts).toEqual(['React', 'works']);
+    });
   });
 });
