@@ -21,6 +21,10 @@ import type {
 
 const logger = setupLogger('translation-session');
 
+// 首批优先保证尽快出现字幕，后续批次优先保证吞吐量。
+const FIRST_BATCH_MAX_WORDS = 80;
+const LATER_BATCH_MAX_WORDS = 500;
+
 export interface ChatCompletionPort {
   callChat(
     systemPrompt: string,
@@ -44,6 +48,7 @@ export interface TranslationSessionObserver {
     total: number
   ) => Promise<void> | void;
   onPartialResult?: (
+    // 可能是首批中的一个翻译子批，不保证一次回调对应完整大批次。
     partial: BilingualSubtitles
   ) => Promise<void> | void;
 }
@@ -51,6 +56,8 @@ export interface TranslationSessionObserver {
 interface TranslationBatchResult {
   sentenceCount: number;
   subtitles: BilingualSubtitles;
+  /** 首批已经按翻译子批流式发送过，最终聚合时不要再次通知观察器。 */
+  streamed: boolean;
 }
 
 /**
@@ -114,7 +121,13 @@ export class TranslationSession {
     const preSplitSentences = presplitByPunctuation(wordSegments);
     logger.info(`预分句: ${preSplitSentences.length} 个句子`);
 
-    const batches = batchBySentenceCount(preSplitSentences, 150, 500);
+    // 首批只承担“尽快点亮字幕”的职责，控制请求体大小；后续批次保持较大的吞吐量。
+    // 这里的上限按单词数计算，不会切开一个已经预分好的句子。
+    const batches = batchBySentenceCount(
+      preSplitSentences,
+      FIRST_BATCH_MAX_WORDS,
+      LATER_BATCH_MAX_WORDS
+    );
     logger.info(`预分句 ${preSplitSentences.length} 个句子，分为 ${batches.length} 批`);
 
     if (batches.length === 0) {
@@ -154,13 +167,22 @@ export class TranslationSession {
         batchResult.getSegments(),
         translator,
         request,
-        batchNumber
+        batchNumber,
+        batchNumber === 1 && Boolean(observer.onPartialResult)
+          ? async (partial) => {
+            await this.notifyObserver(
+              '首批部分翻译结果',
+              () => observer.onPartialResult?.(partial)
+            );
+          }
+          : undefined
       );
 
       logger.info(`[批次${batchNumber}] 完成`);
       return {
         sentenceCount: batch.length,
         subtitles,
+        streamed: batchNumber === 1 && Boolean(observer.onPartialResult),
       };
     });
 
@@ -184,10 +206,14 @@ export class TranslationSession {
           '翻译进度',
           () => observer.onProgress?.('translate', completed, total)
         );
-        await this.notifyObserver(
-          '部分翻译结果',
-          () => observer.onPartialResult?.(partial)
-        );
+        // 首批已经在每个翻译子批完成后流式发送；这里仍然把完整结果加入
+        // 聚合数组，但跳过重复的观察器通知。
+        if (!batchResult.streamed) {
+          await this.notifyObserver(
+            '部分翻译结果',
+            () => observer.onPartialResult?.(partial)
+          );
+        }
       },
       signal
     );
@@ -286,7 +312,8 @@ export class TranslationSession {
     segments: SubtitleEntry[],
     translator: Translator,
     request: TranslationSessionRequest,
-    batchNumber: number
+    batchNumber: number,
+    onPartialResult?: (partial: BilingualSubtitles) => Promise<void> | void
   ): Promise<BilingualSubtitles> {
     const batchLabel = `批次${batchNumber}`;
     const translationBatchSize = this.config.batchSize;
@@ -328,6 +355,11 @@ export class TranslationSession {
         ...entry,
         index: start + entry.index,
       })));
+
+      // 首批按翻译子批尽早返回，让页面无需等待整个批次完成即可开始播放字幕。
+      if (onPartialResult) {
+        await onPartialResult(this.buildBilingualResult(chunk, translatedChunk));
+      }
     }
 
     const result = this.buildBilingualResult(segments, translated);
