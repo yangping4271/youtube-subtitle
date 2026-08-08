@@ -1,6 +1,6 @@
 {
   "name": "subtitle-translator-extension",
-  "version": "1.1.11",
+  "version": "1.1.12",
   "description": "YouTube 字幕翻译 Chrome 扩展",
   "type": "module",
   "license": "MIT",
@@ -13,7 +13,9 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:manual": "vitest run --config vitest.manual.config.ts",
-    "test:real-srt": "bun scripts/test-real-srt.ts"
+    "test:real-srt": "bun scripts/test-real-srt.ts",
+    "test:subtitle-fixture": "bun scripts/test-subtitle-fixture.ts",
+    "build:verify": "bun run build && bun run test:subtitle-fixture"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
