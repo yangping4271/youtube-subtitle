@@ -13,6 +13,21 @@ import type {
   ApiProviderType,
   TranslatorConfig,
 } from '../types';
+import { DEFAULT_CONCURRENCY, normalizeConcurrency } from '../utils/concurrency.js';
+import { popupConfigBridge } from './config-bridge.js';
+import type { PopupConfigBridge } from './config-bridge.js';
+
+export { normalizeApiBaseUrl } from '../utils/api-url.js';
+export { getApiHostPermissionPattern } from './config-bridge.js';
+
+/** DeepSeek V4 Flash 文档给出的账号级最大并发请求数。 */
+export const MAX_API_CONCURRENCY = 2500;
+
+/** 已知模型的账号级并发上限；未知模型不强加本地上限，由用户自行配置。 */
+export const MODEL_CONCURRENCY_LIMITS: Record<string, number> = {
+  'deepseek-v4-flash': MAX_API_CONCURRENCY,
+  'deepseek-v4-pro': 500,
+};
 
 // Chrome API 类型声明
 declare const chrome: {
@@ -28,10 +43,10 @@ export const DEFAULT_API_PROVIDERS: ApiProviderConfig[] = [
     id: 'openai',
     name: 'OpenAI',
     providerType: 'openai',
-    openaiBaseUrl: 'https://api.openai.com/v1',
+    openaiBaseUrl: 'https://api.openai.com',
     openaiApiKey: '',
     llmModel: 'gpt-4o-mini',
-    threadNum: 3,
+    threadNum: DEFAULT_CONCURRENCY,
     disableThinking: true,
   },
   {
@@ -41,7 +56,7 @@ export const DEFAULT_API_PROVIDERS: ApiProviderConfig[] = [
     openaiBaseUrl: 'https://openrouter.ai/api/v1',
     openaiApiKey: '',
     llmModel: 'openai/gpt-4o-mini',
-    threadNum: 3,
+    threadNum: DEFAULT_CONCURRENCY,
     disableThinking: true,
   },
   {
@@ -51,33 +66,41 @@ export const DEFAULT_API_PROVIDERS: ApiProviderConfig[] = [
     openaiBaseUrl: 'https://api.deepseek.com',
     openaiApiKey: '',
     llmModel: 'deepseek-v4-flash',
-    threadNum: 3,
+    threadNum: DEFAULT_CONCURRENCY,
     disableThinking: true,
   },
 ];
+
+/** 这三个供应商是内置配置，始终保留在供应商列表中。 */
+export const DEFAULT_API_PROVIDER_IDS = DEFAULT_API_PROVIDERS.map(provider => provider.id);
+
+export function isDefaultApiProviderId(providerId = ''): boolean {
+  return DEFAULT_API_PROVIDER_IDS.includes(providerId);
+}
 
 /** 默认 API 配置 */
 export const DEFAULT_API_CONFIG: ApiConfig = {
   activeProviderId: DEFAULT_API_PROVIDERS[0].id,
   providers: DEFAULT_API_PROVIDERS,
-  openaiBaseUrl: 'https://api.openai.com/v1',
+  openaiBaseUrl: 'https://api.openai.com',
   openaiApiKey: '',
   llmModel: 'gpt-4o-mini',
   targetLanguage: 'zh',
-  threadNum: 3,  // 默认并发数
+  threadNum: DEFAULT_CONCURRENCY,
   disableThinking: true,
 };
 
 /** 默认翻译器配置 */
 const DEFAULT_TRANSLATOR_CONFIG: TranslatorConfig = {
-  openaiBaseUrl: 'https://api.openai.com/v1',
+  openaiBaseUrl: 'https://api.openai.com',
   openaiApiKey: '',
   model: 'gpt-4o',
   providerType: 'openai',
   targetLanguage: 'zh',
   maxWordCountEnglish: 19,
-  threadNum: 3,  // 默认并发数，降低以避免 rate limit
-  batchSize: 20,
+  threadNum: DEFAULT_CONCURRENCY,
+  // 速度优先：缩小单次翻译请求，交给全局并发控制并行执行。
+  batchSize: 10,
   disableThinking: true,
   toleranceMultiplier: 1.2,
   warningMultiplier: 1.5,
@@ -119,6 +142,15 @@ function inferProviderType(baseUrl = ''): ApiProviderType {
   return 'custom';
 }
 
+export function getModelConcurrencyLimit(model = ''): number | undefined {
+  return MODEL_CONCURRENCY_LIMITS[model.trim().toLowerCase()];
+}
+
+function normalizeThreadNum(value: unknown, model = ''): number {
+  const modelLimit = getModelConcurrencyLimit(model);
+  return normalizeConcurrency(value, modelLimit);
+}
+
 function normalizeProvider(provider: ApiProviderConfig): ApiProviderConfig {
   return {
     id: provider.id,
@@ -127,7 +159,7 @@ function normalizeProvider(provider: ApiProviderConfig): ApiProviderConfig {
     openaiBaseUrl: typeof provider.openaiBaseUrl === 'string' ? provider.openaiBaseUrl : '',
     openaiApiKey: provider.openaiApiKey || '',
     llmModel: provider.llmModel || '',
-    threadNum: provider.threadNum || DEFAULT_TRANSLATOR_CONFIG.threadNum,
+    threadNum: normalizeThreadNum(provider.threadNum, provider.llmModel),
     disableThinking: true,
   };
 }
@@ -136,14 +168,26 @@ function cloneDefaultProviders(): ApiProviderConfig[] {
   return DEFAULT_API_PROVIDERS.map(provider => ({ ...provider }));
 }
 
+function mergeDefaultProviders(configuredProviders: ApiProviderConfig[]): ApiProviderConfig[] {
+  const configuredById = new Map(configuredProviders.map(provider => [provider.id, provider]));
+  const defaultProviders = DEFAULT_API_PROVIDERS.map(defaultProvider => ({
+    ...defaultProvider,
+    ...(configuredById.get(defaultProvider.id) || {}),
+    id: defaultProvider.id,
+  }));
+  const customProviders = configuredProviders.filter(
+    provider => !isDefaultApiProviderId(provider.id)
+  );
+
+  return [...defaultProviders, ...customProviders];
+}
+
 function ensureUniqueProviders(providers: ApiProviderConfig[]): ApiProviderConfig[] {
   const result: ApiProviderConfig[] = [];
   const seen = new Set<string>();
 
   for (const provider of providers) {
-    const key = provider.providerType && provider.providerType !== 'custom'
-      ? `type:${provider.providerType}`
-      : `id:${provider.id}`;
+    const key = `id:${provider.id}`;
 
     if (seen.has(key)) {
       continue;
@@ -163,8 +207,10 @@ export function normalizeApiConfig(apiConfig: Partial<ApiConfig> | null | undefi
       .map(normalizeProvider)
     : [];
 
-  const providers = ensureUniqueProviders(
-    configuredProviders.length > 0 ? configuredProviders : cloneDefaultProviders()
+  const providers = mergeDefaultProviders(
+    ensureUniqueProviders(
+      configuredProviders.length > 0 ? configuredProviders : cloneDefaultProviders()
+    )
   );
 
   const activeProviderId = apiConfig?.activeProviderId && providers.some(p => p.id === apiConfig.activeProviderId)
@@ -180,7 +226,7 @@ export function normalizeApiConfig(apiConfig: Partial<ApiConfig> | null | undefi
     llmModel: activeProvider.llmModel,
     providerType: activeProvider.providerType,
     targetLanguage: apiConfig?.targetLanguage || DEFAULT_TRANSLATOR_CONFIG.targetLanguage,
-    threadNum: activeProvider.threadNum || DEFAULT_TRANSLATOR_CONFIG.threadNum,
+    threadNum: normalizeThreadNum(activeProvider.threadNum, activeProvider.llmModel),
     disableThinking: true,
   };
 }
@@ -205,7 +251,7 @@ export function buildTranslatorConfig(
     model: normalized.llmModel,
     providerType: normalized.providerType || inferProviderType(normalized.openaiBaseUrl),
     targetLanguage: normalized.targetLanguage || DEFAULT_TRANSLATOR_CONFIG.targetLanguage,
-    threadNum: normalized.threadNum || DEFAULT_TRANSLATOR_CONFIG.threadNum,
+    threadNum: normalizeThreadNum(normalized.threadNum, normalized.llmModel),
     disableThinking: true,
   };
 }
@@ -351,7 +397,14 @@ export function validateConfig(config: TranslatorConfig): string[] {
   }
 
   if (config.batchSize < 10 || config.batchSize > 100) {
-    errors.push('批次大小应在 10-100 之间（推荐: 20）');
+    errors.push('批次大小应在 10-100 之间（推荐: 10）');
+  }
+
+  const modelLimit = getModelConcurrencyLimit(config.model);
+  if (!Number.isInteger(config.threadNum) || config.threadNum < 1) {
+    errors.push(`模型 ${config.model} 的并发数必须是大于等于 1 的整数`);
+  } else if (modelLimit !== undefined && config.threadNum > modelLimit) {
+    errors.push(`模型 ${config.model} 的并发数应在 1-${modelLimit} 之间`);
   }
 
   return errors;
@@ -368,8 +421,16 @@ declare global {
       isEmptySettings: typeof isEmptySettings;
       DEFAULT_API_CONFIG: typeof DEFAULT_API_CONFIG;
       DEFAULT_API_PROVIDERS: typeof DEFAULT_API_PROVIDERS;
+      isDefaultApiProviderId: typeof isDefaultApiProviderId;
+      MAX_API_CONCURRENCY: typeof MAX_API_CONCURRENCY;
+      MODEL_CONCURRENCY_LIMITS: typeof MODEL_CONCURRENCY_LIMITS;
+      normalizeConcurrency: PopupConfigBridge['normalizeConcurrency'];
+      getModelConcurrencyLimit: typeof getModelConcurrencyLimit;
+      normalizeApiBaseUrl: PopupConfigBridge['normalizeApiBaseUrl'];
       normalizeApiConfig: typeof normalizeApiConfig;
       getActiveApiProvider: typeof getActiveApiProvider;
+      getApiHostPermissionPattern: PopupConfigBridge['getApiHostPermissionPattern'];
+      formatApiResponseError: PopupConfigBridge['formatApiResponseError'];
       SUPPORTED_MODELS: typeof SUPPORTED_MODELS;
       SUPPORTED_LANGUAGES: typeof SUPPORTED_LANGUAGES;
     };
@@ -389,6 +450,11 @@ if (typeof window !== 'undefined') {
     isEmptySettings,
     DEFAULT_API_CONFIG,
     DEFAULT_API_PROVIDERS,
+    isDefaultApiProviderId,
+    MAX_API_CONCURRENCY,
+    MODEL_CONCURRENCY_LIMITS,
+    ...popupConfigBridge,
+    getModelConcurrencyLimit,
     normalizeApiConfig,
     getActiveApiProvider,
     SUPPORTED_MODELS,

@@ -5,6 +5,11 @@
 import { classifyError, withRetry } from '../utils/retry.js';
 import { setupLogger } from '../utils/logger.js';
 import { createCancellationError } from '../utils/cancellation.js';
+import {
+  createApiResponseError,
+  isOptionalRequestParameterUnsupportedError,
+} from '../utils/error-handler.js';
+import { normalizeApiBaseUrl } from '../utils/api-url.js';
 import type { ChatOptions, TranslatorConfig } from '../types/index.js';
 
 const logger = setupLogger('openai-client');
@@ -21,7 +26,7 @@ export class OpenAIClient {
   private providerType: string;
 
   constructor(config: TranslatorConfig) {
-    this.baseUrl = config.openaiBaseUrl;
+    this.baseUrl = normalizeApiBaseUrl(config.openaiBaseUrl, config.providerType);
     this.apiKey = config.openaiApiKey;
     this.model = config.model;
     this.providerType = config.providerType || 'custom';
@@ -76,14 +81,13 @@ export class OpenAIClient {
     error: Error,
     mode: ThinkingDisableMode
   ): boolean {
-    const message = error.message.toLowerCase();
     const parameterName = mode === 'deepseek'
       ? 'thinking'
       : mode === 'openrouter'
         ? 'reasoning'
         : 'reasoning_effort';
 
-    return message.includes(parameterName) && this.isRequestCompatibilityError(error);
+    return isOptionalRequestParameterUnsupportedError(error, parameterName);
   }
 
   private removeThinkingDisableParameter(
@@ -97,32 +101,6 @@ export class OpenAIClient {
     } else {
       delete body.reasoning_effort;
     }
-  }
-
-  private isRequestCompatibilityError(error: Error): boolean {
-    const message = error.message.toLowerCase();
-    const mentionsOptionalRequestParam =
-      message.includes('response_format') ||
-      message.includes('json_schema') ||
-      message.includes('json_object') ||
-      message.includes('reasoning_effort') ||
-      message.includes('thinking') ||
-      message.includes('reasoning');
-
-    if (!mentionsOptionalRequestParam) {
-      return false;
-    }
-
-    return [
-      'unsupported',
-      'not supported',
-      'unavailable',
-      'invalid parameter',
-      'unknown parameter',
-      'extra inputs are not permitted',
-      'invalid_request_error',
-      'not available',
-    ].some(pattern => message.includes(pattern));
   }
 
   /**
@@ -198,10 +176,7 @@ export class OpenAIClient {
             });
 
             if (!response.ok) {
-              const errorData = await response.json().catch(() => ({}));
-              const errorMessage = (errorData as { error?: { message?: string } })?.error?.message ||
-                `API 请求失败: ${response.status}`;
-              throw new Error(errorMessage);
+              throw await createApiResponseError(response);
             }
 
             const data = await response.json() as {
@@ -249,7 +224,7 @@ export class OpenAIClient {
         maxRetries: 1,
         delays: [1000, 2000],
         operationName: `OpenAI API (${this.model})`,
-        shouldRetry: (error) => !this.isRequestCompatibilityError(error) && classifyError(error) === 'retryable',
+        shouldRetry: (error) => classifyError(error) === 'retryable',
         signal: externalSignal,
       }
     );

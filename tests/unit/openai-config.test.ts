@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildTranslatorConfig, normalizeApiConfig, validateConfig } from '../../src/extension/config.js';
+import {
+  buildTranslatorConfig,
+  getApiHostPermissionPattern,
+  getModelConcurrencyLimit,
+  isDefaultApiProviderId,
+  normalizeApiBaseUrl,
+  normalizeApiConfig,
+  validateConfig,
+} from '../../src/extension/config.js';
 import { OpenAIClient } from '../../src/services/openai-client.js';
 import type { TranslatorConfig } from '../../src/types/index.js';
+import { formatApiResponseError } from '../../src/utils/error-handler.js';
 
 function createConfig(overrides: Partial<TranslatorConfig> = {}): TranslatorConfig {
   return {
@@ -29,6 +38,106 @@ describe('local OpenAI-compatible config', () => {
     expect(errors).toEqual([]);
   });
 
+  it('按模型动态应用并发上限', () => {
+    expect(getModelConcurrencyLimit('deepseek-v4-flash')).toBe(2500);
+    expect(getModelConcurrencyLimit('deepseek-v4-pro')).toBe(500);
+    expect(getModelConcurrencyLimit('unknown-model')).toBeUndefined();
+
+    const unknownConfig = normalizeApiConfig({
+      activeProviderId: 'unknown',
+      providers: [{
+        id: 'unknown',
+        name: 'Unknown',
+        providerType: 'custom',
+        openaiBaseUrl: 'https://example.test/v1',
+        openaiApiKey: '',
+        llmModel: 'unknown-model',
+        threadNum: 9999,
+      }],
+    });
+    expect(unknownConfig.threadNum).toBe(9999);
+
+    const flashConfig = normalizeApiConfig({
+      activeProviderId: 'flash',
+      providers: [{
+        id: 'flash',
+        name: 'DeepSeek Flash',
+        providerType: 'deepseek',
+        openaiBaseUrl: 'https://api.deepseek.com',
+        openaiApiKey: '',
+        llmModel: 'deepseek-v4-flash',
+        threadNum: 9999,
+      }],
+    });
+    expect(flashConfig.threadNum).toBe(2500);
+
+    const proConfig = normalizeApiConfig({
+      activeProviderId: 'pro',
+      providers: [{
+        id: 'pro',
+        name: 'DeepSeek Pro',
+        providerType: 'deepseek',
+        openaiBaseUrl: 'https://api.deepseek.com',
+        openaiApiKey: '',
+        llmModel: 'deepseek-v4-pro',
+        threadNum: 9999,
+      }],
+    });
+    expect(proConfig.threadNum).toBe(500);
+  });
+
+  it('默认三个供应商始终存在，且自定义供应商不会被覆盖', () => {
+    const config = normalizeApiConfig({
+      activeProviderId: 'local',
+      providers: [{
+        id: 'local',
+        name: '本地模型',
+        openaiBaseUrl: 'http://127.0.0.1:1234/v1',
+        openaiApiKey: '',
+        llmModel: 'local-model',
+        threadNum: 3,
+      }],
+    });
+
+    expect(config.providers?.map(provider => provider.id)).toEqual([
+      'openai',
+      'openrouter',
+      'deepseek',
+      'local',
+    ]);
+    expect(config.providers?.filter(provider => isDefaultApiProviderId(provider.id))).toHaveLength(3);
+    expect(config.activeProviderId).toBe('local');
+  });
+
+  it('OpenAI 只填写域名时自动补全实际 Base URL', () => {
+    expect(normalizeApiBaseUrl('https://api.openai.com', 'openai'))
+      .toBe('https://api.openai.com/v1');
+    expect(normalizeApiBaseUrl('https://api.openai.com/v1/', 'openai'))
+      .toBe('https://api.openai.com/v1');
+    expect(normalizeApiBaseUrl('https://api.krill-ai.net/codex/v1', 'custom'))
+      .toBe('https://api.krill-ai.net/codex/v1');
+    expect(normalizeApiBaseUrl('https://api.deepseek.com', 'deepseek'))
+      .toBe('https://api.deepseek.com');
+  });
+
+  it('OpenAI 客户端会使用补全后的 /v1/chat/completions 地址', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'ok' } }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new OpenAIClient(createConfig({
+      openaiBaseUrl: 'https://api.openai.com',
+      providerType: 'openai',
+    }));
+
+    await expect(client.callChat('system', 'user')).resolves.toBe('ok');
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'https://api.openai.com/v1/chat/completions'
+    );
+  });
+
   it('空 API Key 时不发送 Authorization 请求头', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -50,6 +159,109 @@ describe('local OpenAI-compatible config', () => {
       },
     });
     expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty('Authorization');
+  });
+
+  it('将第三方 API 地址转换为按域名申请的 host permission', () => {
+    expect(getApiHostPermissionPattern('https://api.krill-ai.net/codex/v1'))
+      .toBe('https://api.krill-ai.net/*');
+    expect(getApiHostPermissionPattern('https://example.com:8443/v1/'))
+      .toBe('https://example.com:8443/*');
+  });
+
+  it('拒绝非 HTTPS 的第三方 API 地址', () => {
+    expect(() => getApiHostPermissionPattern('http://192.168.31.18:8012/v1'))
+      .toThrow('第三方 API 必须使用 HTTPS');
+  });
+
+  it('保留 API HTTP 状态、响应正文和 request ID，且 400 不重复重试', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      statusText: 'Bad Request',
+      headers: {
+        get: (name: string) => {
+          const header = name.toLowerCase();
+          if (header === 'x-request-id') return 'req-400';
+          if (header === 'retry-after') return '0';
+          return null;
+        },
+      },
+      text: async () => JSON.stringify({
+        error: { message: 'invalid_request_error: bad request' },
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new OpenAIClient(createConfig({
+      openaiBaseUrl: 'https://api.krill-ai.net/codex/v1',
+      model: 'gpt-5.6-luna',
+    }));
+
+    let error: Error | undefined;
+    try {
+      await client.callChat('system', 'user');
+    } catch (caught) {
+      error = caught as Error;
+    }
+
+    expect(error?.message).toContain('HTTP 400 Bad Request');
+    expect(error?.message).toContain('request_id=req-400');
+    expect((error as Error & { retryAfterMs?: number })?.retryAfterMs).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('测试连接错误同时显示 HTTP 状态、正文和 request ID', async () => {
+    const response = new Response('plain upstream error', {
+      status: 502,
+      statusText: 'Bad Gateway',
+      headers: { 'x-request-id': 'req-test-502' },
+    });
+
+    await expect(formatApiResponseError(response)).resolves.toContain('HTTP 502 Bad Gateway');
+    await expect(formatApiResponseError(new Response('plain upstream error', {
+      status: 502,
+      statusText: 'Bad Gateway',
+      headers: { 'x-request-id': 'req-test-502' },
+    }))).resolves.toMatch(/plain upstream error|request_id=req-test-502/);
+  });
+
+  it('保留结构化响应的完整 raw body 和正文 request_id', async () => {
+    const responseBody = {
+      error: {
+        message: 'bad request',
+        type: 'invalid_request_error',
+        code: 'bad_code',
+      },
+      request_id: 'body-req',
+      diagnostic: {
+        upstream: 'details',
+      },
+    };
+    const rawBody = JSON.stringify(responseBody);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      statusText: 'Bad Request',
+      headers: {
+        get: () => null,
+      },
+      text: async () => rawBody,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new OpenAIClient(createConfig());
+    let error: (Error & { rawBody?: string; requestId?: string }) | undefined;
+    try {
+      await client.callChat('system', 'user');
+    } catch (caught) {
+      error = caught as Error & { rawBody?: string; requestId?: string };
+    }
+
+    expect(error?.requestId).toBe('body-req');
+    expect(error?.rawBody).toBe(rawBody);
+    expect(error?.message).toContain('bad_code');
+    expect(error?.message).toContain('details');
+    expect(error?.message).toContain('body-req');
   });
 
   it.each(['deepseek-v4-flash', 'deepseek-chat', 'custom-deepseek-model'])(
@@ -286,7 +498,7 @@ describe('local OpenAI-compatible config', () => {
     expect(config.providers).toHaveLength(3);
     expect(config.providers?.map(provider => provider.id)).toEqual(['openai', 'openrouter', 'deepseek']);
     expect(config).toMatchObject({
-      openaiBaseUrl: 'https://api.openai.com/v1',
+      openaiBaseUrl: 'https://api.openai.com',
       llmModel: 'gpt-4o-mini',
       disableThinking: true,
     });
@@ -316,12 +528,14 @@ describe('local OpenAI-compatible config', () => {
       ],
     });
 
-    expect(config.providers?.[0]).toMatchObject({
+    const savedProvider = config.providers?.find(provider => provider.id === 'saved-provider');
+    const newProvider = config.providers?.find(provider => provider.id === 'new-provider');
+    expect(savedProvider).toMatchObject({
       openaiBaseUrl: 'https://saved.example/v1',
       openaiApiKey: 'saved-key',
       llmModel: 'saved-model',
     });
-    expect(config.providers?.[1]).toMatchObject({
+    expect(newProvider).toMatchObject({
       openaiBaseUrl: '',
       openaiApiKey: '',
       llmModel: '',
@@ -341,7 +555,7 @@ describe('local OpenAI-compatible config', () => {
     });
   });
 
-  it('供应商列表按内置 providerType 去重', () => {
+  it('允许同一供应商类型保存多个独立配置', () => {
     const config = normalizeApiConfig({
       activeProviderId: 'openrouter-custom',
       targetLanguage: 'zh',
@@ -367,9 +581,9 @@ describe('local OpenAI-compatible config', () => {
       ],
     });
 
-    expect(config.providers).toHaveLength(1);
-    expect(config.activeProviderId).toBe('openrouter');
-    expect(config.openaiApiKey).toBe('first-key');
+    expect(config.providers).toHaveLength(4);
+    expect(config.activeProviderId).toBe('openrouter-custom');
+    expect(config.openaiApiKey).toBe('second-key');
   });
 
   it('构建翻译配置时使用当前激活供应商', () => {

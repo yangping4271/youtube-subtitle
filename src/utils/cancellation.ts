@@ -8,6 +8,31 @@ export interface CancellationSignal {
   removeEventListener(type: 'abort', listener: () => void): void;
 }
 
+export interface CancellationScope {
+  readonly signal: CancellationSignal;
+  abort(): void;
+  dispose(): void;
+}
+
+/** 创建一个可主动取消、并会跟随父 signal 的取消作用域。 */
+export function createLinkedCancellationScope(
+  parent?: CancellationSignal
+): CancellationScope {
+  const controller = new AbortController();
+  const parentAbortHandler = (): void => controller.abort();
+
+  parent?.addEventListener('abort', parentAbortHandler);
+  if (parent?.aborted) {
+    controller.abort();
+  }
+
+  return {
+    signal: controller.signal,
+    abort: () => controller.abort(),
+    dispose: () => parent?.removeEventListener('abort', parentAbortHandler),
+  };
+}
+
 export function createCancellationError(message: string): Error {
   const error = new Error(message);
   error.name = 'AbortError';

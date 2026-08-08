@@ -7,10 +7,18 @@ import {
   createCancellationError,
   type CancellationSignal,
 } from './cancellation.js';
+import {
+  classifyErrorWithSuggestion,
+  getHttpStatusPolicy,
+} from './error-handler.js';
 
 const logger = setupLogger('retry');
 
 export type ErrorType = 'retryable' | 'fatal';
+
+interface RetryHintError extends Error {
+  retryAfterMs?: number;
+}
 
 export interface RetryOptions {
   /** 最大重试次数（不包括首次尝试） */
@@ -25,37 +33,35 @@ export interface RetryOptions {
   signal?: CancellationSignal;
 }
 
-/** 致命错误模式 - 不应重试 */
-const FATAL_PATTERNS = [
-  'invalid api key', 'incorrect api key', 'api key not found',
-  'authentication failed', 'invalid_api_key',
-  'model_not_found', 'model does not exist',
-  '404', 'not found', '401', 'unauthorized', '403', 'forbidden',
-];
-
-/** 可重试错误模式 */
-const RETRYABLE_PATTERNS = [
-  'timeout', 'timed out', 'aborterror',
-  'econnreset', 'econnrefused', 'network', 'fetch failed',
-  'rate_limit_exceeded', 'rate limit', 'too many requests', '429',
-  '500', '502', '503', 'service unavailable', 'internal server error', 'bad gateway',
-  'temporarily unavailable',
-];
-
 /**
  * 分类错误类型
  */
 export function classifyError(error: Error): ErrorType {
-  const message = error.message.toLowerCase();
+  const status = (error as Error & { status?: unknown }).status;
+  if (typeof status === 'number' && status >= 400) {
+    return getHttpStatusPolicy(status).isRetryable ? 'retryable' : 'fatal';
+  }
 
-  if (FATAL_PATTERNS.some(p => message.includes(p))) return 'fatal';
-  if (RETRYABLE_PATTERNS.some(p => message.includes(p))) return 'retryable';
-
-  return 'retryable'; // 默认可重试
+  return classifyErrorWithSuggestion(error).isRetryable ? 'retryable' : 'fatal';
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+function delay(ms: number, signal?: CancellationSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(createCancellationError('操作已取消'));
+  }
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      reject(createCancellationError('操作已取消'));
+    };
+    signal?.addEventListener('abort', onAbort);
+  });
 }
 
 /**
@@ -83,9 +89,12 @@ export async function withRetry<T>(
 
     try {
       if (attempt > 0) {
-        const delayMs = delays[Math.min(attempt - 1, delays.length - 1)];
+        const retryAfterMs = (lastError as RetryHintError | undefined)?.retryAfterMs;
+        const delayMs = typeof retryAfterMs === 'number'
+          ? retryAfterMs
+          : delays[Math.min(attempt - 1, delays.length - 1)];
         logger.info(`⏳ ${operationName} 第 ${attempt} 次重试，延迟 ${delayMs}ms`);
-        await delay(delayMs);
+        await delay(delayMs, signal);
 
         // 延迟后再次检查是否已取消
         if (signal?.aborted) {
