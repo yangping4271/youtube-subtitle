@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createYouTubeSubtitleAcquirer as createCoreYouTubeSubtitleAcquirer,
+  normalizeSubtitleText,
+  normalizeSubtitleTiming,
 } from '../../src/core/subtitle-acquisition.js';
 import type {
   SubtitleAcquisitionDependencies,
@@ -124,6 +126,39 @@ function installSrv3ParagraphDocument(): void {
 describe('subtitle acquisition', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('保留字幕源中的逐词重复，只规范化空白', () => {
+    expect(normalizeSubtitleTiming([
+      { startTime: 0, endTime: 1, text: 'This This is is a a Raspberry Raspberry Pi Pi 5 5.' },
+      { startTime: 1, endTime: 2, text: 'I I really really think.' },
+    ])).toEqual([
+      { startTime: 0, endTime: 1, text: 'This This is is a a Raspberry Raspberry Pi Pi 5 5.' },
+      { startTime: 1, endTime: 2, text: 'I I really really think.' },
+    ]);
+  });
+
+  it('保留短句中的正常重复词语', () => {
+    expect(normalizeSubtitleText('very very good good')).toBe('very very good good');
+    expect(normalizeSubtitleText('I I can can')).toBe('I I can can');
+  });
+
+  it('保留较长的真实口语重复，不把它当作采集错误', () => {
+    expect(normalizeSubtitleText('I I really really do do')).toBe('I I really really do do');
+    expect(normalizeSubtitleText('very very very very good good')).toBe(
+      'very very very very good good'
+    );
+  });
+
+  it('去除 transcript panel 产生的相同时间和文本的重复字幕', () => {
+    expect(normalizeSubtitleTiming([
+      { startTime: 0, endTime: 2, text: 'This is a Raspberry Pi.' },
+      { startTime: 0, endTime: 4, text: 'This is a Raspberry Pi.' },
+      { startTime: 4, endTime: 6, text: 'It is a computer.' },
+    ])).toEqual([
+      { startTime: 0, endTime: 4, text: 'This is a Raspberry Pi.' },
+      { startTime: 4, endTime: 6, text: 'It is a computer.' },
+    ]);
   });
 
   it('通过 caption track 返回按时间排序且规范化的字幕', async () => {

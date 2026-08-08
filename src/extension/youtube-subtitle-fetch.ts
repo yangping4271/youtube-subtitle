@@ -1,5 +1,6 @@
 import {
   createYouTubeSubtitleAcquirer,
+  normalizeSubtitleText,
   normalizeSubtitleTiming,
 } from '../core/subtitle-acquisition.js';
 import type {
@@ -36,9 +37,16 @@ interface WindowCaptionTrackMessage {
 
 interface QueryElementLike {
   textContent?: string | null;
+  innerText?: string | null;
+  hidden?: boolean;
+  style?: {
+    display?: string;
+    visibility?: string;
+  };
   tagName?: string;
   getAttribute?(name: string): string | null;
   querySelector?(selector: string): QueryElementLike | null;
+  getClientRects?(): { length: number };
 }
 
 interface TranscriptQueryRoot {
@@ -280,7 +288,15 @@ export function findTranscriptTrigger(root: TranscriptQueryRoot): QueryElementLi
 }
 
 export function getTranscriptPanel(root: ParentNode = document): Element | null {
-  return root.querySelector(TRANSCRIPT_PANEL_SELECTOR);
+  const candidates = Array.from(root.querySelectorAll(TRANSCRIPT_PANEL_SELECTOR));
+  const visiblePanel = candidates.find((candidate) => isVisibleElement(candidate));
+  if (visiblePanel) {
+    return visiblePanel;
+  }
+
+  // 保持对测试桩和旧 DOM 实现的兼容，但仍然拒绝明确隐藏的 panel。
+  const candidate = root.querySelector(TRANSCRIPT_PANEL_SELECTOR);
+  return isVisibleElement(candidate) ? candidate as Element : null;
 }
 
 export function getTranscriptPanelState(root: ParentNode = document): TranscriptPanelState {
@@ -294,6 +310,12 @@ export function getTranscriptPanelState(root: ParentNode = document): Transcript
 }
 
 export function getTranscriptSegmentElements(root: ParentNode = document): Element[] {
+  const transcriptPanel = getTranscriptPanel(root);
+  if (!transcriptPanel) {
+    return [];
+  }
+
+  const searchRoot = transcriptPanel;
   const selectors = [
     'transcript-segment-view-model',
     'ytd-transcript-segment-renderer',
@@ -302,13 +324,42 @@ export function getTranscriptSegmentElements(root: ParentNode = document): Eleme
   ];
 
   for (const selector of selectors) {
-    const elements = Array.from(root.querySelectorAll(selector));
+    const elements = Array.from(searchRoot.querySelectorAll(selector));
     if (elements.length > 0) {
       return elements;
     }
   }
 
   return [];
+}
+
+function isVisibleElement(element: QueryElementLike | null | undefined): boolean {
+  if (!element) return false;
+  if (element.hidden) return false;
+  if (element.getAttribute?.('aria-hidden') === 'true') return false;
+  const hiddenAttribute = element.getAttribute?.('hidden');
+  if (hiddenAttribute !== undefined && hiddenAttribute !== null) return false;
+
+  const style = element.style;
+  if (style?.display === 'none' || style?.visibility === 'hidden') {
+    return false;
+  }
+
+  if (typeof window !== 'undefined'
+    && typeof window.getComputedStyle === 'function'
+    && element instanceof Element) {
+    const computedStyle = window.getComputedStyle(element);
+    if (computedStyle.display === 'none' || computedStyle.visibility === 'hidden') {
+      return false;
+    }
+  }
+
+  // jsdom/测试桩通常没有布局信息；只有在浏览器提供该 API 时才使用它。
+  if (typeof element.getClientRects === 'function' && element.getClientRects().length === 0) {
+    return false;
+  }
+
+  return true;
 }
 
 export function isTranscriptReady(state: TranscriptPanelState): boolean {
@@ -347,13 +398,19 @@ function getTranscriptTimestampElement(segment: QueryElementLike): QueryElementL
 
 function getTranscriptBodyElement(segment: QueryElementLike): QueryElementLike | null {
   return (
+    segment.querySelector?.('span[role="text"]') ||
     segment.querySelector?.('.segment-text') ||
     segment.querySelector?.('[class*="text"]') ||
     segment.querySelector?.('yt-formatted-string') ||
     segment.querySelector?.('#segment-text') ||
-    segment.querySelector?.('span[role="text"]') ||
     null
   );
+}
+
+function readElementText(element: QueryElementLike | null | undefined): string {
+  const visibleText = typeof element?.innerText === 'string' ? element.innerText : '';
+  const text = visibleText || element?.textContent || '';
+  return normalizeSubtitleText(text);
 }
 
 function readNumericAttribute(
@@ -411,7 +468,7 @@ export function extractTranscriptSegmentStartTime(segment: QueryElementLike): nu
     return attributeValueMs / 1000;
   }
 
-  const timestampText = timestampElement?.textContent?.trim() || '';
+  const timestampText = readElementText(timestampElement);
   if (!timestampText) {
     return null;
   }
@@ -426,8 +483,8 @@ export function extractTranscriptSegmentData(segment: QueryElementLike): {
   const timestampElement = getTranscriptTimestampElement(segment);
   const bodyElement = getTranscriptBodyElement(segment);
 
-  const timestampText = timestampElement?.textContent?.trim() || '';
-  const bodyText = bodyElement?.textContent?.trim() || '';
+  const timestampText = readElementText(timestampElement);
+  const bodyText = readElementText(bodyElement);
 
   if (!timestampText || !bodyText) {
     return null;
@@ -459,10 +516,10 @@ function readTranscriptPanelSubtitles(): SimpleSubtitleEntry[] {
     const fallbackDivs = segment.querySelectorAll('div');
     const timestampText =
       segmentData?.timestampText ||
-      (fallbackDivs[0]?.textContent || '').trim();
+      readElementText(fallbackDivs[0]);
     const text =
       segmentData?.bodyText ||
-      (fallbackDivs[1]?.textContent || '').trim();
+      readElementText(fallbackDivs[1]);
 
     if (!timestampText || !text) {
       return;
@@ -475,7 +532,7 @@ function readTranscriptPanelSubtitles(): SimpleSubtitleEntry[] {
     const nextData = nextSegment ? extractTranscriptSegmentData(nextSegment) : null;
     const nextTimestampText =
       nextData?.timestampText ||
-      (nextSegment?.querySelector('div')?.textContent || '').trim();
+      readElementText(nextSegment?.querySelector('div'));
     const endTime = nextSegment && nextTimestampText
       ? extractTranscriptSegmentStartTime(nextSegment) ??
         parseTranscriptTimestamp(nextTimestampText)

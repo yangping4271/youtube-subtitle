@@ -8,6 +8,8 @@ import {
   extractTranscriptSegmentStartTime,
   fetchCaptionTrackText,
   findTranscriptTrigger,
+  getTranscriptPanel,
+  getTranscriptSegmentElements,
   isTranscriptReady,
   parseTranscriptTimestamp,
   pickPreferredCaptionTrack,
@@ -90,6 +92,79 @@ describe('youtube subtitle fetch helpers', () => {
     expect(shouldWaitForTranscriptPanel(false, true)).toBe(true);
   });
 
+  it('只从当前 transcript panel 读取 segments，不读取页面中的隐藏副本', () => {
+    const panelSegment = {};
+    const hiddenPageSegment = {};
+    const panel = {
+      querySelector(selector: string) {
+        return selector === 'tp-yt-paper-spinner' ? null : null;
+      },
+      querySelectorAll(selector: string) {
+        return selector === 'transcript-segment-view-model' ? [panelSegment] : [];
+      },
+    };
+    const root = {
+      querySelector(selector: string) {
+        return selector.includes('engagement-panel-searchable-transcript') ? panel : null;
+      },
+      querySelectorAll(selector: string) {
+        return selector === 'transcript-segment-view-model'
+          ? [panelSegment, hiddenPageSegment]
+          : [];
+      },
+    };
+
+    expect(getTranscriptSegmentElements(root as unknown as ParentNode)).toEqual([panelSegment]);
+  });
+
+  it('隐藏 transcript panel 排在前面时仍选择可见 panel', () => {
+    const hiddenPanel = {
+      hidden: true,
+      getAttribute(name: string) {
+        return name === 'aria-hidden' ? 'true' : null;
+      },
+    };
+    const visiblePanel = {
+      hidden: false,
+      getAttribute() {
+        return null;
+      },
+    };
+    const root = {
+      querySelector() {
+        return hiddenPanel;
+      },
+      querySelectorAll(selector: string) {
+        return selector.includes('engagement-panel-searchable-transcript')
+          ? [hiddenPanel, visiblePanel]
+          : [];
+      },
+    };
+
+    expect(getTranscriptPanel(root as unknown as ParentNode)).toBe(visiblePanel);
+  });
+
+  it('没有可见 transcript panel 时不扫描整个 document 的 segment', () => {
+    const hiddenPanel = {
+      hidden: true,
+      getAttribute: () => null,
+    };
+    const hiddenPageSegment = {};
+    const root = {
+      querySelector() {
+        return hiddenPanel;
+      },
+      querySelectorAll(selector: string) {
+        if (selector.includes('engagement-panel-searchable-transcript')) {
+          return [hiddenPanel];
+        }
+        return selector === 'transcript-segment-view-model' ? [hiddenPageSegment] : [];
+      },
+    };
+
+    expect(getTranscriptSegmentElements(root as unknown as ParentNode)).toEqual([]);
+  });
+
   it('优先选择人工英文字幕轨而不是 asr', () => {
     const track = pickPreferredCaptionTrack([
       { languageCode: 'en', kind: 'asr', baseUrl: 'https://www.youtube.com/api/timedtext?v=1&kind=asr' },
@@ -134,6 +209,54 @@ describe('youtube subtitle fetch helpers', () => {
     expect(extractTranscriptSegmentData(segment)).toEqual({
       timestampText: '5:46',
       bodyText: 'that these things would be really',
+    });
+  });
+
+  it('优先读取 transcript 节点的可见文本，避免 textContent 混入重复的无障碍文本', () => {
+    const segment = {
+      querySelector(selector: string) {
+        if (selector.includes('Timestamp')) {
+          return { textContent: '0:05', innerText: '0:05' };
+        }
+
+        if (selector === 'span[role="text"]') {
+          return {
+            textContent: 'This This is is a a Raspberry Raspberry Pi Pi 5 5.',
+            innerText: 'This is a Raspberry Pi 5.',
+          };
+        }
+
+        return null;
+      },
+    };
+
+    expect(extractTranscriptSegmentData(segment)).toEqual({
+      timestampText: '0:05',
+      bodyText: 'This is a Raspberry Pi 5.',
+    });
+  });
+
+  it('transcript 的可见文本本身包含重复词时应保留源文本', () => {
+    const segment = {
+      querySelector(selector: string) {
+        if (selector.includes('Timestamp')) {
+          return { textContent: '0:05', innerText: '0:05' };
+        }
+
+        if (selector === 'span[role="text"]') {
+          return {
+            textContent: 'This This is is a a Raspberry Raspberry Pi Pi 5 5.',
+            innerText: 'This This is is a a Raspberry Raspberry Pi Pi 5 5.',
+          };
+        }
+
+        return null;
+      },
+    };
+
+    expect(extractTranscriptSegmentData(segment)).toEqual({
+      timestampText: '0:05',
+      bodyText: 'This This is is a a Raspberry Raspberry Pi Pi 5 5.',
     });
   });
 

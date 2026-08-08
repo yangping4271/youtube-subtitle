@@ -67,6 +67,17 @@ export interface YouTubeSubtitleAcquirer {
   acquire(videoId: string): Promise<SubtitleAcquisitionResult>;
 }
 
+/**
+ * 只规范化字幕文本中的空白，不改写重复词语。
+ *
+ * 字幕内容以采集到的源文本为准。此前针对逐词重复 DOM 文本的启发式
+ * 会误伤真实口语（例如 “I I really really do do”），而 DOM 重复应在
+ * transcript panel 的可见文本选择和行级去重处解决。
+ */
+export function normalizeSubtitleText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
 export function normalizeSubtitleTiming(
   subtitles: SimpleSubtitleEntry[]
 ): SimpleSubtitleEntry[] {
@@ -74,13 +85,36 @@ export function normalizeSubtitleTiming(
     .map((subtitle) => ({
       startTime: subtitle.startTime,
       endTime: subtitle.endTime,
-      text: subtitle.text.replace(/\s+/g, ' ').trim(),
+      text: normalizeSubtitleText(subtitle.text),
     }))
     .filter((subtitle) => subtitle.text.length > 0)
     .sort((a, b) => a.startTime - b.startTime);
 
-  return sorted.map((subtitle, index) => {
-    const next = sorted[index + 1];
+  // YouTube 有时会在同一 panel 中同时保留可见节点和隐藏副本。
+  // 相同开始时间和文本代表同一条字幕；合并时保留较晚的结束时间，
+  // 避免重复节点把下一条字幕的开始时间误当成当前字幕的结束时间。
+  const deduplicated: SimpleSubtitleEntry[] = [];
+  const indexByKey = new Map<string, number>();
+  sorted.forEach((subtitle) => {
+    const key = `${subtitle.startTime}\u0000${subtitle.text}`;
+    const existingIndex = indexByKey.get(key);
+    if (existingIndex === undefined) {
+      indexByKey.set(key, deduplicated.length);
+      deduplicated.push(subtitle);
+      return;
+    }
+
+    const existing = deduplicated[existingIndex];
+    if (
+      (!Number.isFinite(existing.endTime) || existing.endTime < subtitle.endTime) &&
+      Number.isFinite(subtitle.endTime)
+    ) {
+      existing.endTime = subtitle.endTime;
+    }
+  });
+
+  return deduplicated.map((subtitle, index) => {
+    const next = deduplicated[index + 1];
     const endTime = Number.isFinite(subtitle.endTime) && subtitle.endTime > subtitle.startTime
       ? subtitle.endTime
       : next && next.startTime > subtitle.startTime
