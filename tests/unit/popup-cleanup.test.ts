@@ -16,8 +16,22 @@ const popupStyles = readFileSync(
   resolve(projectRoot, 'public/extension/popup.css'),
   'utf8'
 );
+const manifest = JSON.parse(readFileSync(
+  resolve(projectRoot, 'public/extension/manifest.json'),
+  'utf8'
+));
 
 describe('popup static wiring', () => {
+  it('通过可选 host permission 支持运行时配置的第三方 API', () => {
+    expect(manifest.optional_host_permissions).toContain('https://*/*');
+    expect(manifest.host_permissions).not.toContain('https://api.krill-ai.net/*');
+    expect(popupScript).toContain('chrome.permissions.request');
+  });
+
+  it('为 MV3 中断任务恢复声明 alarms 权限', () => {
+    expect(manifest.permissions).toContain('alarms');
+  });
+
   it('在 popup controller 之前加载统一 config implementation', () => {
     expect(popupHtml.indexOf('<script src="config.js"></script>')).toBeGreaterThan(-1);
     expect(popupHtml.indexOf('<script src="config.js"></script>')).toBeLessThan(
@@ -53,8 +67,30 @@ describe('popup static wiring', () => {
     expect(popupScript).not.toContain('initAutoLoadMode()');
   });
 
+  it('不把内部 start 状态原样显示给用户', () => {
+    expect(popupScript).toContain("'start': '准备翻译...'");
+    expect(popupScript).toContain("'resume': '恢复翻译中...'");
+    expect(popupScript).toContain('Number.isFinite(progress.current)');
+  });
+
   it('API 配置只使用 config.js 提供的 normalization implementation', () => {
     expect(popupScript).toContain('window.SubtitleConfig.normalizeApiConfig');
     expect(popupScript).not.toContain('normalizeApiConfig(config = {})');
+  });
+
+  it('并发数使用可动态限制的数字输入，而不是固定范围滑块', () => {
+    expect(popupHtml).toMatch(/type="number" id="threadNum"/);
+    expect(popupHtml).not.toMatch(/id="threadNum"[^>]*max="2500"/);
+    expect(popupHtml).not.toMatch(/type="range" id="threadNum"/);
+    expect(popupScript).toContain('getModelConcurrencyLimit');
+  });
+
+  it('明确显示 API 自动补全后的实际请求路径，并保护内置供应商', () => {
+    expect(popupHtml).toContain('实际翻译请求： https://api.openai.com/v1/chat/completions');
+    expect(popupHtml).toContain('测试连接： https://api.openai.com/v1/models');
+    expect(popupScript).toContain('isDefaultApiProviderId');
+    expect(popupScript).toContain('内置配置不可删除');
+    expect(popupScript).toContain('normalizeApiBaseUrl');
+    expect(popupScript).toContain('formatApiResponseError');
   });
 });

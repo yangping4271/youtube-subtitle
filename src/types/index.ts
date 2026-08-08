@@ -193,6 +193,21 @@ export interface VideoInfo {
   aiSummary?: string | null; // YouTube AI 生成的摘要（可能不存在）
 }
 
+/** 翻译会话需要携带的视频上下文。 */
+export interface TranslationVideoInfo {
+  title?: string;
+  ytTitle?: string;
+  description?: string;
+  aiSummary?: string | null;
+}
+
+/** 发送给翻译模型的上下文信息。 */
+export interface TranslationContext {
+  videoTitle?: string;
+  videoDescription?: string;
+  aiSummary?: string | null;
+}
+
 /** 视频字幕缓存数据 */
 export interface VideoSubtitleData {
   videoId: string;
@@ -205,6 +220,7 @@ export interface VideoSubtitleData {
 /** 翻译进度状态 */
 export interface TranslationProgress {
   isTranslating: boolean;
+  videoId?: string;
   step?: string;
   current?: number;
   total?: number;

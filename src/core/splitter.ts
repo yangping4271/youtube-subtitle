@@ -204,8 +204,9 @@ export async function mergeSegmentsWithinBatch(
   const endIndex = preSplitSentences[preSplitSentences.length - 1].wordEndIndex;
   const batchWordSegments = wordSegments.slice(startIndex, endIndex);
 
-  // 拼接为文本
-  const batchText = batchWordSegments.map(seg => seg.text).join(' ');
+  // 发送给 LLM 的文本使用自然标点格式；内部预分句仍保留独立标点 token，
+  // 以免改变用于时间戳对齐的 token 索引。
+  const batchText = new SubtitleData(batchWordSegments).toText();
 
   // LLM 断句
   const llmSentences = await splitByLLM(batchText, client, config, batchIndex, signal);
@@ -821,7 +822,7 @@ export async function splitByLLM(
       }
       // 层级5：严重超标层 (> max)
       else {
-        logger.error(`❌ 严重超标(${wordCount}/${maxWordCountEnglish}字): ${segment.slice(0, 40)}...`);
+        logger.warn(`句子超过最大长度(${wordCount}/${maxWordCountEnglish}字)，尝试智能拆分: ${segment.slice(0, 40)}...`);
         logger.info(`🔧 尝试智能分割...`);
         const splitResults = aggressiveSplit(segment, maxWordCountEnglish);
 
@@ -854,7 +855,7 @@ export async function splitByLLM(
     logger.warn(`   🔨 强制拆分: ${stats.forced}句 (${warningThreshold}-${maxThreshold}字)`);
   }
   if (stats.rejected > 0) {
-    logger.error(`   ❌ 严重超标: ${stats.rejected}句 (>${maxThreshold}字)`);
+    logger.warn(`   仍有 ${stats.rejected} 句超过长度上限，已使用兜底拆分 (>${maxThreshold}字)`);
   }
 
   logger.info(`✅ ${batchPrefix}断句完成: ${sentences.length} 个句子，耗时 ${(duration / 1000).toFixed(1)}s`);

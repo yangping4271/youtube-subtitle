@@ -2,11 +2,14 @@
  * splitter.ts 单元测试
  */
 
+import { vi } from 'vitest';
+
 import {
   presplitByPunctuation,
   batchBySentenceCount,
   mergeSegmentsWithinBatch,
   splitByEndMarks,
+  splitByLLM,
 } from '../../src/core/splitter.js';
 import type { SubtitleEntry, PreSplitSentence, TranslatorConfig } from '../../src/types/index.js';
 
@@ -212,5 +215,59 @@ describe('mergeSegmentsWithinBatch', () => {
     expect(segments[1].text).toBe('because it is late.');
     expect(segments[1].startTime).toBeLessThan(1250);
     expect(segments[1].startTime).toBeGreaterThanOrEqual(segments[0].startTime);
+  });
+
+  it('发送给断句模型的文本不应在英文标点前添加空格', async () => {
+    const wordSegments: SubtitleEntry[] = [
+      { index: 1, startTime: 0, endTime: 200, text: 'Hi' },
+      { index: 2, startTime: 200, endTime: 230, text: ',' },
+      { index: 3, startTime: 230, endTime: 400, text: "I'm" },
+      { index: 4, startTime: 400, endTime: 600, text: 'Emily' },
+      { index: 5, startTime: 600, endTime: 630, text: '.' },
+    ];
+
+    const preSplitSentences: PreSplitSentence[] = [{
+      text: "Hi , I'm Emily .",
+      wordStartIndex: 0,
+      wordEndIndex: wordSegments.length,
+      startTime: 0,
+      endTime: 630,
+    }];
+
+    let capturedUserPrompt = '';
+    const client = {
+      async callChat(_systemPrompt: string, userPrompt: string): Promise<string> {
+        capturedUserPrompt = userPrompt;
+        return "Hi, I'm Emily.";
+      },
+    };
+
+    const result = await mergeSegmentsWithinBatch(
+      preSplitSentences,
+      wordSegments,
+      client,
+      config
+    );
+
+    expect(capturedUserPrompt).toContain("\nHi, I'm Emily.");
+    expect(capturedUserPrompt).not.toContain("Hi , I'm Emily .");
+    expect(result.getSegments()[0].text).toBe("Hi, I'm Emily.");
+  });
+
+  it('严重超标但仍可继续拆分时不写入 console.error', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const longText = Array.from({ length: 40 }, (_, index) => `word${index}`).join(' ');
+
+    try {
+      await splitByLLM(
+        longText,
+        { callChat: async () => longText },
+        config
+      );
+
+      expect(consoleError.mock.calls.flat().join(' ')).not.toContain('严重超标');
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });

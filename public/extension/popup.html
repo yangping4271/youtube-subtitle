@@ -96,6 +96,7 @@
                                 <button class="provider-icon-btn" id="addProviderBtn" title="新增供应商">+</button>
                                 <button class="provider-icon-btn danger" id="deleteProviderBtn" title="删除供应商">-</button>
                             </div>
+                            <div class="setting-hint">OpenAI、OpenRouter、DeepSeek 为内置配置，不可删除</div>
                         </div>
 
                         <!-- Provider Name -->
@@ -110,10 +111,11 @@
                         <!-- API Base URL -->
                         <div class="setting-item">
                             <div class="setting-label">
-                                <span class="setting-name">API Base URL</span>
+                                <span class="setting-name">API Base URL（只需填域名）</span>
                             </div>
                             <input type="text" id="apiBaseUrl" class="config-input"
-                                placeholder="请输入 API Base URL">
+                                placeholder="例如：https://api.openai.com">
+                            <div class="setting-hint" id="apiBaseUrlHint">只需填写域名。实际翻译请求： https://api.openai.com/v1/chat/completions；测试连接： https://api.openai.com/v1/models</div>
                         </div>
 
                         <!-- API Key -->
@@ -140,11 +142,11 @@
                         <!-- 并发数 -->
                         <div class="setting-item">
                             <div class="setting-label">
-                                <span class="setting-name">并发数</span>
+                                <span class="setting-name">并发请求数</span>
                                 <span class="setting-value" id="threadNumValue">3</span>
                             </div>
-                            <input type="range" id="threadNum" min="1" max="30" value="3" class="setting-slider">
-                            <div class="setting-hint">较高的并发可能触发 API 速率限制</div>
+                            <input type="number" id="threadNum" min="1" step="1" value="3" class="config-input" inputmode="numeric">
+                            <div class="setting-hint" id="threadNumHint">当前模型上限：2500；并发越高越容易触发服务端限流</div>
                         </div>
                     </div>
 

@@ -18,16 +18,21 @@ function createConfig(): TranslatorConfig {
 }
 
 describe('Translator XML repair', () => {
-  it('在降级到 XML 后仍会先修补再解析', async () => {
+  it('普通内容解析失败时重试同一格式，不请求 XML 输出格式', async () => {
     let callCount = 0;
+    const responseFormats: Array<string | undefined> = [];
     const client = {
-      async callChat(): Promise<string> {
+      async callChat(_systemPrompt: string, _userPrompt: string, options: { responseFormat?: { type: string } } = {}): Promise<string> {
         callCount += 1;
-        return [
-          '<1>第一句</1>',
-          '<2>第二句</2',
-          '<3>第三句</4>',
-        ].join('\n');
+        responseFormats.push(options.responseFormat?.type);
+        if (options.responseFormat) {
+          return [
+            '<1>第一句</1>',
+            '<2>第二句</2',
+            '<3>第三句</4>',
+          ].join('\n');
+        }
+        return ['第一句', '第二句', '第三句'][callCount - 3];
       },
     };
 
@@ -38,7 +43,14 @@ describe('Translator XML repair', () => {
       '3': 'third',
     });
 
-    expect(callCount).toBe(4);
+    expect(callCount).toBe(5);
+    expect(responseFormats).toEqual([
+      'json_schema',
+      'json_schema',
+      undefined,
+      undefined,
+      undefined,
+    ]);
     expect(result.map((item) => item.translation)).toEqual(['第一句', '第二句', '第三句']);
   });
 });

@@ -7,7 +7,11 @@ import { getDefaultEnglishSettings, getDefaultChineseSettings, getDefaultConfig 
 import { SubtitleParser } from './subtitle-parser';
 import { getVideoInfo } from './transcript-core';
 import { acquireYouTubeSubtitles } from './youtube-subtitle-fetch';
-import type { SimpleSubtitleEntry, SubtitleStyleSettings, VideoSubtitleData, ASSParseResult, TranslationProgress } from '../types';
+import type { SimpleSubtitleEntry, SubtitleStyleSettings, VideoSubtitleData, ASSParseResult } from '../types';
+import {
+  TranslationRunGate,
+  type TranslationRunEvent,
+} from './translation-run-gate';
 
 // Chrome API 类型声明
 declare const chrome: {
@@ -41,6 +45,8 @@ interface ChromeMessage {
   language?: 'english' | 'chinese';
   settings?: Partial<SubtitleStyleSettings>;
   videoId?: string;
+  translationRunId?: string;
+  translationRunEvent?: TranslationRunEvent;
 }
 
 class YouTubeSubtitleOverlay {
@@ -50,6 +56,7 @@ class YouTubeSubtitleOverlay {
   private currentVideo: HTMLVideoElement | null = null;
   private overlayElement: HTMLElement | null = null;
   private isEnabled = false;
+  private readonly translationRunGate = new TranslationRunGate();
 
   private autoLoadEnabled = false;
   private currentVideoId: string | null = null;
@@ -110,23 +117,6 @@ class YouTubeSubtitleOverlay {
         return;
       }
 
-      // 检查是否正在翻译
-      const progressResult = await chrome.storage.local.get(['translationProgress']);
-      const progress = progressResult.translationProgress as TranslationProgress | undefined;
-
-      if (progress && progress.isTranslating) {
-        const elapsed = Date.now() - (progress.timestamp || 0);
-        if (elapsed > 10 * 60 * 1000) {
-          // 超时，清除状态
-          await chrome.storage.local.remove('translationProgress');
-        } else {
-          // 正在翻译中，取消翻译（与 popup 行为一致）
-          console.log('翻译正在进行中，取消当前翻译');
-          await chrome.runtime.sendMessage({ action: 'cancelTranslation' });
-          return;
-        }
-      }
-
       // 获取视频ID
       const videoId = this.getVideoId();
       if (!videoId) {
@@ -134,16 +124,14 @@ class YouTubeSubtitleOverlay {
         return;
       }
 
-      // 检查缓存（与 popup 行为一致：有缓存则重新翻译）
-      const cacheKey = `videoSubtitles_${videoId}`;
-      const cacheResult = await chrome.storage.local.get([cacheKey]);
-      const cached = cacheResult[cacheKey] as VideoSubtitleData | undefined;
-
-      if (cached && (cached.englishSubtitles?.length || cached.chineseSubtitles?.length)) {
-        // 有缓存，清除缓存并重新翻译（与 popup 行为一致）
-        console.log('发现缓存，清除并重新翻译');
-        await chrome.storage.local.remove([cacheKey]);
-        await chrome.runtime.sendMessage({ action: 'clearSubtitleData' });
+      const statusResponse = await chrome.runtime.sendMessage({
+        action: 'getTranslationStatus',
+        videoId,
+      });
+      const status = statusResponse.status as { isTranslating?: boolean } | undefined;
+      if (status?.isTranslating) {
+        console.log('翻译正在进行中，忽略重复启动请求');
+        return;
       }
 
       // 获取字幕
@@ -157,16 +145,20 @@ class YouTubeSubtitleOverlay {
       const videoInfo = getVideoInfo();
 
       const result = await chrome.storage.local.get(['apiConfig']);
-      const apiConfig = (result.apiConfig as { targetLanguage?: string }) || {};
+      const apiConfig = result.apiConfig || {};
+      const targetLanguage = (apiConfig as { targetLanguage?: string }).targetLanguage || 'zh';
 
-      chrome.runtime.sendMessage({
+      const response = await chrome.runtime.sendMessage({
         action: 'startTranslation',
         subtitles,
-        targetLanguage: apiConfig.targetLanguage || 'zh',
+        targetLanguage,
         videoId,
         apiConfig,
         videoInfo,  // 传递完整的视频信息
       });
+      if (!response.success) {
+        throw new Error(String(response.error || '启动翻译失败'));
+      }
     } catch (error) {
       console.error('启动翻译失败:', error);
       // 检查是否是扩展上下文失效错误
@@ -188,19 +180,28 @@ class YouTubeSubtitleOverlay {
           this.loadNewSubtitle(request.subtitleData || []);
           break;
         case 'loadBilingualSubtitles':
+          if (!this.translationRunGate.accepts(request.translationRunId)) break;
           this.loadBilingualSubtitles(
             request.englishSubtitles || [],
             request.chineseSubtitles || []
           );
           break;
         case 'appendBilingualSubtitles':
+          if (!this.translationRunGate.accepts(request.translationRunId)) break;
           this.appendBilingualSubtitles(
             request.englishSubtitles || [],
             request.chineseSubtitles || []
           );
           break;
         case 'clearData':
-          this.clearSubtitleData();
+          if (request.translationRunEvent) {
+            if (this.translationRunGate.apply(request.translationRunEvent)) {
+              this.clearSubtitleData();
+            }
+          } else if (!request.translationRunId) {
+            this.translationRunGate.apply({ type: 'reset' });
+            this.clearSubtitleData();
+          }
           break;
         case 'forceReset':
           this.forceReset();
@@ -1034,6 +1035,7 @@ class YouTubeSubtitleOverlay {
 
     this.autoLoadEnabled = false;
     this.currentVideoId = null;
+    this.translationRunGate.reset();
 
     this.isEnabled = false;
     this.hideSubtitle();
@@ -1063,16 +1065,22 @@ class YouTubeSubtitleOverlay {
         'englishSettings',
         'chineseSettings',
         'autoLoadEnabled',
-        `videoSubtitles_${currentVideoId}`,
       ]);
+
+      const statusResponse = currentVideoId
+        ? await chrome.runtime.sendMessage({
+          action: 'getTranslationStatus',
+          videoId: currentVideoId,
+        })
+        : null;
+      const status = statusResponse?.status as { cachedResult?: VideoSubtitleData | null } | undefined;
+      const videoSubtitles = status?.cachedResult;
 
       this.subtitleData = [];
       this.englishSubtitles = [];
       this.chineseSubtitles = [];
 
-      if (currentVideoId && result[`videoSubtitles_${currentVideoId}`]) {
-        const videoSubtitles = result[`videoSubtitles_${currentVideoId}`] as VideoSubtitleData;
-
+      if (videoSubtitles) {
         if (videoSubtitles.englishSubtitles || videoSubtitles.chineseSubtitles) {
           this.englishSubtitles = videoSubtitles.englishSubtitles || [];
           this.chineseSubtitles = videoSubtitles.chineseSubtitles || [];

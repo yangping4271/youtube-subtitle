@@ -7,6 +7,7 @@ import { buildTranslatePrompt, buildSingleTranslatePrompt } from './prompts.js';
 import { getLanguageName } from '../utils/language.js';
 import { normalizeChinesePunctuation, isChinese } from '../utils/punctuation.js';
 import { parseLlmResponse } from '../utils/json-repair.js';
+import { isResponseFormatUnsupportedError } from '../utils/error-handler.js';
 import type { CancellationSignal } from '../utils/cancellation.js';
 import type {
   ChatOptions,
@@ -14,6 +15,7 @@ import type {
   JsonSchemaResponseFormat,
   TranslatorConfig,
   TranslatedEntry,
+  TranslationContext,
 } from '../types/index.js';
 
 const logger = setupLogger('translator');
@@ -130,22 +132,24 @@ function parseJsonTranslations(
   return result;
 }
 
-function isJsonSchemaCompatibilityError(error: Error): boolean {
-  const message = error.message.toLowerCase();
-  const compatibilityPatterns = [
-    'response_format',
-    'json_schema',
-    'structured outputs',
-    'schema',
-    'unsupported',
-    'not supported',
-    'invalid parameter',
-    'unknown parameter',
-    'extra inputs are not permitted',
-    'invalid_request_error',
-  ];
+interface ErrorWithStatus extends Error {
+  status?: unknown;
+}
 
-  return compatibilityPatterns.some(pattern => message.includes(pattern));
+function isApiResponseError(error: Error): boolean {
+  return error.name === 'ApiRequestError'
+    || typeof (error as ErrorWithStatus).status === 'number';
+}
+
+function shouldPropagateWithoutTranslationFallback(error: Error): boolean {
+  if (error.name === 'AbortError') {
+    return true;
+  }
+
+  // API HTTP 错误不能被 Level 2/3 转成空翻译；只有
+  // translateBatchInternalWithFormats 内部明确识别的 response_format
+  // 兼容性错误才允许继续格式降级。
+  return isApiResponseError(error);
 }
 
 /**
@@ -226,11 +230,7 @@ function sanitizeContext(text: string, maxWords = 500): string {
 /**
  * 构建上下文信息字符串
  */
-function buildContextInfo(context?: {
-  videoTitle?: string;
-  videoDescription?: string;
-  aiSummary?: string | null;
-}): string {
+function buildContextInfo(context?: TranslationContext): string {
   if (!context) return '';
 
   const parts: string[] = [];
@@ -263,6 +263,8 @@ export class Translator {
   private client: OpenAIClient;
   private config: TranslatorConfig;
   private batchResponseFormat: BatchResponseFormat | null = null;
+  /** 首次格式协商期间只允许一个子批探测，其他子批等待探测结果。 */
+  private formatProbePromise: Promise<void> | null = null;
 
   constructor(client: OpenAIClient, config: TranslatorConfig) {
     this.client = client;
@@ -290,15 +292,35 @@ export class Translator {
   }
 
   private shouldFallbackToNextFormat(format: BatchResponseFormat, error: Error): boolean {
-    if (error.name === 'BatchResponseFormatError') {
-      return format !== 'xml';
-    }
-
+    // 内容解析失败不是接口能力不兼容：同一响应格式重试即可，不能
+    // 因为缺少字幕键、值类型错误或非法 JSON 就再次发送其他格式请求。
     if (format === 'json_schema' || format === 'json_object') {
-      return isJsonSchemaCompatibilityError(error);
+      return isResponseFormatUnsupportedError(error);
     }
 
     return false;
+  }
+
+  private handleBatchTranslationFailure(
+    error: unknown,
+    prefix: string,
+    level: string,
+    fallback: string
+  ): null {
+    const currentError = error instanceof Error ? error : new Error(String(error));
+
+    if (currentError.name === 'AbortError') {
+      logger.info(`${prefix}${level} 已取消`);
+      throw currentError;
+    }
+
+    if (shouldPropagateWithoutTranslationFallback(currentError)) {
+      logger.error(`${prefix}${level} 失败，翻译不可继续: ${currentError.message}`);
+      throw currentError;
+    }
+
+    logger.warn(`${prefix}${level} 未完成，进入 ${fallback}: ${currentError.message}`);
+    return null;
   }
 
   /**
@@ -310,7 +332,7 @@ export class Translator {
    */
   async translate(
     subtitles: Record<string, string>,
-    context?: { videoTitle?: string; videoDescription?: string; aiSummary?: string | null },
+    context?: TranslationContext,
     batchLabel?: string,
     signal?: CancellationSignal,
     threadNum?: number
@@ -329,10 +351,12 @@ export class Translator {
       context,
       currentBatchLabel,
       signal
-    ).catch(error => {
-      logger.error(`${prefix}Level 1 失败: ${error}`);
-      return null;
-    });
+    ).catch(error => this.handleBatchTranslationFailure(
+      error,
+      prefix,
+      'Level 1',
+      '后续降级'
+    ));
 
     // 检查是否需要重试（API 失败或有翻译失败条目）
     const hasFailures = !results || results.some(r => !r.translation.trim());
@@ -346,10 +370,12 @@ export class Translator {
         context,
         `${currentBatchLabel}-重试`,
         signal
-      ).catch(error => {
-        logger.error(`${prefix}Level 2 失败: ${error}`);
-        return null;
-      });
+      ).catch(error => this.handleBatchTranslationFailure(
+        error,
+        prefix,
+        'Level 2',
+        'Level 3'
+      ));
 
       let recoveredCount = 0;
       if (retryResults) {
@@ -437,7 +463,48 @@ export class Translator {
   private async translateBatchInternal(
     batch: [string, string][],
     targetLanguage: string,
-    context: { videoTitle?: string; videoDescription?: string; aiSummary?: string | null } | undefined,
+    context: TranslationContext | undefined,
+    batchLabel: string,
+    signal?: CancellationSignal
+  ): Promise<TranslatedEntry[]> {
+    if (this.batchResponseFormat) {
+      return this.translateBatchInternalWithFormats(
+        batch,
+        targetLanguage,
+        context,
+        batchLabel,
+        signal
+      );
+    }
+
+    if (this.formatProbePromise) {
+      await this.formatProbePromise;
+      return this.translateBatchInternal(batch, targetLanguage, context, batchLabel, signal);
+    }
+
+    const probe = this.translateBatchInternalWithFormats(
+      batch,
+      targetLanguage,
+      context,
+      batchLabel,
+      signal
+    );
+    const probeDone = probe.then(() => undefined, () => undefined);
+    this.formatProbePromise = probeDone;
+
+    try {
+      return await probe;
+    } finally {
+      if (this.formatProbePromise === probeDone) {
+        this.formatProbePromise = null;
+      }
+    }
+  }
+
+  private async translateBatchInternalWithFormats(
+    batch: [string, string][],
+    targetLanguage: string,
+    context: TranslationContext | undefined,
     batchLabel: string,
     signal?: CancellationSignal
   ): Promise<TranslatedEntry[]> {
@@ -458,7 +525,6 @@ export class Translator {
     }
 
     let lastError: Error | null = null;
-    let contentFallbackOccurred = false;
 
     for (let i = 0; i < attemptFormats.length; i++) {
       const format = attemptFormats[i];
@@ -477,9 +543,7 @@ export class Translator {
           prefix
         );
 
-        if (!contentFallbackOccurred) {
-          this.batchResponseFormat = format;
-        }
+        this.batchResponseFormat = format;
         logger.info(`${prefix}批量翻译输出格式: 使用 ${getBatchFormatLabel(format)} 完成解析`);
         return results;
       } catch (error) {
@@ -490,17 +554,10 @@ export class Translator {
           throw currentError;
         }
 
-        if (currentError.name === 'BatchResponseFormatError') {
-          contentFallbackOccurred = true;
-          logger.warn(
-            `${prefix}${getBatchFormatLabel(format)} 响应不完整，尝试 ${getBatchFormatLabel(nextFormat)}: ${currentError.message}`
-          );
-        } else {
-          this.batchResponseFormat = nextFormat;
-          logger.warn(
-            `${prefix}${getBatchFormatLabel(format)} 不可用，降级到 ${getBatchFormatLabel(nextFormat)}: ${currentError.message}`
-          );
-        }
+        this.batchResponseFormat = nextFormat;
+        logger.warn(
+          `${prefix}${getBatchFormatLabel(format)} 不可用，降级到 ${getBatchFormatLabel(nextFormat)}: ${currentError.message}`
+        );
       }
     }
 
@@ -510,7 +567,7 @@ export class Translator {
   private buildBatchUserPrompt(
     inputObj: Record<string, string>,
     targetLanguage: string,
-    context?: { videoTitle?: string; videoDescription?: string; aiSummary?: string | null }
+    context?: TranslationContext
   ): string {
     const contextInfo = buildContextInfo(context);
     return `Translate the following subtitles into ${targetLanguage}:
@@ -553,7 +610,7 @@ export class Translator {
     batch: [string, string][],
     inputObj: Record<string, string>,
     targetLanguage: string,
-    context: { videoTitle?: string; videoDescription?: string; aiSummary?: string | null } | undefined,
+    context: TranslationContext | undefined,
     signal: CancellationSignal | undefined,
     format: BatchResponseFormat,
     prefix: string
@@ -624,7 +681,15 @@ export class Translator {
         logger.info(`单条翻译成功 ID ${key}: ${value} -> ${translation}`);
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
-        logger.error(`字幕 ID ${key} 单条翻译失败: ${errorMsg}`);
+        if (error instanceof Error && error.name === 'AbortError') {
+          logger.info(`字幕 ID ${key} 的单条翻译已取消`);
+          throw error;
+        }
+        if (error instanceof Error && shouldPropagateWithoutTranslationFallback(error)) {
+          logger.error(`字幕 ID ${key} 遇到 API 错误，停止返回空翻译: ${errorMsg}`);
+          throw error;
+        }
+        logger.warn(`字幕 ID ${key} 单条翻译失败，保留空翻译: ${errorMsg}`);
         translation = '';
       }
 

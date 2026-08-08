@@ -5,18 +5,22 @@
 
 import { getDefaultEnglishSettings, getDefaultChineseSettings } from './config';
 import { formatSubtitleFetchLog } from './subtitle-fetch-log';
-import { translationSessionAdapter } from './translator';
-import { extractErrorMessage } from '../utils/error-handler';
+import {
+  BrowserTranslationCoordinator,
+  translationSessionAdapter,
+  type BrowserTranslationJob,
+  type ExtensionBilingualSubtitles,
+} from './translator';
+import type { CancellationSignal } from '../utils/cancellation';
+import type { TranslationRunPublication } from './translation-run-gate';
 import type {
   SimpleSubtitleEntry,
   SubtitleStyleSettings,
   VideoSubtitleData,
   TranslationProgress,
   ApiConfig,
+  TranslationVideoInfo,
 } from '../types';
-
-// 翻译任务的取消控制器
-let translationAbortController: AbortController | null = null;
 
 // Chrome API 类型声明
 declare const chrome: {
@@ -33,6 +37,15 @@ declare const chrome: {
         ) => boolean | void
       ) => void;
     };
+    onStartup?: {
+      addListener: (callback: () => void) => void;
+    };
+  };
+  alarms?: {
+    onAlarm: {
+      addListener: (callback: (alarm: { name: string }) => void) => void;
+    };
+    create: (name: string, alarmInfo: { periodInMinutes: number }) => Promise<void> | void;
   };
   tabs: {
     query: (query: { active?: boolean; currentWindow?: boolean }) => Promise<chrome.tabs.Tab[]>;
@@ -93,24 +106,102 @@ interface ChromeMessage {
     threadNum?: number;
     disableThinking?: boolean;
   };
-  videoInfo?: {
-    ytTitle: string;
-    channelName: string;
-    uploadDate: string;
-    videoURL: string;
-    videoId: string;
-    description?: string;
-    aiSummary?: string | null;
-  };
+  videoInfo?: TranslationVideoInfo;
   englishSubtitles?: SimpleSubtitleEntry[];
   chineseSubtitles?: SimpleSubtitleEntry[];
   subtitleData?: SimpleSubtitleEntry[];
   source?: string;
 }
 
+const TRANSLATION_JOB_STORAGE_KEY = 'translationJob';
+const TRANSLATION_RESUME_ALARM = 'translation-session-resume';
+const TRANSLATION_RESUME_PERIOD_MINUTES = 0.5;
+const TRANSLATION_RESUME_AFTER_MS = 45_000;
+
 class SubtitleExtensionBackground {
+  private readonly translationCoordinator: BrowserTranslationCoordinator;
+
   constructor() {
+    this.translationCoordinator = new BrowserTranslationCoordinator(
+      translationSessionAdapter,
+      {
+        getProgress: async () => {
+          const result = await chrome.storage.local.get(['translationProgress']);
+          return (result.translationProgress as TranslationProgress) || null;
+        },
+        saveProgress: async (progress) => {
+          await chrome.storage.local.set({ translationProgress: progress });
+        },
+        clearProgress: async () => {
+          await chrome.storage.local.remove('translationProgress');
+        },
+        getPendingJob: async () => {
+          const result = await chrome.storage.local.get([TRANSLATION_JOB_STORAGE_KEY]);
+          return (result[TRANSLATION_JOB_STORAGE_KEY] as BrowserTranslationJob) || null;
+        },
+        savePendingJob: async (job) => {
+          const result = await chrome.storage.local.get([TRANSLATION_JOB_STORAGE_KEY]);
+          const current = result[TRANSLATION_JOB_STORAGE_KEY] as BrowserTranslationJob | undefined;
+          if (!current || current.id === job.id || current.updatedAt <= job.updatedAt) {
+            await chrome.storage.local.set({ [TRANSLATION_JOB_STORAGE_KEY]: job });
+          }
+        },
+        clearPendingJob: async (jobId) => {
+          if (!jobId) {
+            await chrome.storage.local.remove(TRANSLATION_JOB_STORAGE_KEY);
+            return;
+          }
+
+          const result = await chrome.storage.local.get([TRANSLATION_JOB_STORAGE_KEY]);
+          const current = result[TRANSLATION_JOB_STORAGE_KEY] as BrowserTranslationJob | undefined;
+          if (!current || current.id === jobId) {
+            await chrome.storage.local.remove(TRANSLATION_JOB_STORAGE_KEY);
+          }
+        },
+        getVideoResult: async (videoId) => {
+          const key = this.videoSubtitleKey(videoId);
+          const result = await chrome.storage.local.get([key]);
+          return (result[key] as VideoSubtitleData) || null;
+        },
+        saveVideoResult: async (videoId, result) => {
+          await chrome.storage.local.set({ [this.videoSubtitleKey(videoId)]: result });
+        },
+        clearVideoResult: async (videoId) => {
+          await chrome.storage.local.remove(this.videoSubtitleKey(videoId));
+        },
+      },
+      {
+        clear: async (tabId, event) => {
+          await this.notifyContentScript('clearData', {
+            ...(event ? { translationRunEvent: event } : {}),
+          }, tabId);
+        },
+        publishPartial: async (tabId, partial, context) => {
+          await this.publishTranslationResult('appendBilingualSubtitles', tabId, partial, context);
+        },
+        publishFinal: async (tabId, result, context) => {
+          await this.publishTranslationResult('loadBilingualSubtitles', tabId, result, context);
+        },
+      }
+    );
     this.init();
+  }
+
+  private videoSubtitleKey(videoId: string): string {
+    return `videoSubtitles_${videoId}`;
+  }
+
+  private async publishTranslationResult(
+    action: 'appendBilingualSubtitles' | 'loadBilingualSubtitles',
+    tabId: number | undefined,
+    result: ExtensionBilingualSubtitles,
+    publication: TranslationRunPublication
+  ): Promise<void> {
+    await this.notifyContentScript(action, {
+      englishSubtitles: result.english,
+      chineseSubtitles: result.chinese,
+      translationRunId: publication.runId,
+    }, tabId, publication.signal);
   }
 
   init(): void {
@@ -126,6 +217,24 @@ class SubtitleExtensionBackground {
       this.handleMessage(request, sender, sendResponse);
       return true;
     });
+
+    chrome.runtime.onStartup?.addListener(() => {
+      void this.resumePendingTranslation();
+    });
+
+    if (chrome.alarms) {
+      chrome.alarms.onAlarm.addListener((alarm) => {
+        if (alarm.name === TRANSLATION_RESUME_ALARM) {
+          void this.resumePendingTranslation();
+        }
+      });
+      void chrome.alarms.create(TRANSLATION_RESUME_ALARM, {
+        periodInMinutes: TRANSLATION_RESUME_PERIOD_MINUTES,
+      });
+    }
+
+    // Service worker 每次被重新唤醒时都主动检查一次；alarm 负责覆盖“运行中途被回收”的情况。
+    void this.resumePendingTranslation();
   }
 
   onInstall(): void {
@@ -248,21 +357,22 @@ class SubtitleExtensionBackground {
           break;
 
         case 'startTranslation':
-          void this.startBackgroundTranslation(request, sendResponse).catch((error) => {
+          void this.startBackgroundTranslation(request, sourceTabId, sendResponse).catch((error) => {
             console.error('后台翻译启动失败:', error);
             sendResponse({ success: false, error: (error as Error).message });
           });
           break;
 
         case 'cancelTranslation':
-          await this.cancelBackgroundTranslation(sendResponse);
+          await this.cancelBackgroundTranslation(request, sourceTabId, sendResponse);
           break;
 
         case 'getTranslationStatus': {
-          const status = await chrome.storage.local.get(['translationProgress']);
+          const status = await this.translationCoordinator.status({ videoId: request.videoId });
           sendResponse({
             success: true,
-            progress: (status.translationProgress as TranslationProgress) || null,
+            status,
+            progress: status.progress,
           });
           break;
         }
@@ -472,8 +582,15 @@ class SubtitleExtensionBackground {
     await this.notifyContentScript('forceReset', {}, tabId);
   }
 
-  async notifyContentScript(action: string, data: Record<string, unknown> = {}, tabId?: number): Promise<void> {
+  async notifyContentScript(
+    action: string,
+    data: Record<string, unknown> = {},
+    tabId?: number,
+    signal?: CancellationSignal
+  ): Promise<void> {
     try {
+      if (signal?.aborted) return;
+
       let targetTabId = tabId;
       if (!targetTabId) {
         const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -481,8 +598,10 @@ class SubtitleExtensionBackground {
       }
 
       if (targetTabId) {
+        if (signal?.aborted) return;
         const tab = await chrome.tabs.get(targetTabId).catch(() => null);
         if (tab && this.isYouTubePage(tab.url)) {
+          if (signal?.aborted) return;
           await chrome.tabs.sendMessage(targetTabId, {
             action,
             ...data,
@@ -490,7 +609,7 @@ class SubtitleExtensionBackground {
         }
       }
     } catch (error) {
-      console.error('向content script发送消息失败:', error);
+      console.warn('向content script发送消息失败，继续等待后续同步:', error);
     }
   }
 
@@ -500,6 +619,7 @@ class SubtitleExtensionBackground {
 
   async startBackgroundTranslation(
     request: ChromeMessage,
+    sourceTabId: number | undefined,
     sendResponse: (response: unknown) => void
   ): Promise<void> {
     const { subtitles, targetLanguage, videoId, apiConfig } = request;
@@ -513,133 +633,77 @@ class SubtitleExtensionBackground {
       await chrome.storage.local.set({ apiConfig });
     }
 
-    // 保存发起翻译的标签页 ID
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    const sourceTabId = tabs[0]?.id;
+    const targetTabId = sourceTabId || (await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    }))[0]?.id;
 
-    // 清空所有旧的翻译缓存和调试上下文，只保留新翻译的结果
-    const allData = await chrome.storage.local.get(null);
-    const videoSubtitleKeys = Object.keys(allData).filter((key) =>
-      key.startsWith('videoSubtitles_')
-    );
-    const debugContextKeys = Object.keys(allData).filter((key) =>
-      key.startsWith('debugContext_')
-    );
+    const startRequest = {
+      subtitles,
+      targetLanguage: targetLanguage || 'zh',
+      videoId,
+      tabId: targetTabId,
+      apiConfig: apiConfig as Partial<ApiConfig> | undefined,
+      videoInfo: request.videoInfo,
+    };
+    let responseSent = false;
+    const sendStartedResponse = (): void => {
+      if (responseSent) return;
+      responseSent = true;
+      sendResponse({ success: true, message: '翻译已在后台启动' });
+    };
 
-    if (videoSubtitleKeys.length > 0) {
-      await chrome.storage.local.remove(videoSubtitleKeys);
-    }
-
-    if (debugContextKeys.length > 0) {
-      await chrome.storage.local.remove(debugContextKeys);
-    }
-
-    // 立即清除 UI 上的字幕
-    if (sourceTabId) {
-      try {
-        await chrome.tabs.sendMessage(sourceTabId, { action: 'clearData' });
-      } catch (error) {
-        console.log('清除字幕显示失败，继续后台翻译:', error);
+    // start 会先将可恢复任务写入 storage，再通过回调确认启动响应；
+    // 长任务本身仍异步运行，但不会再出现“先回复、后持久化”的空窗期。
+    void this.translationCoordinator.start(startRequest, undefined, sendStartedResponse).catch((error) => {
+      console.error('后台 Translation session 运行失败:', error);
+      if (!responseSent) {
+        responseSent = true;
+        sendResponse({ success: false, error: (error as Error).message });
       }
+    });
+  }
+
+  private async resumePendingTranslation(): Promise<void> {
+    const result = await chrome.storage.local.get([TRANSLATION_JOB_STORAGE_KEY]);
+    const pendingJob = result[TRANSLATION_JOB_STORAGE_KEY] as BrowserTranslationJob | undefined;
+    if (!pendingJob || !pendingJob.request?.subtitles?.length) {
+      return;
     }
 
-    sendResponse({ success: true, message: '翻译已在后台启动' });
+    const age = Date.now() - pendingJob.updatedAt;
+    if (age < TRANSLATION_RESUME_AFTER_MS) {
+      return;
+    }
 
-    let sessionAbortController: AbortController | null = null;
+    if (age > 24 * 60 * 60 * 1000) {
+      await chrome.storage.local.remove(TRANSLATION_JOB_STORAGE_KEY);
+      return;
+    }
+
     try {
-      // 先取消之前的翻译（如果有）
-      if (translationAbortController) {
-        translationAbortController.abort();
-      }
-
-      // 创建新的取消控制器
-      sessionAbortController = new AbortController();
-      translationAbortController = sessionAbortController;
-
-      // 提取视频元数据
-      const videoTitle = request.videoInfo?.ytTitle;
-      const videoDescription = request.videoInfo?.description;
-      const aiSummary = request.videoInfo?.aiSummary;
-
-      const result = await translationSessionAdapter.translate(
-        {
-          subtitles,
-          targetLanguage: targetLanguage || 'zh',
-          videoDescription,
-          aiSummary,
-          videoTitle,
-          signal: sessionAbortController.signal,
-          apiConfig: apiConfig as Partial<ApiConfig> | undefined,
-        },
-        {
-          onPartialResult: async (partial) => {
-            if (sourceTabId) {
-              try {
-                await chrome.tabs.sendMessage(sourceTabId, {
-                  action: 'appendBilingualSubtitles',
-                  englishSubtitles: partial.english,
-                  chineseSubtitles: partial.chinese,
-                });
-              } catch (error) {
-                console.log('发送部分结果失败，等待最终结果同步:', error);
-              }
-            }
-          },
-        }
-      );
-
-      if (videoId && (result.english.length > 0 || result.chinese.length > 0)) {
-        await this.saveVideoSubtitles(
-          videoId,
-          result.english,
-          result.chinese,
-          undefined
-        );
+      const resumed = await this.translationCoordinator.resumePendingJob();
+      if (resumed) {
+        console.info(`恢复中断的 Translation session: ${pendingJob.id}`);
       }
     } catch (error) {
-      // 如果是用户主动取消，不报错
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.log('🛑 翻译已被用户取消');
-        // 清除进度状态，但不设置错误
-        await chrome.storage.local.remove('translationProgress');
-        return;
-      }
-
-      // 其他错误才报告为翻译失败
-      console.error('❌ 后台翻译失败:', error);
-      await chrome.storage.local.set({
-        translationProgress: {
-          isTranslating: false,
-          error: extractErrorMessage(error),
-          timestamp: Date.now(),
-        } as TranslationProgress,
-      });
-    } finally {
-      if (translationAbortController === sessionAbortController) {
-        translationAbortController = null;
-      }
+      console.error('恢复后台 Translation session 失败:', error);
     }
   }
 
-  async cancelBackgroundTranslation(sendResponse: (response: unknown) => void): Promise<void> {
-    // 中止正在进行的翻译
-    if (translationAbortController) {
-      translationAbortController.abort();
-      translationAbortController = null;
-    }
-
-    // 清除翻译进度
-    await chrome.storage.local.remove('translationProgress');
-
-    // 清除所有视频字幕缓存
-    const allData = await chrome.storage.local.get(null);
-    const videoSubtitleKeys = Object.keys(allData).filter((key) =>
-      key.startsWith('videoSubtitles_')
-    );
-    if (videoSubtitleKeys.length > 0) {
-      await chrome.storage.local.remove(videoSubtitleKeys);
-    }
-
+  async cancelBackgroundTranslation(
+    request: ChromeMessage,
+    sourceTabId: number | undefined,
+    sendResponse: (response: unknown) => void
+  ): Promise<void> {
+    const targetTabId = sourceTabId || (await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    }))[0]?.id;
+    await this.translationCoordinator.cancel({
+      videoId: request.videoId,
+      tabId: targetTabId,
+    });
     sendResponse({ success: true });
   }
 }

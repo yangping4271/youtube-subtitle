@@ -11,8 +11,6 @@ const mocks = vi.hoisted(() => ({
   sessionCtor: vi.fn(),
   sessionTranslate: vi.fn(),
   clientCtor: vi.fn(),
-  storageSet: vi.fn(),
-  storageRemove: vi.fn(),
 }));
 
 vi.mock('../../src/extension/config.js', () => ({
@@ -28,7 +26,10 @@ vi.mock('../../src/services/openai-client.js', () => ({
   OpenAIClient: mocks.clientCtor,
 }));
 
-import { TranslationSessionAdapter } from '../../src/extension/translator.js';
+import {
+  TranslationSessionAdapter,
+  type ExtensionBilingualSubtitles,
+} from '../../src/extension/translator.js';
 
 function createConfig(model: string): TranslatorConfig {
   return {
@@ -68,23 +69,6 @@ describe('TranslationSessionAdapter interface', () => {
       createConfig(apiConfig?.llmModel || 'default-model')
     );
 
-    (globalThis as typeof globalThis & {
-      chrome?: {
-        storage: {
-          local: {
-            set: typeof mocks.storageSet;
-            remove: typeof mocks.storageRemove;
-          };
-        };
-      };
-    }).chrome = {
-      storage: {
-        local: {
-          set: mocks.storageSet,
-          remove: mocks.storageRemove,
-        },
-      },
-    };
   });
 
   it('每个 session 都加载最新配置并创建新的生产 adapter', async () => {
@@ -132,7 +116,7 @@ describe('TranslationSessionAdapter interface', () => {
   it('通过同一个 interface 转换时间单位并返回完整结果', async () => {
     mocks.loadConfig.mockResolvedValue(createConfig('model'));
     const adapter = new TranslationSessionAdapter();
-    const partials: BilingualSubtitles[] = [];
+    const partials: ExtensionBilingualSubtitles[] = [];
     mocks.sessionTranslate.mockImplementation(async (_request, observer) => {
       await observer.onPartialResult(coreResult);
       return coreResult;
@@ -141,7 +125,7 @@ describe('TranslationSessionAdapter interface', () => {
     const result = await adapter.translate(
       {
         subtitles: [{ startTime: 1, endTime: 2, text: 'hello' }],
-        videoTitle: 'video title',
+        context: { videoTitle: 'video title' },
       },
       {
         onPartialResult: (partial) => {
@@ -155,32 +139,11 @@ describe('TranslationSessionAdapter interface', () => {
         subtitles: [
           { index: 1, startTime: 1_000, endTime: 2_000, text: 'hello' },
         ],
-        videoTitle: 'video title',
+        context: { videoTitle: 'video title' },
       }),
       expect.anything()
     );
     expect(result.english[0]).toMatchObject({ startTime: 1, endTime: 2 });
     expect(partials[0].chinese[0]).toMatchObject({ startTime: 1, endTime: 2 });
-    expect(mocks.storageRemove).toHaveBeenCalledWith('translationProgress');
-  });
-
-  it('进度存储失败不会阻断外部观察器和最终结果', async () => {
-    mocks.loadConfig.mockResolvedValue(createConfig('model'));
-    mocks.storageSet.mockRejectedValue(new Error('storage unavailable'));
-    const onProgress = vi.fn();
-    mocks.sessionTranslate.mockImplementation(async (_request, observer) => {
-      await observer.onProgress('translate', 1, 1);
-      return coreResult;
-    });
-
-    const result = await new TranslationSessionAdapter().translate(
-      {
-        subtitles: [{ startTime: 1, endTime: 2, text: 'hello' }],
-      },
-      { onProgress }
-    );
-
-    expect(onProgress).toHaveBeenCalledWith('translate', 1, 1);
-    expect(result.english).toHaveLength(1);
   });
 });

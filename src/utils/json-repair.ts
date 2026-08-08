@@ -405,7 +405,7 @@ export function parseLlmResponse(response: string): Record<string, unknown> {
     }
     return {};
   } catch (e) {
-    logger.error(`JSON 解析失败: ${e}`);
+    logger.warn(`JSON 解析未成功，交由上层格式降级: ${e}`);
     logger.warn(`原始响应片段: ${response.slice(0, 100)}...`);
     return {};
   }

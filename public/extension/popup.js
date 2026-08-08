@@ -154,6 +154,74 @@ class PopupController {
         return this.newApiProviderDraft || this.getActiveApiProvider();
     }
 
+    isDefaultApiProvider(providerOrId) {
+        const providerId = typeof providerOrId === 'string'
+            ? providerOrId
+            : providerOrId?.id;
+        return window.SubtitleConfig.isDefaultApiProviderId(providerId || '');
+    }
+
+    getApiBaseUrlInputValue(provider) {
+        const baseUrl = provider?.openaiBaseUrl || '';
+        if (this.isDefaultApiProvider(provider) && provider.providerType === 'openai') {
+            return baseUrl.replace(/\/v1\/?$/i, '');
+        }
+        return baseUrl;
+    }
+
+    updateApiBaseUrlHint(provider) {
+        const hint = document.getElementById('apiBaseUrlHint');
+        if (!hint) return;
+
+        const baseUrl = provider?.openaiBaseUrl?.trim() || '';
+        if (!baseUrl) {
+            hint.textContent = '只需填写域名。系统会自动补全实际的翻译和测试接口路径';
+            return;
+        }
+
+        const requestBaseUrl = window.SubtitleConfig.normalizeApiBaseUrl(
+            baseUrl,
+            provider.providerType
+        );
+        if (!requestBaseUrl) {
+            hint.textContent = '只需填写域名。系统会自动补全实际的翻译和测试接口路径';
+            return;
+        }
+
+        hint.textContent = `实际翻译请求：${requestBaseUrl}/chat/completions；测试连接：${requestBaseUrl}/models`;
+    }
+
+    getModelConcurrencyLimit(model) {
+        return window.SubtitleConfig.getModelConcurrencyLimit(model);
+    }
+
+    normalizeThreadNum(value, model) {
+        const max = this.getModelConcurrencyLimit(model);
+        return window.SubtitleConfig.normalizeConcurrency(value, max);
+    }
+
+    updateConcurrencyInputLimit(model) {
+        const threadNum = document.getElementById('threadNum');
+        const threadNumValue = document.getElementById('threadNumValue');
+        const threadNumHint = document.getElementById('threadNumHint');
+        if (!threadNum) return;
+
+        const max = this.getModelConcurrencyLimit(model);
+        const normalized = this.normalizeThreadNum(threadNum.value, model);
+        if (max === undefined) {
+            threadNum.removeAttribute('max');
+        } else {
+            threadNum.max = String(max);
+        }
+        threadNum.value = String(normalized);
+        if (threadNumValue) threadNumValue.textContent = String(normalized);
+        if (threadNumHint) {
+            threadNumHint.textContent = max === undefined
+                ? '未知模型：使用你填写的并发数；并发越高越容易触发服务端限流'
+                : `当前模型上限：${max}；并发越高越容易触发服务端限流`;
+        }
+    }
+
     syncActiveProviderFields() {
         const provider = this.getActiveApiProvider();
         this.apiConfig.openaiBaseUrl = provider.openaiBaseUrl;
@@ -177,7 +245,10 @@ class PopupController {
         if (apiKey) provider.openaiApiKey = apiKey.value.trim();
         if (llmModel) provider.llmModel = llmModel.value.trim();
         if (targetLanguage) this.apiConfig.targetLanguage = targetLanguage.value;
-        if (threadNum) provider.threadNum = parseInt(threadNum.value, 10) || 3;
+        if (threadNum) {
+            provider.threadNum = this.normalizeThreadNum(threadNum.value, provider.llmModel);
+            threadNum.value = String(provider.threadNum);
+        }
         if (!this.newApiProviderDraft) {
             this.syncActiveProviderFields();
         }
@@ -313,7 +384,7 @@ class PopupController {
                 this.themeMode = 'system';
             }
         } catch (error) {
-            console.error('加载主题设置失败:', error);
+            console.warn('加载主题设置失败，使用系统主题:', error);
             this.themeMode = 'system';
         }
 
@@ -343,35 +414,15 @@ class PopupController {
         this._storageObserved = true;
         chrome.storage.onChanged.addListener((changes, areaName) => {
             if (areaName !== 'local') return;
-            // 获取当前视频ID后再判断对应键是否变化
-            this.getCurrentVideoId().then((videoId) => {
-                const videoKey = videoId ? `videoSubtitles_${videoId}` : null;
-                const keys = Object.keys(changes);
-                // 视频级别数据变化
-                if (videoKey && keys.includes(videoKey)) {
-                    const data = changes[videoKey].newValue || {};
-                    this.englishSubtitles = data.englishSubtitles || [];
-                    this.chineseSubtitles = data.chineseSubtitles || [];
-                    this.englishFileName = data.englishFileName || '';
-                    this.chineseFileName = data.chineseFileName || '';
-                    this.updateSubtitleInfo();
-                    return;
-                }
-                // 全局后备数据变化
-                if (keys.includes('englishSubtitles') || keys.includes('chineseSubtitles')) {
-                    chrome.runtime.sendMessage({ action: 'getBilingualSubtitleData' })
-                        .then((res) => {
-                            if (res && res.success && !videoKey) {
-                                this.englishSubtitles = res.data.englishSubtitles || [];
-                                this.chineseSubtitles = res.data.chineseSubtitles || [];
-                                this.englishFileName = res.data.englishFileName || '';
-                                this.chineseFileName = res.data.chineseFileName || '';
-                                this.updateSubtitleInfo();
-                            }
-                        })
-                        .catch(() => { });
-                }
-            });
+            const keys = Object.keys(changes);
+            const subtitleResultChanged = keys.some((key) => key.startsWith('videoSubtitles_'))
+                || keys.includes('englishSubtitles')
+                || keys.includes('chineseSubtitles');
+            if (subtitleResultChanged) {
+                this.syncSubtitleDataFromContentScript().catch((error) => {
+                    console.log('字幕结果变化后同步失败:', error);
+                });
+            }
         });
     }
 
@@ -923,9 +974,27 @@ class PopupController {
                 });
             });
         } catch (error) {
-            console.error('获取视频ID失败:', error);
+            console.warn('获取视频ID失败，当前操作无法关联视频:', error);
             return null;
         }
+    }
+
+    async getTranslationStatus(videoId) {
+        const currentVideoId = videoId === undefined
+            ? await this.getCurrentVideoId()
+            : videoId;
+        const response = await chrome.runtime.sendMessage({
+            action: 'getTranslationStatus',
+            videoId: currentVideoId
+        });
+        if (!response?.success) {
+            throw new Error(response?.error || '读取翻译状态失败');
+        }
+        return response.status || {
+            isTranslating: false,
+            progress: null,
+            cachedResult: null
+        };
     }
 
     // ========================================
@@ -939,10 +1008,9 @@ class PopupController {
             const globalResponse = await chrome.runtime.sendMessage({ action: 'getBilingualSubtitleData' });
             let videoSubtitles = null;
 
-            // 如果有当前视频ID，尝试加载对应的字幕数据
+            // 视频结果由 browser-side Translation session 统一读取
             if (currentVideoId) {
-                const videoResult = await chrome.storage.local.get(`videoSubtitles_${currentVideoId}`);
-                videoSubtitles = videoResult[`videoSubtitles_${currentVideoId}`];
+                videoSubtitles = (await this.getTranslationStatus(currentVideoId)).cachedResult;
             }
 
             if (globalResponse.success) {
@@ -1359,7 +1427,7 @@ class PopupController {
             // 显示保存状态提示
             // Toast.success('设置已保存'); // 已保存反馈改为静默，UI变化已足够反馈
         } catch (error) {
-            console.error('更新设置失败:', error);
+            console.warn('更新设置失败，继续使用当前页面设置:', error);
         }
     }
 
@@ -1445,9 +1513,7 @@ class PopupController {
             const currentVideoId = await this.getCurrentVideoId();
 
             if (currentVideoId) {
-                // 优先从基于videoId的存储中获取数据
-                const videoResult = await chrome.storage.local.get(`videoSubtitles_${currentVideoId}`);
-                const videoSubtitles = videoResult[`videoSubtitles_${currentVideoId}`];
+                const videoSubtitles = (await this.getTranslationStatus(currentVideoId)).cachedResult;
 
                 if (videoSubtitles) {
                     // 使用当前视频的字幕数据
@@ -1531,7 +1597,7 @@ class PopupController {
                 this.apiConfig = window.SubtitleConfig.normalizeApiConfig(this.apiConfig);
             }
         } catch (error) {
-            console.error('加载API配置失败:', error);
+            console.warn('加载API配置失败，继续使用默认配置:', error);
         }
     }
 
@@ -1584,7 +1650,8 @@ class PopupController {
             );
         }
         if (providerName) providerName.value = activeProvider.name || '';
-        if (apiBaseUrl) apiBaseUrl.value = activeProvider.openaiBaseUrl;
+        if (apiBaseUrl) apiBaseUrl.value = this.getApiBaseUrlInputValue(activeProvider);
+        this.updateApiBaseUrlHint(activeProvider);
         if (apiKey) apiKey.value = activeProvider.openaiApiKey;
         if (llmModel) llmModel.value = activeProvider.llmModel;
         if (targetLanguage) this.setSelectValue(targetLanguage, this.apiConfig.targetLanguage);
@@ -1592,10 +1659,13 @@ class PopupController {
             threadNum.value = activeProvider.threadNum || 3;
             if (threadNumValue) threadNumValue.textContent = threadNum.value;
         }
+        this.updateConcurrencyInputLimit(activeProvider.llmModel);
 
         const deleteProviderBtn = document.getElementById('deleteProviderBtn');
         if (deleteProviderBtn) {
-            deleteProviderBtn.disabled = Boolean(this.newApiProviderDraft) || this.apiConfig.providers.length <= 1;
+            const isDefaultProvider = this.isDefaultApiProvider(activeProvider);
+            deleteProviderBtn.disabled = Boolean(this.newApiProviderDraft) || isDefaultProvider;
+            deleteProviderBtn.title = isDefaultProvider ? '内置配置不可删除' : '删除供应商';
         }
 
         // 检查API状态
@@ -1643,11 +1713,14 @@ class PopupController {
         // API Base URL
         const apiBaseUrl = document.getElementById('apiBaseUrl');
         if (apiBaseUrl) {
-            apiBaseUrl.addEventListener('change', (e) => {
+            const updateBaseUrl = (e) => {
                 const provider = this.getEditingApiProvider();
                 provider.openaiBaseUrl = e.target.value.trim();
+                this.updateApiBaseUrlHint(provider);
                 if (!this.newApiProviderDraft) this.syncActiveProviderFields();
-            });
+            };
+            apiBaseUrl.addEventListener('input', updateBaseUrl);
+            apiBaseUrl.addEventListener('change', updateBaseUrl);
         }
 
         // API Key
@@ -1674,6 +1747,11 @@ class PopupController {
             llmModel.addEventListener('input', (e) => {
                 const provider = this.getEditingApiProvider();
                 provider.llmModel = e.target.value.trim();
+                this.updateConcurrencyInputLimit(provider.llmModel);
+                provider.threadNum = this.normalizeThreadNum(
+                    document.getElementById('threadNum')?.value,
+                    provider.llmModel
+                );
                 if (!this.newApiProviderDraft) this.syncActiveProviderFields();
             });
         }
@@ -1686,7 +1764,7 @@ class PopupController {
                 try {
                     await chrome.storage.local.set({ apiConfig: this.apiConfig });
                 } catch (error) {
-                    console.error('保存目标语言失败:', error);
+                    console.warn('保存目标语言失败，当前会话继续使用已选语言:', error);
                 }
             });
         }
@@ -1696,11 +1774,12 @@ class PopupController {
         const threadNumValue = document.getElementById('threadNumValue');
         if (threadNum) {
             threadNum.addEventListener('input', (e) => {
-                const value = parseInt(e.target.value, 10);
                 const provider = this.getEditingApiProvider();
+                const value = this.normalizeThreadNum(e.target.value, provider.llmModel);
                 provider.threadNum = value;
+                e.target.value = String(value);
                 if (!this.newApiProviderDraft) this.syncActiveProviderFields();
-                if (threadNumValue) threadNumValue.textContent = value;
+                if (threadNumValue) threadNumValue.textContent = String(value);
             });
         }
 
@@ -1740,12 +1819,12 @@ class PopupController {
     }
 
     deleteActiveApiProvider() {
-        if (this.apiConfig.providers.length <= 1) {
-            Toast.warning('至少保留一个供应商');
+        const currentId = this.apiConfig.activeProviderId;
+        if (this.isDefaultApiProvider(currentId)) {
+            Toast.warning('OpenAI、OpenRouter、DeepSeek 为内置配置，不可删除');
             return;
         }
 
-        const currentId = this.apiConfig.activeProviderId;
         this.apiConfig.providers = this.apiConfig.providers.filter(provider => provider.id !== currentId);
         this.apiConfig.activeProviderId = this.apiConfig.providers[0].id;
         this.syncActiveProviderFields();
@@ -1754,6 +1833,15 @@ class PopupController {
 
     async saveApiConfigFromUI() {
         const provider = this.collectActiveProviderFromUI();
+
+        try {
+            await this.requestApiHostPermission(provider.openaiBaseUrl);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            Toast.error(`API 权限未授予: ${message}`);
+            return;
+        }
+
         if (this.newApiProviderDraft) {
             provider.name = provider.name || '未命名供应商';
             this.apiConfig.providers.push({ ...provider });
@@ -1770,6 +1858,8 @@ class PopupController {
         const provider = this.collectActiveProviderFromUI();
 
         try {
+            await this.requestApiHostPermission(provider.openaiBaseUrl);
+
             // 测试现有供应商时同步最新配置
             if (!this.newApiProviderDraft) {
                 await chrome.storage.local.set({ apiConfig: this.apiConfig });
@@ -1782,7 +1872,11 @@ class PopupController {
                 headers.Authorization = `Bearer ${provider.openaiApiKey}`;
             }
 
-            const response = await fetch(`${provider.openaiBaseUrl}/models`, {
+            const requestBaseUrl = window.SubtitleConfig.normalizeApiBaseUrl(
+                provider.openaiBaseUrl,
+                provider.providerType
+            );
+            const response = await fetch(`${requestBaseUrl}/models`, {
                 method: 'GET',
                 headers
             });
@@ -1790,8 +1884,8 @@ class PopupController {
             if (response.ok) {
                 this.showApiStatus('success', 'API连接成功');
             } else {
-                const error = await response.json().catch(() => ({}));
-                this.showApiStatus('error', `连接失败: ${error.error?.message || response.statusText}`);
+                const errorMessage = await window.SubtitleConfig.formatApiResponseError(response);
+                this.showApiStatus('error', `连接失败: ${errorMessage}`);
             }
         } catch (error) {
             this.showApiStatus('error', `网络错误: ${error.message}`);
@@ -1811,6 +1905,31 @@ class PopupController {
         }
     }
 
+    requestApiHostPermission(baseUrl) {
+        const originPattern = window.SubtitleConfig.getApiHostPermissionPattern(baseUrl);
+
+        if (!chrome.permissions || typeof chrome.permissions.request !== 'function') {
+            return Promise.reject(new Error('当前扩展不支持动态 API 权限，请重新加载扩展'));
+        }
+
+        return new Promise((resolve, reject) => {
+            chrome.permissions.request({ origins: [originPattern] }, (granted) => {
+                const lastError = chrome.runtime.lastError;
+                if (lastError) {
+                    reject(new Error(lastError.message));
+                    return;
+                }
+
+                if (!granted) {
+                    reject(new Error(`用户拒绝访问 ${originPattern.replace(/\/\*$/, '')}`));
+                    return;
+                }
+
+                resolve();
+            });
+        });
+    }
+
     // ========================================
     // 翻译功能（独立版本专用）
     // ========================================
@@ -1820,17 +1939,9 @@ class PopupController {
      */
     async checkTranslationProgress() {
         try {
-            const result = await chrome.storage.local.get(['translationProgress']);
-            const progress = result.translationProgress;
+            const progress = (await this.getTranslationStatus()).progress;
 
             if (progress && progress.isTranslating) {
-                // 检查翻译是否超时(超过10分钟视为异常)
-                const elapsed = Date.now() - progress.timestamp;
-                if (elapsed > 10 * 60 * 1000) {
-                    await chrome.storage.local.remove('translationProgress');
-                    return;
-                }
-
                 this.isTranslating = true;
                 this.showTranslationProgress(progress);
                 this.startProgressListener();
@@ -1860,17 +1971,23 @@ class PopupController {
         }
         if (progressRow) progressRow.style.display = 'flex';
 
-        const percent = Math.round((progress.current / progress.total) * 100);
+        const current = Number.isFinite(progress.current) ? progress.current : 0;
+        const total = Number.isFinite(progress.total) && progress.total > 0
+            ? progress.total
+            : 0;
+        const percent = total > 0 ? Math.round((current / total) * 100) : 0;
         if (progressFill) progressFill.style.width = percent + '%';
 
         const stepNames = {
+            'start': '准备翻译...',
+            'resume': '恢复翻译中...',
             'split': '断句优化中...',
             'summary': '内容总结中...',
             'translate': '翻译中...',
             'complete': '完成'
         };
         if (progressText) progressText.textContent = `${percent}%`;
-        if (autoLoadStatus) autoLoadStatus.textContent = stepNames[progress.step] || progress.step;
+        if (autoLoadStatus) autoLoadStatus.textContent = stepNames[progress.step] || '翻译中...';
     }
 
     startProgressListener() {
@@ -1879,7 +1996,7 @@ class PopupController {
         this._progressListener = async (changes, areaName) => {
             if (areaName !== 'local' || !changes.translationProgress) return;
 
-            const newValue = changes.translationProgress.newValue;
+            const newValue = (await this.getTranslationStatus()).progress;
             const autoLoadStatus = document.getElementById('autoLoadStatus');
 
             if (newValue && newValue.isTranslating) {
@@ -1921,35 +2038,21 @@ class PopupController {
      * 强制重置翻译状态
      */
     async forceResetTranslation() {
-        // 发送取消消息到后台
-        try {
-            await chrome.runtime.sendMessage({ action: 'cancelTranslation' });
-        } catch (error) {
-            console.log('发送取消消息失败，继续执行本地重置:', error);
-        }
-
-        // 清除当前视频的缓存
         const currentVideoId = await this.getCurrentVideoId();
-        if (currentVideoId) {
-            const cacheKey = `videoSubtitles_${currentVideoId}`;
-            await chrome.storage.local.remove([cacheKey]);
-        }
 
-        // 清空页面字幕
+        // 取消、进度和当前视频缓存由 Translation session 统一清理
         try {
             await chrome.runtime.sendMessage({
-                action: 'clearSubtitleData'
+                action: 'cancelTranslation',
+                videoId: currentVideoId
             });
         } catch (error) {
-            console.log('清除页面字幕失败，继续执行本地重置:', error);
+            console.log('发送取消消息失败，继续重置 popup UI:', error);
         }
 
         // 清空当前数据
         this.englishSubtitles = [];
         this.chineseSubtitles = [];
-
-        // 清除翻译进度
-        await chrome.storage.local.remove('translationProgress');
 
         // 停止监听
         if (this._progressListener) {
@@ -2003,9 +2106,7 @@ class PopupController {
             return;
         }
 
-        const cacheKey = `videoSubtitles_${currentVideoId}`;
-        const result = await chrome.storage.local.get([cacheKey]);
-        const cached = result[cacheKey];
+        const cached = (await this.getTranslationStatus(currentVideoId)).cachedResult;
 
         if (cached && (cached.englishSubtitles?.length > 0 || cached.chineseSubtitles?.length > 0)) {
             translateBtn.innerHTML = '<span class="btn-text">重新翻译</span>';
@@ -2042,102 +2143,23 @@ class PopupController {
             return;
         }
 
+        try {
+            await this.requestApiHostPermission(this.apiConfig.openaiBaseUrl);
+        } catch (error) {
+            const autoLoadStatus = document.getElementById('autoLoadStatus');
+            const message = error instanceof Error ? error.message : String(error);
+            if (autoLoadStatus) {
+                autoLoadStatus.textContent = `API 权限未授予: ${message}`;
+                autoLoadStatus.className = 'load-status error';
+            }
+            return;
+        }
+
         // 获取当前视频ID
         const currentVideoId = await this.getCurrentVideoId();
         console.log('📹 当前视频ID:', currentVideoId);
 
-        // 检查按钮文案判断是否为重新翻译
         const translateBtn = document.getElementById('translateBtn');
-        const isRetranslate = translateBtn && translateBtn.textContent.includes('重新翻译');
-        console.log('🔄 是否重新翻译:', isRetranslate, '按钮文案:', translateBtn?.textContent);
-
-        // 如果是重新翻译，先完全重置
-        if (isRetranslate && currentVideoId) {
-            console.log('🧹 开始清理缓存和重置状态...');
-            try {
-                // 清理缓存
-                const cacheKey = `videoSubtitles_${currentVideoId}`;
-                await chrome.storage.local.remove([cacheKey]);
-                console.log('✅ 缓存已清除:', cacheKey);
-
-                // 清空页面字幕
-                try {
-                    await chrome.runtime.sendMessage({
-                        action: 'clearSubtitleData'
-                    });
-                    console.log('✅ 页面字幕已清空');
-                } catch (error) {
-                    console.log('清空页面字幕失败，继续执行重新翻译:', error);
-                }
-
-                // 清空当前数据
-                this.englishSubtitles = [];
-                this.chineseSubtitles = [];
-
-                // 重置进度条
-                const progressFill = document.getElementById('progressFill');
-                const progressText = document.getElementById('progressText');
-                if (progressFill) progressFill.style.width = '0%';
-                if (progressText) progressText.textContent = '0%';
-
-                // 更新状态显示
-                const autoLoadStatus = document.getElementById('autoLoadStatus');
-                if (autoLoadStatus) {
-                    autoLoadStatus.textContent = '正在准备重新翻译...';
-                    autoLoadStatus.className = 'load-status translating';
-                }
-
-                console.log('✅ 清理完成，继续执行翻译流程');
-            } catch (error) {
-                console.error('❌ 清理缓存时出错:', error);
-                const autoLoadStatus = document.getElementById('autoLoadStatus');
-                if (autoLoadStatus) {
-                    autoLoadStatus.textContent = `清理失败: ${error.message}`;
-                    autoLoadStatus.className = 'load-status error';
-                }
-                return;
-            }
-        }
-
-        // 检查是否已有翻译缓存（重新翻译时已清除）
-        if (!isRetranslate && currentVideoId) {
-            const cacheKey = `videoSubtitles_${currentVideoId}`;
-            const result = await chrome.storage.local.get([cacheKey]);
-            const cached = result[cacheKey];
-
-            if (cached && (cached.englishSubtitles?.length > 0 || cached.chineseSubtitles?.length > 0)) {
-                console.log('📦 发现已有翻译缓存:', cached.englishSubtitles?.length, '条英文,', cached.chineseSubtitles?.length, '条中文');
-
-                // 直接加载缓存的翻译
-                this.englishSubtitles = cached.englishSubtitles || [];
-                this.chineseSubtitles = cached.chineseSubtitles || [];
-
-                const targetLangName = this.getTargetLanguageName(this.apiConfig.targetLanguage || 'zh');
-                // 通知content.js加载字幕
-                await chrome.runtime.sendMessage({
-                    action: 'saveBilingualSubtitles',
-                    englishSubtitles: cached.englishSubtitles,
-                    chineseSubtitles: cached.chineseSubtitles,
-                    englishFileName: cached.englishFileName || 'YouTube字幕 (原语言)',
-                    chineseFileName: cached.chineseFileName || `AI翻译 (${targetLangName})`
-                });
-
-                // 启用字幕显示
-                const subtitleToggle = document.getElementById('subtitleToggle');
-                if (subtitleToggle) subtitleToggle.checked = true;
-                await this.toggleSubtitle(true);
-
-                this.updateSubtitleInfoWithRetry();
-
-                // 更新状态显示
-                const autoLoadStatus = document.getElementById('autoLoadStatus');
-                if (autoLoadStatus) {
-                    autoLoadStatus.textContent = `已加载缓存: ${cached.chineseSubtitles?.length || 0}条字幕`;
-                    autoLoadStatus.className = 'load-status success';
-                }
-                return;
-            }
-        }
 
         console.log('🚀 开始执行翻译流程...');
         const progressRow = document.getElementById('progressRow');
@@ -2196,7 +2218,7 @@ class PopupController {
 
                     if (response) {
                         videoInfo = {
-                            title: response.title,
+                            ytTitle: response.title,
                             description: response.description,
                             aiSummary: response.aiSummary
                         };

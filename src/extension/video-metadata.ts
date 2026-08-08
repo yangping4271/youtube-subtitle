@@ -38,7 +38,7 @@ export function getVideoDescription(): string {
         logger.warn('⚠️ 未找到视频说明');
         return '';
     } catch (error) {
-        logger.error(`获取视频说明失败: ${error}`);
+        logger.warn(`获取视频说明失败，继续使用无说明上下文: ${error}`);
         return '';
     }
 }
@@ -90,7 +90,7 @@ export function getAISummary(): string | null {
         logger.info('ℹ️ 该视频没有 AI 生成的摘要');
         return null;
     } catch (error) {
-        logger.error(`获取 AI 摘要失败: ${error}`);
+        logger.warn(`获取 AI 摘要失败，继续使用无摘要上下文: ${error}`);
         return null;
     }
 }
