@@ -9,7 +9,7 @@ import {
   createApiResponseError,
   isOptionalRequestParameterUnsupportedError,
 } from '../utils/error-handler.js';
-import { normalizeApiBaseUrl } from '../utils/api-url.js';
+import { assertRemoteApiBaseUrl, normalizeApiBaseUrl } from '../utils/api-url.js';
 import type { ChatOptions, TranslatorConfig } from '../types/index.js';
 
 const logger = setupLogger('openai-client');
@@ -26,6 +26,7 @@ export class OpenAIClient {
   private providerType: string;
 
   constructor(config: TranslatorConfig) {
+    assertRemoteApiBaseUrl(config.openaiBaseUrl);
     this.baseUrl = normalizeApiBaseUrl(config.openaiBaseUrl, config.providerType);
     this.apiKey = config.openaiApiKey;
     this.model = config.model;

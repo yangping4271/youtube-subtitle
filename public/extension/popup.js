@@ -179,6 +179,12 @@ class PopupController {
             return;
         }
 
+        const validationError = window.SubtitleConfig.getApiEndpointValidationError(baseUrl);
+        if (validationError) {
+            hint.textContent = validationError;
+            return;
+        }
+
         const requestBaseUrl = window.SubtitleConfig.normalizeApiBaseUrl(
             baseUrl,
             provider.providerType
@@ -1587,24 +1593,49 @@ class PopupController {
 
     async loadApiConfig() {
         try {
-            const result = await chrome.storage.local.get(['apiConfig']);
-            if (result.apiConfig) {
-                this.apiConfig = window.SubtitleConfig.normalizeApiConfig({
-                    ...this.apiConfig,
-                    ...result.apiConfig
+            const result = await chrome.storage.local.get(['apiConfig', 'apiConfigMigrationNotice']);
+            const migration = window.SubtitleConfig.migrateApiConfig(result.apiConfig || {});
+            this.apiConfig = migration.config;
+
+            if (migration.changed) {
+                await chrome.storage.local.set({
+                    apiConfig: this.apiConfig,
+                    ...(migration.requiresProviderSelection || migration.removedProviderIds.length > 0
+                        ? { apiConfigMigrationNotice: window.SubtitleConfig.API_CONFIG_MIGRATION_NOTICE }
+                        : {})
                 });
-            } else {
-                this.apiConfig = window.SubtitleConfig.normalizeApiConfig(this.apiConfig);
+            }
+
+            const migrationNotice = migration.requiresProviderSelection || migration.removedProviderIds.length > 0
+                ? window.SubtitleConfig.API_CONFIG_MIGRATION_NOTICE
+                : result.apiConfigMigrationNotice;
+            if (migrationNotice) {
+                Toast.warning(migrationNotice, 4000);
+                await chrome.storage.local.remove('apiConfigMigrationNotice');
             }
         } catch (error) {
             console.warn('加载API配置失败，继续使用默认配置:', error);
         }
     }
 
+    async persistApiConfig() {
+        const migration = window.SubtitleConfig.migrateApiConfig(this.apiConfig);
+        this.apiConfig = migration.config;
+        await chrome.storage.local.set({
+            apiConfig: this.apiConfig,
+            ...(migration.requiresProviderSelection || migration.removedProviderIds.length > 0
+                ? { apiConfigMigrationNotice: window.SubtitleConfig.API_CONFIG_MIGRATION_NOTICE }
+                : {})
+        });
+        if (migration.requiresProviderSelection || migration.removedProviderIds.length > 0) {
+            Toast.warning(window.SubtitleConfig.API_CONFIG_MIGRATION_NOTICE, 4000);
+        }
+    }
+
     async saveApiConfig() {
         try {
             this.syncActiveProviderFields();
-            await chrome.storage.local.set({ apiConfig: this.apiConfig });
+            await this.persistApiConfig();
             Toast.success('API配置已保存');
         } catch (error) {
             console.error('保存API配置失败:', error);
@@ -1762,7 +1793,7 @@ class PopupController {
             targetLanguage.addEventListener('change', async (e) => {
                 this.apiConfig.targetLanguage = e.target.value;
                 try {
-                    await chrome.storage.local.set({ apiConfig: this.apiConfig });
+                    await this.persistApiConfig();
                 } catch (error) {
                     console.warn('保存目标语言失败，当前会话继续使用已选语言:', error);
                 }
@@ -1849,6 +1880,7 @@ class PopupController {
             this.newApiProviderDraft = null;
             this.syncActiveProviderFields();
         }
+        this.apiConfig.requiresProviderSelection = false;
         await this.saveApiConfig();
         this.loadApiConfigToUI();
     }
@@ -1862,7 +1894,7 @@ class PopupController {
 
             // 测试现有供应商时同步最新配置
             if (!this.newApiProviderDraft) {
-                await chrome.storage.local.set({ apiConfig: this.apiConfig });
+                await this.persistApiConfig();
             }
 
             const headers = {

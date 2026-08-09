@@ -3,7 +3,13 @@
  * 处理扩展的后台任务：消息通信、存储管理、翻译任务
  */
 
-import { getDefaultEnglishSettings, getDefaultChineseSettings } from './config';
+import {
+  API_CONFIG_MIGRATION_NOTICE,
+  assertApiConfigUsesRemoteEndpoints,
+  getDefaultEnglishSettings,
+  getDefaultChineseSettings,
+  migrateApiConfig,
+} from './config';
 import { formatSubtitleFetchLog } from './subtitle-fetch-log';
 import {
   BrowserTranslationCoordinator,
@@ -86,26 +92,7 @@ interface ChromeMessage {
   subtitles?: SimpleSubtitleEntry[];
   targetLanguage?: string;
   videoId?: string;
-  apiConfig?: {
-    activeProviderId?: string;
-    providers?: Array<{
-      id: string;
-      name: string;
-      providerType?: 'openai' | 'openrouter' | 'deepseek' | 'custom';
-      openaiBaseUrl: string;
-      openaiApiKey: string;
-      llmModel: string;
-      threadNum?: number;
-      disableThinking?: boolean;
-    }>;
-    openaiBaseUrl?: string;
-    openaiApiKey?: string;
-    llmModel?: string;
-    providerType?: 'openai' | 'openrouter' | 'deepseek' | 'custom';
-    targetLanguage?: string;
-    threadNum?: number;
-    disableThinking?: boolean;
-  };
+  apiConfig?: Partial<ApiConfig>;
   videoInfo?: TranslationVideoInfo;
   englishSubtitles?: SimpleSubtitleEntry[];
   chineseSubtitles?: SimpleSubtitleEntry[];
@@ -252,24 +239,46 @@ class SubtitleExtensionBackground {
   }
 
   onUpdate(): void {
-    chrome.storage.local.get(['englishSettings']).then((res) => {
+    void this.migrateConfigOnUpdate();
+  }
+
+  private async migrateConfigOnUpdate(): Promise<void> {
+    try {
+      const res = await chrome.storage.local.get(['apiConfig', 'englishSettings']);
+      const migration = migrateApiConfig((res.apiConfig as Partial<ApiConfig>) || {});
       const english = (res.englishSettings as SubtitleStyleSettings) || {};
       const needsFix = !english.fontFamily || english.fontFamily === 'inherit';
+      const updates: Record<string, unknown> = {};
+
+      if (migration.changed) {
+        updates.apiConfig = migration.config;
+        if (migration.requiresProviderSelection || migration.removedProviderIds.length > 0) {
+          updates.apiConfigMigrationNotice = API_CONFIG_MIGRATION_NOTICE;
+        }
+      }
+
       if (needsFix) {
-        const fixed: SubtitleStyleSettings = {
+        updates.englishSettings = {
           ...getDefaultEnglishSettings(),
           ...english,
           fontFamily: '"Noto Serif", Georgia, serif',
         };
-        chrome.storage.local.set({ englishSettings: fixed }).then(() => {
-          try {
-            this.notifyContentScript('updateSettings', { language: 'english', settings: fixed });
-          } catch {
-            // 忽略通知错误
-          }
-        });
       }
-    });
+
+      if (Object.keys(updates).length === 0) return;
+      await chrome.storage.local.set(updates);
+
+      const fixed = updates.englishSettings as SubtitleStyleSettings | undefined;
+      if (fixed) {
+        try {
+          await this.notifyContentScript('updateSettings', { language: 'english', settings: fixed });
+        } catch {
+          // 忽略通知错误
+        }
+      }
+    } catch (error) {
+      console.warn('更新扩展配置失败，保留现有配置:', error);
+    }
   }
 
   async handleMessage(
@@ -629,8 +638,12 @@ class SubtitleExtensionBackground {
       return;
     }
 
+    const normalizedApiConfig = apiConfig
+      ? (assertApiConfigUsesRemoteEndpoints(apiConfig), migrateApiConfig(apiConfig).config)
+      : undefined;
+
     if (apiConfig) {
-      await chrome.storage.local.set({ apiConfig });
+      await chrome.storage.local.set({ apiConfig: normalizedApiConfig });
     }
 
     const targetTabId = sourceTabId || (await chrome.tabs.query({
@@ -643,7 +656,7 @@ class SubtitleExtensionBackground {
       targetLanguage: targetLanguage || 'zh',
       videoId,
       tabId: targetTabId,
-      apiConfig: apiConfig as Partial<ApiConfig> | undefined,
+      apiConfig: normalizedApiConfig,
       videoInfo: request.videoInfo,
     };
     let responseSent = false;
@@ -678,6 +691,35 @@ class SubtitleExtensionBackground {
 
     if (age > 24 * 60 * 60 * 1000) {
       await chrome.storage.local.remove(TRANSLATION_JOB_STORAGE_KEY);
+      return;
+    }
+
+    try {
+      if (pendingJob.request.apiConfig) {
+        assertApiConfigUsesRemoteEndpoints(pendingJob.request.apiConfig);
+        const migration = migrateApiConfig(pendingJob.request.apiConfig);
+        if (migration.changed) {
+          await chrome.storage.local.set({
+            [TRANSLATION_JOB_STORAGE_KEY]: {
+              ...pendingJob,
+              request: {
+                ...pendingJob.request,
+                apiConfig: migration.config,
+              },
+            },
+          });
+        }
+      }
+    } catch (error) {
+      await chrome.storage.local.remove(TRANSLATION_JOB_STORAGE_KEY);
+      await chrome.storage.local.set({
+        translationProgress: {
+          isTranslating: false,
+          videoId: pendingJob.request.videoId,
+          error: `已停止恢复不支持的本地 API 任务: ${(error as Error).message}`,
+          timestamp: Date.now(),
+        },
+      });
       return;
     }
 

@@ -10,76 +10,59 @@ import type {
   LanguageOption,
   ApiConfig,
   ApiProviderConfig,
-  ApiProviderType,
   TranslatorConfig,
 } from '../types';
-import { DEFAULT_CONCURRENCY, normalizeConcurrency } from '../utils/concurrency.js';
+import { DEFAULT_CONCURRENCY } from '../utils/concurrency.js';
+import { getApiEndpointValidationError } from '../utils/api-url.js';
+import {
+  API_CONFIG_MIGRATION_NOTICE,
+  API_CONFIG_SCHEMA_VERSION,
+  DEFAULT_API_PROVIDERS,
+  MAX_API_CONCURRENCY,
+  MODEL_CONCURRENCY_LIMITS,
+  assertApiConfigUsesRemoteEndpoints,
+  getModelConcurrencyLimit,
+  isDefaultApiProviderId,
+  migrateApiConfig,
+  normalizeApiConfig,
+} from '../utils/api-config.js';
 import { popupConfigBridge } from './config-bridge.js';
 import type { PopupConfigBridge } from './config-bridge.js';
 
 export { normalizeApiBaseUrl } from '../utils/api-url.js';
 export { getApiHostPermissionPattern } from './config-bridge.js';
-
-/** DeepSeek V4 Flash 文档给出的账号级最大并发请求数。 */
-export const MAX_API_CONCURRENCY = 2500;
-
-/** 已知模型的账号级并发上限；未知模型不强加本地上限，由用户自行配置。 */
-export const MODEL_CONCURRENCY_LIMITS: Record<string, number> = {
-  'deepseek-v4-flash': MAX_API_CONCURRENCY,
-  'deepseek-v4-pro': 500,
-};
+export {
+  assertRemoteApiBaseUrl,
+  getApiEndpointValidationError,
+  isRemoteApiBaseUrl,
+} from '../utils/api-url.js';
+export {
+  API_CONFIG_MIGRATION_NOTICE,
+  API_CONFIG_SCHEMA_VERSION,
+  DEFAULT_API_PROVIDERS,
+  DEFAULT_API_PROVIDER_IDS,
+  MAX_API_CONCURRENCY,
+  MODEL_CONCURRENCY_LIMITS,
+  assertApiConfigUsesRemoteEndpoints,
+  getModelConcurrencyLimit,
+  isDefaultApiProviderId,
+  migrateApiConfig,
+  normalizeApiConfig,
+} from '../utils/api-config.js';
 
 // Chrome API 类型声明
 declare const chrome: {
   storage?: {
     local: {
       get: (keys: string[], callback: (result: Record<string, unknown>) => void) => void;
+      set?: (items: Record<string, unknown>) => Promise<void> | void;
     };
   };
 };
 
-export const DEFAULT_API_PROVIDERS: ApiProviderConfig[] = [
-  {
-    id: 'openai',
-    name: 'OpenAI',
-    providerType: 'openai',
-    openaiBaseUrl: 'https://api.openai.com',
-    openaiApiKey: '',
-    llmModel: 'gpt-4o-mini',
-    threadNum: DEFAULT_CONCURRENCY,
-    disableThinking: true,
-  },
-  {
-    id: 'openrouter',
-    name: 'OpenRouter',
-    providerType: 'openrouter',
-    openaiBaseUrl: 'https://openrouter.ai/api/v1',
-    openaiApiKey: '',
-    llmModel: 'openai/gpt-4o-mini',
-    threadNum: DEFAULT_CONCURRENCY,
-    disableThinking: true,
-  },
-  {
-    id: 'deepseek',
-    name: 'DeepSeek',
-    providerType: 'deepseek',
-    openaiBaseUrl: 'https://api.deepseek.com',
-    openaiApiKey: '',
-    llmModel: 'deepseek-v4-flash',
-    threadNum: DEFAULT_CONCURRENCY,
-    disableThinking: true,
-  },
-];
-
-/** 这三个供应商是内置配置，始终保留在供应商列表中。 */
-export const DEFAULT_API_PROVIDER_IDS = DEFAULT_API_PROVIDERS.map(provider => provider.id);
-
-export function isDefaultApiProviderId(providerId = ''): boolean {
-  return DEFAULT_API_PROVIDER_IDS.includes(providerId);
-}
-
 /** 默认 API 配置 */
 export const DEFAULT_API_CONFIG: ApiConfig = {
+  schemaVersion: API_CONFIG_SCHEMA_VERSION,
   activeProviderId: DEFAULT_API_PROVIDERS[0].id,
   providers: DEFAULT_API_PROVIDERS,
   openaiBaseUrl: 'https://api.openai.com',
@@ -107,130 +90,6 @@ const DEFAULT_TRANSLATOR_CONFIG: TranslatorConfig = {
   maxMultiplier: 2.0,
 };
 
-function getUrlParts(baseUrl = ''): { hostname: string; pathParts: Set<string> } {
-  try {
-    const parsed = new URL(baseUrl);
-    return {
-      hostname: parsed.hostname.toLowerCase(),
-      pathParts: new Set(
-        parsed.pathname
-          .split('/')
-          .map(part => part.trim().toLowerCase())
-          .filter(Boolean)
-      ),
-    };
-  } catch {
-    return {
-      hostname: '',
-      pathParts: new Set(
-        baseUrl
-          .toLowerCase()
-          .split(/[/?#]+/)
-          .map(part => part.trim())
-          .filter(Boolean)
-      ),
-    };
-  }
-}
-
-function inferProviderType(baseUrl = ''): ApiProviderType {
-  const normalizedBaseUrl = baseUrl.toLowerCase();
-  const { hostname, pathParts } = getUrlParts(baseUrl);
-  if (hostname.endsWith('openrouter.ai') || pathParts.has('openrouter') || normalizedBaseUrl.includes('openrouter.ai')) return 'openrouter';
-  if (hostname.endsWith('deepseek.com') || normalizedBaseUrl.includes('deepseek.com')) return 'deepseek';
-  if (hostname === 'api.openai.com' || normalizedBaseUrl.includes('api.openai.com')) return 'openai';
-  return 'custom';
-}
-
-export function getModelConcurrencyLimit(model = ''): number | undefined {
-  return MODEL_CONCURRENCY_LIMITS[model.trim().toLowerCase()];
-}
-
-function normalizeThreadNum(value: unknown, model = ''): number {
-  const modelLimit = getModelConcurrencyLimit(model);
-  return normalizeConcurrency(value, modelLimit);
-}
-
-function normalizeProvider(provider: ApiProviderConfig): ApiProviderConfig {
-  return {
-    id: provider.id,
-    name: provider.name || '未命名供应商',
-    providerType: provider.providerType || inferProviderType(provider.openaiBaseUrl),
-    openaiBaseUrl: typeof provider.openaiBaseUrl === 'string' ? provider.openaiBaseUrl : '',
-    openaiApiKey: provider.openaiApiKey || '',
-    llmModel: provider.llmModel || '',
-    threadNum: normalizeThreadNum(provider.threadNum, provider.llmModel),
-    disableThinking: true,
-  };
-}
-
-function cloneDefaultProviders(): ApiProviderConfig[] {
-  return DEFAULT_API_PROVIDERS.map(provider => ({ ...provider }));
-}
-
-function mergeDefaultProviders(configuredProviders: ApiProviderConfig[]): ApiProviderConfig[] {
-  const configuredById = new Map(configuredProviders.map(provider => [provider.id, provider]));
-  const defaultProviders = DEFAULT_API_PROVIDERS.map(defaultProvider => ({
-    ...defaultProvider,
-    ...(configuredById.get(defaultProvider.id) || {}),
-    id: defaultProvider.id,
-  }));
-  const customProviders = configuredProviders.filter(
-    provider => !isDefaultApiProviderId(provider.id)
-  );
-
-  return [...defaultProviders, ...customProviders];
-}
-
-function ensureUniqueProviders(providers: ApiProviderConfig[]): ApiProviderConfig[] {
-  const result: ApiProviderConfig[] = [];
-  const seen = new Set<string>();
-
-  for (const provider of providers) {
-    const key = `id:${provider.id}`;
-
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    result.push(provider);
-  }
-
-  return result;
-}
-
-export function normalizeApiConfig(apiConfig: Partial<ApiConfig> | null | undefined): ApiConfig {
-  const configuredProviders: ApiProviderConfig[] = Array.isArray(apiConfig?.providers)
-    ? apiConfig.providers
-      .filter((provider): provider is ApiProviderConfig => Boolean(provider?.id))
-      .map(normalizeProvider)
-    : [];
-
-  const providers = mergeDefaultProviders(
-    ensureUniqueProviders(
-      configuredProviders.length > 0 ? configuredProviders : cloneDefaultProviders()
-    )
-  );
-
-  const activeProviderId = apiConfig?.activeProviderId && providers.some(p => p.id === apiConfig.activeProviderId)
-    ? apiConfig.activeProviderId
-    : providers[0].id;
-  const activeProvider = providers.find(provider => provider.id === activeProviderId) || providers[0];
-
-  return {
-    activeProviderId,
-    providers,
-    openaiBaseUrl: activeProvider.openaiBaseUrl,
-    openaiApiKey: activeProvider.openaiApiKey,
-    llmModel: activeProvider.llmModel,
-    providerType: activeProvider.providerType,
-    targetLanguage: apiConfig?.targetLanguage || DEFAULT_TRANSLATOR_CONFIG.targetLanguage,
-    threadNum: normalizeThreadNum(activeProvider.threadNum, activeProvider.llmModel),
-    disableThinking: true,
-  };
-}
-
 export function getActiveApiProvider(
   apiConfig: Partial<ApiConfig> | null | undefined
 ): ApiProviderConfig {
@@ -242,6 +101,7 @@ export function getActiveApiProvider(
 export function buildTranslatorConfig(
   apiConfig: Partial<ApiConfig> | null | undefined
 ): TranslatorConfig {
+  assertApiConfigUsesRemoteEndpoints(apiConfig);
   const normalized = normalizeApiConfig(apiConfig);
 
   return {
@@ -249,9 +109,9 @@ export function buildTranslatorConfig(
     openaiBaseUrl: normalized.openaiBaseUrl,
     openaiApiKey: normalized.openaiApiKey || '',
     model: normalized.llmModel,
-    providerType: normalized.providerType || inferProviderType(normalized.openaiBaseUrl),
+    providerType: normalized.providerType || 'custom',
     targetLanguage: normalized.targetLanguage || DEFAULT_TRANSLATOR_CONFIG.targetLanguage,
-    threadNum: normalizeThreadNum(normalized.threadNum, normalized.llmModel),
+    threadNum: normalized.threadNum || DEFAULT_CONCURRENCY,
     disableThinking: true,
   };
 }
@@ -363,16 +223,33 @@ export function isEmptySettings(obj: unknown): boolean {
  * 从 Chrome Storage 加载翻译器配置
  */
 export async function loadConfig(): Promise<TranslatorConfig> {
-  return new Promise((resolve) => {
-    if (typeof chrome !== 'undefined' && chrome.storage) {
-      chrome.storage.local.get(['apiConfig'], (result: Record<string, unknown>) => {
-        const apiConfig: ApiConfig = (result.apiConfig as ApiConfig) || {};
-        resolve(buildTranslatorConfig(apiConfig));
-      });
-    } else {
-      resolve(DEFAULT_TRANSLATOR_CONFIG);
-    }
+  if (typeof chrome === 'undefined' || !chrome.storage) {
+    return DEFAULT_TRANSLATOR_CONFIG;
+  }
+
+  const storage = chrome.storage.local;
+  const result = await new Promise<Record<string, unknown>>(resolve => {
+    storage.get(['apiConfig'], resolve);
   });
+  const migration = migrateApiConfig((result.apiConfig as ApiConfig) || {});
+  if (migration.changed && storage.set) {
+    try {
+      await storage.set({
+        apiConfig: migration.config,
+        ...(migration.requiresProviderSelection || migration.removedProviderIds.length > 0
+          ? { apiConfigMigrationNotice: API_CONFIG_MIGRATION_NOTICE }
+          : {}),
+      });
+    } catch {
+      // 配置迁移写回失败时仍使用本轮内存中的安全配置。
+    }
+  }
+
+  if (migration.requiresProviderSelection) {
+    throw new Error(API_CONFIG_MIGRATION_NOTICE);
+  }
+
+  return buildTranslatorConfig(migration.config);
 }
 
 /**
@@ -390,6 +267,9 @@ export function validateConfig(config: TranslatorConfig): string[] {
 
   if (!config.openaiBaseUrl) {
     errors.push('API 地址未配置');
+  } else {
+    const endpointError = getApiEndpointValidationError(config.openaiBaseUrl);
+    if (endpointError) errors.push(endpointError);
   }
 
   if (config.maxWordCountEnglish < 5 || config.maxWordCountEnglish > 50) {
@@ -423,12 +303,17 @@ declare global {
       DEFAULT_API_PROVIDERS: typeof DEFAULT_API_PROVIDERS;
       isDefaultApiProviderId: typeof isDefaultApiProviderId;
       MAX_API_CONCURRENCY: typeof MAX_API_CONCURRENCY;
+      API_CONFIG_MIGRATION_NOTICE: typeof API_CONFIG_MIGRATION_NOTICE;
+      API_CONFIG_SCHEMA_VERSION: typeof API_CONFIG_SCHEMA_VERSION;
       MODEL_CONCURRENCY_LIMITS: typeof MODEL_CONCURRENCY_LIMITS;
       normalizeConcurrency: PopupConfigBridge['normalizeConcurrency'];
       getModelConcurrencyLimit: typeof getModelConcurrencyLimit;
       normalizeApiBaseUrl: PopupConfigBridge['normalizeApiBaseUrl'];
       normalizeApiConfig: typeof normalizeApiConfig;
+      migrateApiConfig: typeof migrateApiConfig;
+      assertApiConfigUsesRemoteEndpoints: typeof assertApiConfigUsesRemoteEndpoints;
       getActiveApiProvider: typeof getActiveApiProvider;
+      getApiEndpointValidationError: PopupConfigBridge['getApiEndpointValidationError'];
       getApiHostPermissionPattern: PopupConfigBridge['getApiHostPermissionPattern'];
       formatApiResponseError: PopupConfigBridge['formatApiResponseError'];
       SUPPORTED_MODELS: typeof SUPPORTED_MODELS;
@@ -452,10 +337,14 @@ if (typeof window !== 'undefined') {
     DEFAULT_API_PROVIDERS,
     isDefaultApiProviderId,
     MAX_API_CONCURRENCY,
+    API_CONFIG_MIGRATION_NOTICE,
+    API_CONFIG_SCHEMA_VERSION,
     MODEL_CONCURRENCY_LIMITS,
     ...popupConfigBridge,
     getModelConcurrencyLimit,
     normalizeApiConfig,
+    migrateApiConfig,
+    assertApiConfigUsesRemoteEndpoints,
     getActiveApiProvider,
     SUPPORTED_MODELS,
     SUPPORTED_LANGUAGES,

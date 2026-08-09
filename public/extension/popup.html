@@ -105,7 +105,7 @@
                                 <span class="setting-name">供应商名称</span>
                             </div>
                             <input type="text" id="apiProviderName" class="config-input"
-                                placeholder="例如：本地 Qwen">
+                                placeholder="例如：公司 API">
                         </div>
 
                         <!-- API Base URL -->
@@ -115,7 +115,7 @@
                             </div>
                             <input type="text" id="apiBaseUrl" class="config-input"
                                 placeholder="例如：https://api.openai.com">
-                            <div class="setting-hint" id="apiBaseUrlHint">只需填写域名。实际翻译请求： https://api.openai.com/v1/chat/completions；测试连接： https://api.openai.com/v1/models</div>
+                            <div class="setting-hint" id="apiBaseUrlHint">仅支持远程 HTTPS API。实际翻译请求： https://api.openai.com/v1/chat/completions；测试连接： https://api.openai.com/v1/models</div>
                         </div>
 
                         <!-- API Key -->
@@ -169,7 +169,7 @@
                     </div>
                     <div class="tip-item">
                         <span class="tip-number">1</span>
-                        <span class="tip-text">支持 OpenAI 和本地兼容 API</span>
+                        <span class="tip-text">支持 OpenAI、OpenRouter、DeepSeek 及远程 HTTPS 兼容 API</span>
                     </div>
                 </div>
             </div>

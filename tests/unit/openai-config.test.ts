@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildTranslatorConfig,
+  getApiEndpointValidationError,
   getApiHostPermissionPattern,
   getModelConcurrencyLimit,
+  loadConfig,
   isDefaultApiProviderId,
   normalizeApiBaseUrl,
   normalizeApiConfig,
+  migrateApiConfig,
   validateConfig,
 } from '../../src/extension/config.js';
 import { OpenAIClient } from '../../src/services/openai-client.js';
@@ -14,7 +17,7 @@ import { formatApiResponseError } from '../../src/utils/error-handler.js';
 
 function createConfig(overrides: Partial<TranslatorConfig> = {}): TranslatorConfig {
   return {
-    openaiBaseUrl: 'http://127.0.0.1:1234/v1',
+    openaiBaseUrl: 'https://example.test/v1',
     openaiApiKey: '',
     model: 'gemma-4-e4b-it',
     targetLanguage: 'zh',
@@ -28,7 +31,7 @@ function createConfig(overrides: Partial<TranslatorConfig> = {}): TranslatorConf
   };
 }
 
-describe('local OpenAI-compatible config', () => {
+describe('remote OpenAI-compatible config', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -36,6 +39,13 @@ describe('local OpenAI-compatible config', () => {
   it('允许空 API Key 的配置通过校验', () => {
     const errors = validateConfig(createConfig());
     expect(errors).toEqual([]);
+  });
+
+  it('配置校验拒绝本地模型服务地址', () => {
+    const errors = validateConfig(createConfig({
+      openaiBaseUrl: 'https://127.0.0.1:1234/v1',
+    }));
+    expect(errors).toContain('仅支持远程 HTTPS API，本地模型服务地址不受支持');
   });
 
   it('按模型动态应用并发上限', () => {
@@ -86,7 +96,7 @@ describe('local OpenAI-compatible config', () => {
     expect(proConfig.threadNum).toBe(500);
   });
 
-  it('默认三个供应商始终存在，且自定义供应商不会被覆盖', () => {
+  it('迁移时删除本地供应商，并回退到默认远程供应商', () => {
     const config = normalizeApiConfig({
       activeProviderId: 'local',
       providers: [{
@@ -103,10 +113,62 @@ describe('local OpenAI-compatible config', () => {
       'openai',
       'openrouter',
       'deepseek',
-      'local',
     ]);
     expect(config.providers?.filter(provider => isDefaultApiProviderId(provider.id))).toHaveLength(3);
-    expect(config.activeProviderId).toBe('local');
+    expect(config.activeProviderId).toBe('openai');
+    expect(config.requiresProviderSelection).toBe(true);
+
+    const migration = migrateApiConfig({
+      activeProviderId: 'local',
+      providers: [{
+        id: 'local',
+        name: '本地模型',
+        openaiBaseUrl: 'http://127.0.0.1:1234/v1',
+        openaiApiKey: '',
+        llmModel: 'local-model',
+      }],
+    });
+    expect(migration.removedProviderIds).toEqual(['local']);
+    expect(migration.requiresProviderSelection).toBe(true);
+    expect(migration.changed).toBe(true);
+    expect(() => buildTranslatorConfig(migration.config)).toThrow('请选择远程 HTTPS API');
+  });
+
+  it('迁移混合 provider 时保留激活远程 provider 的完整配置', () => {
+    const migration = migrateApiConfig({
+      schemaVersion: 1,
+      activeProviderId: 'remote',
+      providers: [
+        {
+          id: 'local',
+          name: '本地模型',
+          openaiBaseUrl: 'http://127.0.0.1:1234/v1',
+          openaiApiKey: 'local-key',
+          llmModel: 'local-model',
+          threadNum: 2,
+        },
+        {
+          id: 'remote',
+          name: '远程 API',
+          openaiBaseUrl: 'https://remote.example/v1',
+          openaiApiKey: 'remote-key',
+          llmModel: 'remote-model',
+          threadNum: 7,
+        },
+      ],
+      targetLanguage: 'ja',
+    });
+
+    expect(migration.config).toMatchObject({
+      activeProviderId: 'remote',
+      openaiBaseUrl: 'https://remote.example/v1',
+      openaiApiKey: 'remote-key',
+      llmModel: 'remote-model',
+      threadNum: 7,
+      targetLanguage: 'ja',
+    });
+    expect(migration.config.providers?.some(provider => provider.id === 'local')).toBe(false);
+    expect(migration.requiresProviderSelection).toBe(false);
   });
 
   it('OpenAI 只填写域名时自动补全实际 Base URL', () => {
@@ -171,6 +233,104 @@ describe('local OpenAI-compatible config', () => {
   it('拒绝非 HTTPS 的第三方 API 地址', () => {
     expect(() => getApiHostPermissionPattern('http://192.168.31.18:8012/v1'))
       .toThrow('第三方 API 必须使用 HTTPS');
+  });
+
+  it.each([
+    'https://localhost/v1',
+    'https://127.0.0.1:1234/v1',
+    'https://[::1]/v1',
+    'https://[::]/v1',
+    'https://[::ffff:127.0.0.1]/v1',
+    'https://[::ffff:192.168.1.1]/v1',
+    'https://[2001:db8::1]/v1',
+    'https://[100::1]/v1',
+    'https://[ff02::1]/v1',
+    'https://[fec0::1]/v1',
+    'https://[64:ff9b:1::1]/v1',
+    'https://[::7f00:1]/v1',
+    'https://[3fff::1]/v1',
+    'https://[5f00::1]/v1',
+    'https://[2001:1f::1]/v1',
+    'https://[2001:20::1]/v1',
+    'https://192.168.31.18:8012/v1',
+    'https://printer.local/v1',
+    'https://100.64.0.1/v1',
+    'https://198.18.0.1/v1',
+    'https://192.0.0.170/v1',
+    'https://192.0.0.171/v1',
+    'https://192.0.0.11/v1',
+    'https://192.88.99.2/v1',
+  ])('拒绝本地或私有网络 API 地址: %s', (baseUrl) => {
+    expect(getApiEndpointValidationError(baseUrl)).toContain('本地模型服务');
+    expect(() => getApiHostPermissionPattern(baseUrl)).toThrow('本地模型服务');
+  });
+
+  it.each([
+    'https://fc.example.com/v1',
+    'https://fd-api.example.com/v1',
+    'https://fe8.example.com/v1',
+    'https://february.example.com/v1',
+    'https://192.0.0.9/v1',
+    'https://192.0.0.10/v1',
+    'https://[64:ff9b::808:808]/v1',
+    'https://[2606:4700:4700::1111]/v1',
+    'https://8.8.8.8/v1',
+    'https://[3fff:1000::1]/v1',
+    'https://[2001:30::1]/v1',
+  ])('保留合法的远程 HTTPS API 地址: %s', (baseUrl) => {
+    expect(getApiEndpointValidationError(baseUrl)).toBeNull();
+  });
+
+  it('存储中的激活本地 provider 迁移后必须重新选择远程 provider', async () => {
+    const storageSet = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('chrome', {
+      storage: {
+        local: {
+          get: vi.fn((_keys: string[], callback: (value: Record<string, unknown>) => void) => {
+            callback({
+              apiConfig: {
+                activeProviderId: 'local',
+                providers: [{
+                  id: 'local',
+                  name: '本地模型',
+                  openaiBaseUrl: 'http://127.0.0.1:1234/v1',
+                  openaiApiKey: '',
+                  llmModel: 'local-model',
+                }],
+              },
+            });
+          }),
+          set: storageSet,
+        },
+      },
+    });
+
+    await expect(loadConfig()).rejects.toThrow('请选择远程 HTTPS API');
+    expect(storageSet).toHaveBeenCalledWith(expect.objectContaining({
+      apiConfig: expect.objectContaining({
+        requiresProviderSelection: true,
+        activeProviderId: 'openai',
+      }),
+    }));
+  });
+
+  it('旧版顶层本地 API 地址迁移时写入提示并拒绝翻译', async () => {
+    const storageSet = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('chrome', {
+      storage: {
+        local: {
+          get: vi.fn((_keys: string[], callback: (value: Record<string, unknown>) => void) => {
+            callback({ apiConfig: { openaiBaseUrl: 'http://127.0.0.1:1234/v1' } });
+          }),
+          set: storageSet,
+        },
+      },
+    });
+
+    await expect(loadConfig()).rejects.toThrow('请选择远程 HTTPS API');
+    expect(storageSet).toHaveBeenCalledWith(expect.objectContaining({
+      apiConfigMigrationNotice: expect.any(String),
+    }));
   });
 
   it('保留 API HTTP 状态、响应正文和 request ID，且 400 不重复重试', async () => {
@@ -357,7 +517,6 @@ describe('local OpenAI-compatible config', () => {
     ['OpenAI 官方端点', 'https://api.openai.com/v1', 'openai', 'gpt-5.6'],
     ['OpenAI 非推理模型', 'https://api.openai.com/v1', 'openai', 'gpt-4o-mini'],
     ['自定义 Gemini 端点', 'https://example.com/v1', 'custom', 'gemini-3-flash'],
-    ['本地 Qwen 端点', 'http://127.0.0.1:1234/v1', 'custom', 'Qwen3.6-35B-A3B'],
     ['未知兼容模型', 'https://third-party.example/v1', 'custom', 'vendor/model'],
   ] as const)(
     '%s始终发送 reasoning_effort none',
@@ -381,6 +540,25 @@ describe('local OpenAI-compatible config', () => {
       expect(body.reasoning_effort).toBe('none');
     }
   );
+
+  it('OpenAI 客户端拒绝本地模型服务地址', () => {
+    expect(() => new OpenAIClient(createConfig({
+      openaiBaseUrl: 'http://127.0.0.1:1234/v1',
+    }))).toThrow('HTTPS');
+  });
+
+  it('直接构建翻译配置时也拒绝本地 provider，不能绕过弹窗限制', () => {
+    expect(() => buildTranslatorConfig({
+      activeProviderId: 'local',
+      providers: [{
+        id: 'local',
+        name: '本地模型',
+        openaiBaseUrl: 'https://localhost:1234/v1',
+        openaiApiKey: '',
+        llmModel: 'local-model',
+      }],
+    })).toThrow('本地模型服务');
+  });
 
   it('OpenRouter 的 GPT 模型只发送 OpenRouter reasoning 参数', async () => {
     const fetchMock = vi.fn().mockResolvedValue({

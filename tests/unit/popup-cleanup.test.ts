@@ -93,4 +93,17 @@ describe('popup static wiring', () => {
     expect(popupScript).toContain('normalizeApiBaseUrl');
     expect(popupScript).toContain('formatApiResponseError');
   });
+
+  it('只允许远程 HTTPS API，不保留本地模型入口', () => {
+    expect(manifest.host_permissions).not.toContain('http://127.0.0.1/*');
+    expect(manifest.optional_host_permissions).not.toContain('http://localhost/*');
+    expect(popupHtml).toContain('仅支持远程 HTTPS API');
+    expect(popupHtml).not.toContain('本地兼容 API');
+    expect(popupHtml).not.toContain('本地 Qwen');
+    expect(popupScript).toContain('getApiEndpointValidationError');
+    expect(popupScript).toContain('migration.requiresProviderSelection');
+    expect(popupScript).toContain('this.apiConfig.requiresProviderSelection = false;');
+    expect(popupScript).toContain('async persistApiConfig()');
+    expect(popupScript).toContain('await this.persistApiConfig();');
+  });
 });

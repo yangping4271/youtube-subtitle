@@ -1,6 +1,6 @@
 # YouTube Subtitle Translator
 
-自动翻译 YouTube 视频字幕的 Chrome 扩展，支持 OpenAI 及本地 OpenAI-compatible 模型服务。
+自动翻译 YouTube 视频字幕的 Chrome 扩展，仅支持远程 API 模式。
 
 ## 项目结构
 
@@ -39,21 +39,13 @@ npm run build
 
 ## API 配置
 
-- 支持 OpenAI 及兼容 API，例如 LM Studio、Azure、OpenRouter
+- 支持 OpenAI、OpenRouter、DeepSeek 及远程 HTTPS OpenAI-compatible API
 - `API Base URL` 只需填写域名，例如 `https://api.openai.com`；OpenAI 请求会自动补全为 `/v1/chat/completions`，测试连接会自动补全为 `/v1/models`
 - 已填写路径的第三方地址会原样保留，例如 `https://api.krill-ai.net/codex/v1`
-- 对于 LM Studio 这类本地服务，`API Key` 通常可以留空
+- `API Base URL` 必须是远程 HTTPS 地址；本地模型服务和 HTTP 地址不受支持
 - 所有翻译请求都会优先关闭模型思考模式；服务或模型不支持关闭参数时，会自动使用其默认思考模式继续翻译
 - 首次连接新的 API 地址时，扩展会按该地址动态请求访问权限，而不是默认申请所有网站权限
-- 推荐本地模型：`gemma-4-e2b-it`、`gemma-4-e4b-it`
-
-示例：
-
-```text
-API Base URL: http://127.0.0.1:1234/v1
-API Key:      留空
-翻译模型:      gemma-4-e4b-it
-```
+- 升级后，已保存的本地 API 配置会被移除，需要重新选择远程 API
 
 ## 开发命令
 

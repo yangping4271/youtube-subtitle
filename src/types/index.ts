@@ -63,7 +63,10 @@ export interface ApiProviderConfig {
 }
 
 export interface ApiConfig extends Partial<ApiProviderConfig> {
+  schemaVersion?: number;
   activeProviderId?: string;
+  /** 迁移删除激活 provider 后，必须由用户明确选择新的远程 provider。 */
+  requiresProviderSelection?: boolean;
   providers?: ApiProviderConfig[];
   openaiBaseUrl: string;
   openaiApiKey: string;

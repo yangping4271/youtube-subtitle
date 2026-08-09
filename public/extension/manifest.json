@@ -10,12 +10,10 @@
   ],
   "host_permissions": [
     "https://api.openai.com/*",
-    "https://*.openai.com/*",
-    "http://127.0.0.1/*"
+    "https://*.openai.com/*"
   ],
   "optional_host_permissions": [
-    "https://*/*",
-    "http://localhost/*"
+    "https://*/*"
   ],
   "action": {
     "default_popup": "popup.html",
