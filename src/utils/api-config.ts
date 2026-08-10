@@ -120,10 +120,11 @@ function cloneDefaultProviders(): ApiProviderConfig[] {
 
 function mergeDefaultProviders(configuredProviders: ApiProviderConfig[]): ApiProviderConfig[] {
   const configuredById = new Map(configuredProviders.map(provider => [provider.id, provider]));
-  // 内置供应商的身份、地址和模型是产品定义的一部分，持久化配置只能保存 API Key。
+  // 内置供应商的身份和地址是产品定义的一部分；模型由用户在固定供应商下自行填写。
   const defaultProviders = DEFAULT_API_PROVIDERS.map(defaultProvider => ({
     ...defaultProvider,
     openaiApiKey: configuredById.get(defaultProvider.id)?.openaiApiKey || '',
+    llmModel: configuredById.get(defaultProvider.id)?.llmModel || '',
   }));
   const customProviders = configuredProviders.filter(
     provider => !isDefaultApiProviderId(provider.id)
@@ -156,11 +157,16 @@ export interface ApiConfigMigration {
 export function migrateApiConfig(
   apiConfig: Partial<ApiConfig> | null | undefined
 ): ApiConfigMigration {
-  const configuredProviders: ApiProviderConfig[] = Array.isArray(apiConfig?.providers)
+  const clearLegacyDefaultModels = (apiConfig?.schemaVersion ?? 0) < API_CONFIG_SCHEMA_VERSION;
+  const configuredProviders: ApiProviderConfig[] = (Array.isArray(apiConfig?.providers)
     ? apiConfig.providers
       .filter((provider): provider is ApiProviderConfig => Boolean(provider?.id))
       .map(normalizeProvider)
-    : [];
+    : []).map(provider => (
+      clearLegacyDefaultModels && isDefaultApiProviderId(provider.id)
+        ? { ...provider, llmModel: '' }
+        : provider
+    ));
 
   const supportedProviders = configuredProviders.filter(provider =>
     !provider.openaiBaseUrl || isRemoteApiBaseUrl(provider.openaiBaseUrl)

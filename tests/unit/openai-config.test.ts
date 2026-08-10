@@ -104,6 +104,24 @@ describe('remote OpenAI-compatible config', () => {
     expect(() => buildTranslatorConfig(config)).toThrow('翻译模型未配置');
   });
 
+  it('保留当前 schema 内置供应商由用户填写的翻译模型', () => {
+    const config = normalizeApiConfig({
+      schemaVersion: 4,
+      activeProviderId: 'openai',
+      providers: [{
+        id: 'openai',
+        name: 'OpenAI',
+        providerType: 'openai',
+        openaiBaseUrl: 'https://api.openai.com',
+        openaiApiKey: 'key',
+        llmModel: 'gpt-5.6',
+      }],
+    });
+
+    expect(config.providers?.find(provider => provider.id === 'openai')?.llmModel).toBe('gpt-5.6');
+    expect(buildTranslatorConfig(config).model).toBe('gpt-5.6');
+  });
+
   it('拒绝未填写模型名的自定义供应商进入翻译配置', () => {
     expect(() => buildTranslatorConfig({
       activeProviderId: 'custom',

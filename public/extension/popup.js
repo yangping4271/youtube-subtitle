@@ -251,10 +251,10 @@ class PopupController {
 
         if (!provider) return null;
         if (apiKey) provider.openaiApiKey = apiKey.value.trim();
+        if (llmModel) provider.llmModel = llmModel.value.trim();
         if (!this.isDefaultApiProvider(provider)) {
             if (providerName) provider.name = providerName.value.trim() || '未命名供应商';
             if (apiBaseUrl) provider.openaiBaseUrl = apiBaseUrl.value.trim();
-            if (llmModel) provider.llmModel = llmModel.value.trim();
         }
         if (targetLanguage) this.apiConfig.targetLanguage = targetLanguage.value;
         if (threadNum && !this.isDefaultApiProvider(provider)) {
@@ -269,15 +269,20 @@ class PopupController {
 
     setApiProviderFieldMutability(provider) {
         const isDefaultProvider = this.isDefaultApiProvider(provider);
-        const lockedFieldIds = ['apiProviderName', 'apiBaseUrl', 'llmModel', 'threadNum'];
+        const lockedFieldIds = ['apiProviderName', 'apiBaseUrl', 'threadNum'];
         lockedFieldIds.forEach(id => {
             const field = document.getElementById(id);
             if (field) field.disabled = Boolean(provider && isDefaultProvider);
         });
-        ['apiBaseUrl', 'llmModel'].forEach(id => {
+        ['apiBaseUrl'].forEach(id => {
             const field = document.getElementById(id);
             if (field) field.required = Boolean(provider && !isDefaultProvider);
         });
+        const llmModel = document.getElementById('llmModel');
+        if (llmModel) {
+            llmModel.disabled = false;
+            llmModel.required = Boolean(provider);
+        }
     }
 
     escapeHtml(text) {
@@ -1804,7 +1809,7 @@ class PopupController {
         if (llmModel) {
             llmModel.addEventListener('input', (e) => {
                 const provider = this.getEditingApiProvider();
-                if (!provider || this.isDefaultApiProvider(provider)) return;
+                if (!provider) return;
                 provider.llmModel = e.target.value.trim();
                 this.updateConcurrencyInputLimit(provider.llmModel);
                 provider.threadNum = this.normalizeThreadNum(
@@ -1899,7 +1904,11 @@ class PopupController {
             Toast.error('请先选择模型');
             return;
         }
-        if (!this.isDefaultApiProvider(provider) && (!provider.openaiBaseUrl || !provider.llmModel)) {
+        if (!provider.llmModel) {
+            Toast.error('请填写翻译模型');
+            return;
+        }
+        if (!this.isDefaultApiProvider(provider) && !provider.openaiBaseUrl) {
             Toast.error('自定义模型必须填写 API Base URL 和翻译模型');
             return;
         }
