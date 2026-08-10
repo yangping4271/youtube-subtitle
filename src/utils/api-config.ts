@@ -125,6 +125,7 @@ function mergeDefaultProviders(configuredProviders: ApiProviderConfig[]): ApiPro
     ...defaultProvider,
     openaiApiKey: configuredById.get(defaultProvider.id)?.openaiApiKey || '',
     llmModel: configuredById.get(defaultProvider.id)?.llmModel || '',
+    threadNum: configuredById.get(defaultProvider.id)?.threadNum ?? defaultProvider.threadNum,
   }));
   const customProviders = configuredProviders.filter(
     provider => !isDefaultApiProviderId(provider.id)
@@ -164,7 +165,12 @@ export function migrateApiConfig(
       .map(normalizeProvider)
     : []).map(provider => (
       clearLegacyDefaultModels && isDefaultApiProviderId(provider.id)
-        ? { ...provider, llmModel: '' }
+        ? {
+          ...provider,
+          llmModel: '',
+          threadNum: DEFAULT_API_PROVIDERS.find(defaultProvider => defaultProvider.id === provider.id)?.threadNum
+            ?? DEFAULT_CONCURRENCY,
+        }
         : provider
     ));
 

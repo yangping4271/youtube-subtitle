@@ -95,7 +95,7 @@ describe('popup static wiring', () => {
     expect(popupScript).toContain('请选择模型');
     expect(popupScript).toContain('setApiProviderFieldMutability');
     expect(popupScript).toContain('自定义模型必须填写 API Base URL 和翻译模型');
-    expect(popupScript).toContain("const lockedFieldIds = ['apiProviderName', 'apiBaseUrl', 'threadNum'];");
+    expect(popupScript).toContain("const lockedFieldIds = ['apiProviderName', 'apiBaseUrl'];");
     expect(popupScript).toContain("Toast.error('请填写翻译模型')");
     expect(popupScript).toContain("if (!this.isDefaultApiProvider(provider)) {");
     expect(popupScript).toContain('this.apiConfig.requiresProviderSelection = true;');

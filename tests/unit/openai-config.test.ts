@@ -115,11 +115,15 @@ describe('remote OpenAI-compatible config', () => {
         openaiBaseUrl: 'https://api.openai.com',
         openaiApiKey: 'key',
         llmModel: 'gpt-5.6',
+        threadNum: 8,
       }],
     });
 
-    expect(config.providers?.find(provider => provider.id === 'openai')?.llmModel).toBe('gpt-5.6');
-    expect(buildTranslatorConfig(config).model).toBe('gpt-5.6');
+    expect(config.providers?.find(provider => provider.id === 'openai')).toMatchObject({
+      llmModel: 'gpt-5.6',
+      threadNum: 8,
+    });
+    expect(buildTranslatorConfig(config)).toMatchObject({ model: 'gpt-5.6', threadNum: 8 });
   });
 
   it('拒绝未填写模型名的自定义供应商进入翻译配置', () => {

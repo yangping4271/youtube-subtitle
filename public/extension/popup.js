@@ -257,7 +257,7 @@ class PopupController {
             if (apiBaseUrl) provider.openaiBaseUrl = apiBaseUrl.value.trim();
         }
         if (targetLanguage) this.apiConfig.targetLanguage = targetLanguage.value;
-        if (threadNum && !this.isDefaultApiProvider(provider)) {
+        if (threadNum) {
             provider.threadNum = this.normalizeThreadNum(threadNum.value, provider.llmModel);
             threadNum.value = String(provider.threadNum);
         }
@@ -269,7 +269,7 @@ class PopupController {
 
     setApiProviderFieldMutability(provider) {
         const isDefaultProvider = this.isDefaultApiProvider(provider);
-        const lockedFieldIds = ['apiProviderName', 'apiBaseUrl', 'threadNum'];
+        const lockedFieldIds = ['apiProviderName', 'apiBaseUrl'];
         lockedFieldIds.forEach(id => {
             const field = document.getElementById(id);
             if (field) field.disabled = Boolean(provider && isDefaultProvider);
@@ -1839,7 +1839,7 @@ class PopupController {
         if (threadNum) {
             threadNum.addEventListener('input', (e) => {
                 const provider = this.getEditingApiProvider();
-                if (!provider || this.isDefaultApiProvider(provider)) return;
+                if (!provider) return;
                 const value = this.normalizeThreadNum(e.target.value, provider.llmModel);
                 provider.threadNum = value;
                 e.target.value = String(value);
