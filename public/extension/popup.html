@@ -113,7 +113,7 @@
                             <div class="setting-label">
                                 <span class="setting-name">API Base URL（只需填域名）</span>
                             </div>
-                            <input type="text" id="apiBaseUrl" class="config-input"
+                            <input type="text" id="apiBaseUrl" class="config-input" required
                                 placeholder="例如：https://api.openai.com">
                             <div class="setting-hint" id="apiBaseUrlHint">仅支持远程 HTTPS API。实际翻译请求： https://api.openai.com/v1/chat/completions；测试连接： https://api.openai.com/v1/models</div>
                         </div>
@@ -136,7 +136,7 @@
                             <div class="setting-label">
                                 <span class="setting-name">翻译模型</span>
                             </div>
-                            <input type="text" id="llmModel" class="config-input" placeholder="输入模型名称" value="">
+                            <input type="text" id="llmModel" class="config-input" placeholder="输入模型名称" value="" required>
                         </div>
 
                         <!-- 并发数 -->

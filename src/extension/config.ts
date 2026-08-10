@@ -63,11 +63,11 @@ declare const chrome: {
 /** 默认 API 配置 */
 export const DEFAULT_API_CONFIG: ApiConfig = {
   schemaVersion: API_CONFIG_SCHEMA_VERSION,
-  activeProviderId: DEFAULT_API_PROVIDERS[0].id,
+  requiresProviderSelection: true,
   providers: DEFAULT_API_PROVIDERS,
-  openaiBaseUrl: 'https://api.openai.com',
+  openaiBaseUrl: '',
   openaiApiKey: '',
-  llmModel: 'gpt-4o-mini',
+  llmModel: '',
   targetLanguage: 'zh',
   threadNum: DEFAULT_CONCURRENCY,
   disableThinking: true,
@@ -75,10 +75,10 @@ export const DEFAULT_API_CONFIG: ApiConfig = {
 
 /** 默认翻译器配置 */
 const DEFAULT_TRANSLATOR_CONFIG: TranslatorConfig = {
-  openaiBaseUrl: 'https://api.openai.com',
+  openaiBaseUrl: '',
   openaiApiKey: '',
-  model: 'gpt-4o',
-  providerType: 'openai',
+  model: '',
+  providerType: 'custom',
   targetLanguage: 'zh',
   maxWordCountEnglish: 19,
   threadNum: DEFAULT_CONCURRENCY,
@@ -92,10 +92,9 @@ const DEFAULT_TRANSLATOR_CONFIG: TranslatorConfig = {
 
 export function getActiveApiProvider(
   apiConfig: Partial<ApiConfig> | null | undefined
-): ApiProviderConfig {
+): ApiProviderConfig | undefined {
   const normalized = normalizeApiConfig(apiConfig);
-  return normalized.providers!.find(provider => provider.id === normalized.activeProviderId)
-    || normalized.providers![0];
+  return normalized.providers!.find(provider => provider.id === normalized.activeProviderId);
 }
 
 export function buildTranslatorConfig(

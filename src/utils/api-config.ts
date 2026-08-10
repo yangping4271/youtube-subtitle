@@ -9,7 +9,7 @@ import {
   isRemoteApiBaseUrl,
 } from './api-url.js';
 
-export const API_CONFIG_SCHEMA_VERSION = 2;
+export const API_CONFIG_SCHEMA_VERSION = 3;
 export const API_CONFIG_MIGRATION_NOTICE = '已移除不支持的本地 API 配置，请选择远程 HTTPS API。';
 export const MAX_API_CONCURRENCY = 2500;
 
@@ -119,10 +119,10 @@ function cloneDefaultProviders(): ApiProviderConfig[] {
 
 function mergeDefaultProviders(configuredProviders: ApiProviderConfig[]): ApiProviderConfig[] {
   const configuredById = new Map(configuredProviders.map(provider => [provider.id, provider]));
+  // 内置供应商的身份、地址和模型是产品定义的一部分，持久化配置只能保存 API Key。
   const defaultProviders = DEFAULT_API_PROVIDERS.map(defaultProvider => ({
     ...defaultProvider,
-    ...(configuredById.get(defaultProvider.id) || {}),
-    id: defaultProvider.id,
+    openaiApiKey: configuredById.get(defaultProvider.id)?.openaiApiKey || '',
   }));
   const customProviders = configuredProviders.filter(
     provider => !isDefaultApiProviderId(provider.id)
@@ -182,34 +182,44 @@ export function migrateApiConfig(
     && typeof apiConfig?.openaiBaseUrl === 'string'
     && apiConfig.openaiBaseUrl.trim().length > 0
     && !isRemoteApiBaseUrl(apiConfig.openaiBaseUrl);
-  const requiresProviderSelection = Boolean(
-    apiConfig?.requiresProviderSelection
-    || activeProviderWasRemoved
-    || legacyEndpointWasRemoved
-  );
-
   const providers = mergeDefaultProviders(
     ensureUniqueProviders(
       supportedProviders.length > 0 ? supportedProviders : cloneDefaultProviders()
     )
   );
 
-  const activeProviderId = apiConfig?.activeProviderId && providers.some(p => p.id === apiConfig.activeProviderId)
-    ? apiConfig.activeProviderId
-    : providers[0].id;
-  const activeProvider = providers.find(provider => provider.id === activeProviderId) || providers[0];
+  const isLegacyImplicitDefaultSelection = apiConfig?.schemaVersion !== API_CONFIG_SCHEMA_VERSION
+    && apiConfig?.activeProviderId === 'openai'
+    && configuredProviders.length === DEFAULT_API_PROVIDERS.length
+    && configuredProviders.every(provider => isDefaultApiProviderId(provider.id))
+    && configuredProviders.every(provider => !provider.openaiApiKey);
+  const hasActiveProvider = Boolean(
+    apiConfig?.activeProviderId
+    && providers.some(provider => provider.id === apiConfig.activeProviderId)
+    && !isLegacyImplicitDefaultSelection
+  );
+  const requiresProviderSelection = Boolean(
+    apiConfig?.requiresProviderSelection
+    || activeProviderWasRemoved
+    || legacyEndpointWasRemoved
+    || !hasActiveProvider
+  );
+  const activeProviderId = hasActiveProvider ? apiConfig!.activeProviderId : undefined;
+  const activeProvider = activeProviderId
+    ? providers.find(provider => provider.id === activeProviderId)
+    : undefined;
 
   const config: ApiConfig = {
     schemaVersion: API_CONFIG_SCHEMA_VERSION,
     activeProviderId,
     requiresProviderSelection,
     providers,
-    openaiBaseUrl: activeProvider.openaiBaseUrl,
-    openaiApiKey: activeProvider.openaiApiKey,
-    llmModel: activeProvider.llmModel,
-    providerType: activeProvider.providerType,
+    openaiBaseUrl: activeProvider?.openaiBaseUrl || '',
+    openaiApiKey: activeProvider?.openaiApiKey || '',
+    llmModel: activeProvider?.llmModel || '',
+    providerType: activeProvider?.providerType,
     targetLanguage: apiConfig?.targetLanguage || 'zh',
-    threadNum: normalizeThreadNum(activeProvider.threadNum, activeProvider.llmModel),
+    threadNum: normalizeThreadNum(activeProvider?.threadNum, activeProvider?.llmModel),
     disableThinking: true,
   };
 
@@ -231,23 +241,32 @@ export function normalizeApiConfig(apiConfig: Partial<ApiConfig> | null | undefi
 export function assertApiConfigUsesRemoteEndpoints(
   apiConfig: Partial<ApiConfig> | null | undefined
 ): void {
-  if (apiConfig?.requiresProviderSelection) {
+  const rawActiveProvider = Array.isArray(apiConfig?.providers) && apiConfig?.activeProviderId
+    ? apiConfig.providers.find(provider => provider.id === apiConfig.activeProviderId)
+    : undefined;
+  if (rawActiveProvider
+    && !isDefaultApiProviderId(rawActiveProvider.id)
+    && rawActiveProvider.openaiBaseUrl.trim()) {
+    const rawEndpointError = getApiEndpointValidationError(rawActiveProvider.openaiBaseUrl);
+    if (rawEndpointError) throw new Error(rawEndpointError);
+  }
+
+  const normalized = normalizeApiConfig(apiConfig);
+  if (normalized.requiresProviderSelection || !normalized.activeProviderId) {
     throw new Error(API_CONFIG_MIGRATION_NOTICE);
   }
 
-  const configuredProviders = Array.isArray(apiConfig?.providers)
-    ? apiConfig.providers
-    : [];
-  const activeProvider = apiConfig?.activeProviderId
-    ? configuredProviders.find(provider => provider.id === apiConfig.activeProviderId)
-    : configuredProviders.length === 1
-      ? configuredProviders[0]
-      : undefined;
-  const endpoint = activeProvider?.openaiBaseUrl
-    || (activeProvider ? undefined : apiConfig?.openaiBaseUrl);
-  const error = typeof endpoint === 'string'
-    ? getApiEndpointValidationError(endpoint)
-    : null;
+  const activeProvider = normalized.providers?.find(
+    provider => provider.id === normalized.activeProviderId
+  );
+  if (!activeProvider) throw new Error(API_CONFIG_MIGRATION_NOTICE);
+
+  if (!isDefaultApiProviderId(activeProvider.id)
+    && (!activeProvider.openaiBaseUrl.trim() || !activeProvider.llmModel.trim())) {
+    throw new Error('自定义模型必须填写 API Base URL 和翻译模型');
+  }
+
+  const error = getApiEndpointValidationError(activeProvider.openaiBaseUrl);
 
   if (error) throw new Error(error);
 }

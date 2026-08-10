@@ -122,9 +122,6 @@ class PopupController {
         if (!selectEl) return;
         const options = Array.from(selectEl.options || []);
         let index = options.findIndex(opt => opt.value === value);
-        if (index < 0 && options.length > 0) {
-            index = 0; // 回退到第一项
-        }
         if (index >= 0) {
             selectEl.selectedIndex = index;
             options.forEach((opt, i) => opt.selected = i === index);
@@ -147,7 +144,7 @@ class PopupController {
     getActiveApiProvider() {
         this.apiConfig = window.SubtitleConfig.normalizeApiConfig(this.apiConfig);
         return this.apiConfig.providers.find(provider => provider.id === this.apiConfig.activeProviderId)
-            || this.apiConfig.providers[0];
+            || null;
     }
 
     getEditingApiProvider() {
@@ -230,6 +227,12 @@ class PopupController {
 
     syncActiveProviderFields() {
         const provider = this.getActiveApiProvider();
+        if (!provider) {
+            this.apiConfig.openaiBaseUrl = '';
+            this.apiConfig.openaiApiKey = '';
+            this.apiConfig.llmModel = '';
+            return;
+        }
         this.apiConfig.openaiBaseUrl = provider.openaiBaseUrl;
         this.apiConfig.openaiApiKey = provider.openaiApiKey;
         this.apiConfig.llmModel = provider.llmModel;
@@ -246,12 +249,15 @@ class PopupController {
         const targetLanguage = document.getElementById('targetLanguage');
         const threadNum = document.getElementById('threadNum');
 
-        if (providerName) provider.name = providerName.value.trim() || '未命名供应商';
-        if (apiBaseUrl) provider.openaiBaseUrl = apiBaseUrl.value.trim();
+        if (!provider) return null;
         if (apiKey) provider.openaiApiKey = apiKey.value.trim();
-        if (llmModel) provider.llmModel = llmModel.value.trim();
+        if (!this.isDefaultApiProvider(provider)) {
+            if (providerName) provider.name = providerName.value.trim() || '未命名供应商';
+            if (apiBaseUrl) provider.openaiBaseUrl = apiBaseUrl.value.trim();
+            if (llmModel) provider.llmModel = llmModel.value.trim();
+        }
         if (targetLanguage) this.apiConfig.targetLanguage = targetLanguage.value;
-        if (threadNum) {
+        if (threadNum && !this.isDefaultApiProvider(provider)) {
             provider.threadNum = this.normalizeThreadNum(threadNum.value, provider.llmModel);
             threadNum.value = String(provider.threadNum);
         }
@@ -259,6 +265,19 @@ class PopupController {
             this.syncActiveProviderFields();
         }
         return provider;
+    }
+
+    setApiProviderFieldMutability(provider) {
+        const isDefaultProvider = this.isDefaultApiProvider(provider);
+        const lockedFieldIds = ['apiProviderName', 'apiBaseUrl', 'llmModel', 'threadNum'];
+        lockedFieldIds.forEach(id => {
+            const field = document.getElementById(id);
+            if (field) field.disabled = Boolean(provider && isDefaultProvider);
+        });
+        ['apiBaseUrl', 'llmModel'].forEach(id => {
+            const field = document.getElementById(id);
+            if (field) field.required = Boolean(provider && !isDefaultProvider);
+        });
     }
 
     escapeHtml(text) {
@@ -1672,30 +1691,34 @@ class PopupController {
             const providers = this.newApiProviderDraft
                 ? [...this.apiConfig.providers, this.newApiProviderDraft]
                 : this.apiConfig.providers;
-            providerSelect.innerHTML = providers.map(provider =>
+            providerSelect.innerHTML = [
+                '<option value="">请选择模型</option>',
+                ...providers.map(provider =>
                 `<option value="${this.escapeHtml(provider.id)}">${this.escapeHtml(provider.name || '未命名供应商')}</option>`
-            ).join('');
+                )
+            ].join('');
             this.setSelectValue(
                 providerSelect,
                 this.newApiProviderDraft?.id || this.apiConfig.activeProviderId
             );
         }
-        if (providerName) providerName.value = activeProvider.name || '';
+        if (providerName) providerName.value = activeProvider?.name || '';
         if (apiBaseUrl) apiBaseUrl.value = this.getApiBaseUrlInputValue(activeProvider);
         this.updateApiBaseUrlHint(activeProvider);
-        if (apiKey) apiKey.value = activeProvider.openaiApiKey;
-        if (llmModel) llmModel.value = activeProvider.llmModel;
+        if (apiKey) apiKey.value = activeProvider?.openaiApiKey || '';
+        if (llmModel) llmModel.value = activeProvider?.llmModel || '';
         if (targetLanguage) this.setSelectValue(targetLanguage, this.apiConfig.targetLanguage);
         if (threadNum) {
-            threadNum.value = activeProvider.threadNum || 3;
+            threadNum.value = activeProvider?.threadNum || 3;
             if (threadNumValue) threadNumValue.textContent = threadNum.value;
         }
-        this.updateConcurrencyInputLimit(activeProvider.llmModel);
+        this.updateConcurrencyInputLimit(activeProvider?.llmModel || '');
+        this.setApiProviderFieldMutability(activeProvider);
 
         const deleteProviderBtn = document.getElementById('deleteProviderBtn');
         if (deleteProviderBtn) {
             const isDefaultProvider = this.isDefaultApiProvider(activeProvider);
-            deleteProviderBtn.disabled = Boolean(this.newApiProviderDraft) || isDefaultProvider;
+            deleteProviderBtn.disabled = !activeProvider || Boolean(this.newApiProviderDraft) || isDefaultProvider;
             deleteProviderBtn.title = isDefaultProvider ? '内置配置不可删除' : '删除供应商';
         }
 
@@ -1717,6 +1740,7 @@ class PopupController {
                     this.collectActiveProviderFromUI();
                 }
                 this.apiConfig.activeProviderId = e.target.value;
+                this.apiConfig.requiresProviderSelection = !e.target.value;
                 this.syncActiveProviderFields();
                 this.loadApiConfigToUI();
             });
@@ -1736,6 +1760,7 @@ class PopupController {
         if (providerName) {
             providerName.addEventListener('input', (e) => {
                 const provider = this.getEditingApiProvider();
+                if (!provider || this.isDefaultApiProvider(provider)) return;
                 provider.name = e.target.value.trim() || '未命名供应商';
                 this.loadApiProviderOptions();
             });
@@ -1746,6 +1771,7 @@ class PopupController {
         if (apiBaseUrl) {
             const updateBaseUrl = (e) => {
                 const provider = this.getEditingApiProvider();
+                if (!provider || this.isDefaultApiProvider(provider)) return;
                 provider.openaiBaseUrl = e.target.value.trim();
                 this.updateApiBaseUrlHint(provider);
                 if (!this.newApiProviderDraft) this.syncActiveProviderFields();
@@ -1759,6 +1785,7 @@ class PopupController {
         if (apiKey) {
             apiKey.addEventListener('change', (e) => {
                 const provider = this.getEditingApiProvider();
+                if (!provider) return;
                 provider.openaiApiKey = e.target.value.trim();
                 if (!this.newApiProviderDraft) this.syncActiveProviderFields();
             });
@@ -1777,6 +1804,7 @@ class PopupController {
         if (llmModel) {
             llmModel.addEventListener('input', (e) => {
                 const provider = this.getEditingApiProvider();
+                if (!provider || this.isDefaultApiProvider(provider)) return;
                 provider.llmModel = e.target.value.trim();
                 this.updateConcurrencyInputLimit(provider.llmModel);
                 provider.threadNum = this.normalizeThreadNum(
@@ -1806,6 +1834,7 @@ class PopupController {
         if (threadNum) {
             threadNum.addEventListener('input', (e) => {
                 const provider = this.getEditingApiProvider();
+                if (!provider || this.isDefaultApiProvider(provider)) return;
                 const value = this.normalizeThreadNum(e.target.value, provider.llmModel);
                 provider.threadNum = value;
                 e.target.value = String(value);
@@ -1857,13 +1886,23 @@ class PopupController {
         }
 
         this.apiConfig.providers = this.apiConfig.providers.filter(provider => provider.id !== currentId);
-        this.apiConfig.activeProviderId = this.apiConfig.providers[0].id;
+        this.apiConfig.activeProviderId = '';
+        this.apiConfig.requiresProviderSelection = true;
         this.syncActiveProviderFields();
         this.loadApiConfigToUI();
     }
 
     async saveApiConfigFromUI() {
         const provider = this.collectActiveProviderFromUI();
+
+        if (!provider) {
+            Toast.error('请先选择模型');
+            return;
+        }
+        if (!this.isDefaultApiProvider(provider) && (!provider.openaiBaseUrl || !provider.llmModel)) {
+            Toast.error('自定义模型必须填写 API Base URL 和翻译模型');
+            return;
+        }
 
         try {
             await this.requestApiHostPermission(provider.openaiBaseUrl);
@@ -1888,6 +1927,11 @@ class PopupController {
     async testApiConnection() {
         this.showApiStatus('loading', '测试连接中...');
         const provider = this.collectActiveProviderFromUI();
+
+        if (!provider) {
+            this.showApiStatus('error', '请先选择模型');
+            return;
+        }
 
         try {
             await this.requestApiHostPermission(provider.openaiBaseUrl);

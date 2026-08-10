@@ -92,6 +92,13 @@ describe('popup static wiring', () => {
     expect(popupScript).toContain('内置配置不可删除');
     expect(popupScript).toContain('normalizeApiBaseUrl');
     expect(popupScript).toContain('formatApiResponseError');
+    expect(popupScript).toContain('请选择模型');
+    expect(popupScript).toContain('setApiProviderFieldMutability');
+    expect(popupScript).toContain('自定义模型必须填写 API Base URL 和翻译模型');
+    expect(popupScript).toContain("if (!this.isDefaultApiProvider(provider)) {");
+    expect(popupScript).toContain('this.apiConfig.requiresProviderSelection = true;');
+    expect(popupHtml).toMatch(/id="apiBaseUrl"[^>]*required/);
+    expect(popupHtml).toMatch(/id="llmModel"[^>]*required/);
   });
 
   it('只允许远程 HTTPS API，不保留本地模型入口', () => {
