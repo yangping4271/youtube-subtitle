@@ -62,7 +62,7 @@ describe('remote OpenAI-compatible config', () => {
       name: 'OpenAI',
       providerType: 'openai',
       openaiBaseUrl: 'https://api.openai.com',
-      llmModel: 'gpt-4o-mini',
+      llmModel: '',
       openaiApiKey: 'saved-key',
       threadNum: 3,
     });
@@ -73,14 +73,35 @@ describe('remote OpenAI-compatible config', () => {
       schemaVersion: 2,
       activeProviderId: 'openai',
       providers: [
-        { id: 'openai', name: 'OpenAI', openaiBaseUrl: 'https://api.openai.com', openaiApiKey: '', llmModel: 'gpt-4o-mini' },
-        { id: 'openrouter', name: 'OpenRouter', openaiBaseUrl: 'https://openrouter.ai/api/v1', openaiApiKey: '', llmModel: 'openai/gpt-4o-mini' },
-        { id: 'deepseek', name: 'DeepSeek', openaiBaseUrl: 'https://api.deepseek.com', openaiApiKey: '', llmModel: 'deepseek-v4-flash' },
+        { id: 'openai', name: 'OpenAI', openaiBaseUrl: 'https://api.openai.com', openaiApiKey: '', llmModel: '' },
+        { id: 'openrouter', name: 'OpenRouter', openaiBaseUrl: 'https://openrouter.ai/api/v1', openaiApiKey: '', llmModel: '' },
+        { id: 'deepseek', name: 'DeepSeek', openaiBaseUrl: 'https://api.deepseek.com', openaiApiKey: '', llmModel: '' },
       ],
     });
 
     expect(config.activeProviderId).toBeUndefined();
     expect(config.requiresProviderSelection).toBe(true);
+  });
+
+  it.each([
+    ['openai', 'gpt-4o-mini'],
+    ['openrouter', 'openai/gpt-4o-mini'],
+    ['deepseek', 'deepseek-v4-flash'],
+  ])('迁移旧版 %s 内置模型时清空模型名并阻止翻译', (id, legacyModel) => {
+    const config = normalizeApiConfig({
+      schemaVersion: 3,
+      activeProviderId: id,
+      providers: [{
+        id,
+        name: id,
+        openaiBaseUrl: 'https://example.test/v1',
+        openaiApiKey: 'key',
+        llmModel: legacyModel,
+      }],
+    });
+
+    expect(config.providers?.find(provider => provider.id === id)?.llmModel).toBe('');
+    expect(() => buildTranslatorConfig(config)).toThrow('翻译模型未配置');
   });
 
   it('拒绝未填写模型名的自定义供应商进入翻译配置', () => {
@@ -94,7 +115,49 @@ describe('remote OpenAI-compatible config', () => {
         openaiApiKey: 'key',
         llmModel: '',
       }],
-    })).toThrow('自定义模型必须填写 API Base URL 和翻译模型');
+    })).toThrow('翻译模型未配置');
+  });
+
+  it('自定义供应商模型为空时优先提示模型未配置', () => {
+    expect(() => buildTranslatorConfig({
+      activeProviderId: 'custom',
+      providers: [{
+        id: 'custom',
+        name: 'Custom',
+        providerType: 'custom',
+        openaiBaseUrl: 'http://127.0.0.1:1234/v1',
+        openaiApiKey: 'key',
+        llmModel: '',
+      }],
+    })).toThrow('翻译模型未配置');
+  });
+
+  it.each([undefined, null])('自定义供应商缺失或损坏的模型名也提示模型未配置', (llmModel) => {
+    expect(() => buildTranslatorConfig({
+      activeProviderId: 'custom',
+      providers: [{
+        id: 'custom',
+        name: 'Custom',
+        providerType: 'custom',
+        openaiBaseUrl: 'http://127.0.0.1:1234/v1',
+        openaiApiKey: 'key',
+        llmModel,
+      }],
+    } as unknown as Parameters<typeof buildTranslatorConfig>[0])).toThrow('翻译模型未配置');
+  });
+
+  it('自定义供应商缺失类型且 URL 为 null 时提示填写 Base URL', () => {
+    expect(() => buildTranslatorConfig({
+      activeProviderId: 'custom',
+      providers: [{
+        id: 'custom',
+        name: 'Custom',
+        openaiBaseUrl: null,
+        openaiApiKey: 'key',
+        llmModel: 'model',
+      }],
+    } as unknown as Parameters<typeof buildTranslatorConfig>[0]))
+      .toThrow('自定义模型必须填写 API Base URL 和翻译模型');
   });
 
   it('拒绝带有内置 providerType 的不完整自定义供应商进入翻译配置', () => {
@@ -108,7 +171,7 @@ describe('remote OpenAI-compatible config', () => {
         openaiApiKey: 'key',
         llmModel: '',
       }],
-    })).toThrow('自定义模型必须填写 API Base URL 和翻译模型');
+    })).toThrow('翻译模型未配置');
   });
 
   it('配置校验拒绝本地模型服务地址', () => {
@@ -795,8 +858,7 @@ describe('remote OpenAI-compatible config', () => {
       llmModel: '',
     });
 
-    expect(() => buildTranslatorConfig(config))
-      .toThrow('自定义模型必须填写 API Base URL 和翻译模型');
+    expect(() => buildTranslatorConfig(config)).toThrow('翻译模型未配置');
   });
 
   it('允许同一供应商类型保存多个独立配置', () => {
@@ -831,7 +893,7 @@ describe('remote OpenAI-compatible config', () => {
   });
 
   it('构建翻译配置时使用当前激活供应商', () => {
-    const config = buildTranslatorConfig({
+    expect(() => buildTranslatorConfig({
       activeProviderId: 'openrouter',
       targetLanguage: 'ja',
       providers: [
@@ -853,15 +915,6 @@ describe('remote OpenAI-compatible config', () => {
           threadNum: 5,
         },
       ],
-    });
-
-    expect(config).toMatchObject({
-      openaiBaseUrl: 'https://openrouter.ai/api/v1',
-      openaiApiKey: 'router-key',
-      model: 'openai/gpt-4o-mini',
-      providerType: 'openrouter',
-      targetLanguage: 'ja',
-      threadNum: 3,
-    });
+    })).toThrow('翻译模型未配置');
   });
 });

@@ -9,7 +9,7 @@ import {
   isRemoteApiBaseUrl,
 } from './api-url.js';
 
-export const API_CONFIG_SCHEMA_VERSION = 3;
+export const API_CONFIG_SCHEMA_VERSION = 4;
 export const API_CONFIG_MIGRATION_NOTICE = '已移除不支持的本地 API 配置，请选择远程 HTTPS API。';
 export const MAX_API_CONCURRENCY = 2500;
 
@@ -25,7 +25,7 @@ export const DEFAULT_API_PROVIDERS: ApiProviderConfig[] = [
     providerType: 'openai',
     openaiBaseUrl: 'https://api.openai.com',
     openaiApiKey: '',
-    llmModel: 'gpt-4o-mini',
+    llmModel: '',
     threadNum: DEFAULT_CONCURRENCY,
     disableThinking: true,
   },
@@ -35,7 +35,7 @@ export const DEFAULT_API_PROVIDERS: ApiProviderConfig[] = [
     providerType: 'openrouter',
     openaiBaseUrl: 'https://openrouter.ai/api/v1',
     openaiApiKey: '',
-    llmModel: 'openai/gpt-4o-mini',
+    llmModel: '',
     threadNum: DEFAULT_CONCURRENCY,
     disableThinking: true,
   },
@@ -45,7 +45,7 @@ export const DEFAULT_API_PROVIDERS: ApiProviderConfig[] = [
     providerType: 'deepseek',
     openaiBaseUrl: 'https://api.deepseek.com',
     openaiApiKey: '',
-    llmModel: 'deepseek-v4-flash',
+    llmModel: '',
     threadNum: DEFAULT_CONCURRENCY,
     disableThinking: true,
   },
@@ -101,11 +101,12 @@ function normalizeThreadNum(value: unknown, model = ''): number {
 }
 
 function normalizeProvider(provider: ApiProviderConfig): ApiProviderConfig {
+  const openaiBaseUrl = typeof provider.openaiBaseUrl === 'string' ? provider.openaiBaseUrl : '';
   return {
     id: provider.id,
     name: provider.name || '未命名供应商',
-    providerType: provider.providerType || inferProviderType(provider.openaiBaseUrl),
-    openaiBaseUrl: typeof provider.openaiBaseUrl === 'string' ? provider.openaiBaseUrl : '',
+    providerType: provider.providerType || inferProviderType(openaiBaseUrl),
+    openaiBaseUrl,
     openaiApiKey: provider.openaiApiKey || '',
     llmModel: provider.llmModel || '',
     threadNum: normalizeThreadNum(provider.threadNum, provider.llmModel),
@@ -244,10 +245,22 @@ export function assertApiConfigUsesRemoteEndpoints(
   const rawActiveProvider = Array.isArray(apiConfig?.providers) && apiConfig?.activeProviderId
     ? apiConfig.providers.find(provider => provider.id === apiConfig.activeProviderId)
     : undefined;
+  const rawModel = typeof rawActiveProvider?.llmModel === 'string'
+    ? rawActiveProvider.llmModel.trim()
+    : '';
   if (rawActiveProvider
     && !isDefaultApiProviderId(rawActiveProvider.id)
-    && rawActiveProvider.openaiBaseUrl.trim()) {
-    const rawEndpointError = getApiEndpointValidationError(rawActiveProvider.openaiBaseUrl);
+    && !rawModel) {
+    throw new Error('翻译模型未配置');
+  }
+
+  const rawBaseUrl = typeof rawActiveProvider?.openaiBaseUrl === 'string'
+    ? rawActiveProvider.openaiBaseUrl.trim()
+    : '';
+  if (rawActiveProvider
+    && !isDefaultApiProviderId(rawActiveProvider.id)
+    && rawBaseUrl) {
+    const rawEndpointError = getApiEndpointValidationError(rawBaseUrl);
     if (rawEndpointError) throw new Error(rawEndpointError);
   }
 
@@ -261,8 +274,12 @@ export function assertApiConfigUsesRemoteEndpoints(
   );
   if (!activeProvider) throw new Error(API_CONFIG_MIGRATION_NOTICE);
 
+  if (!activeProvider.llmModel.trim()) {
+    throw new Error('翻译模型未配置');
+  }
+
   if (!isDefaultApiProviderId(activeProvider.id)
-    && (!activeProvider.openaiBaseUrl.trim() || !activeProvider.llmModel.trim())) {
+    && !activeProvider.openaiBaseUrl.trim()) {
     throw new Error('自定义模型必须填写 API Base URL 和翻译模型');
   }
 
