@@ -1692,7 +1692,7 @@ class PopupController {
                 ? [...this.apiConfig.providers, this.newApiProviderDraft]
                 : this.apiConfig.providers;
             providerSelect.innerHTML = [
-                '<option value="">请选择模型</option>',
+                '<option value="" disabled hidden>请选择模型</option>',
                 ...providers.map(provider =>
                 `<option value="${this.escapeHtml(provider.id)}">${this.escapeHtml(provider.name || '未命名供应商')}</option>`
                 )
