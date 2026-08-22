@@ -37,24 +37,13 @@ export function decodeHtmlEntities(text: string): string {
   });
 }
 
-function formatSegmentTimestamp(seconds: number): string {
-  const totalSeconds = Math.max(0, Math.floor(seconds));
-  const minutes = Math.floor(totalSeconds / 60);
-  const wholeSeconds = totalSeconds % 60;
-  return `${minutes}:${String(wholeSeconds).padStart(2, '0')}`;
-}
-
 /**
- * 构建适合阅读的分段转录：每个字幕片段一段，段首带 m:ss 时间标记，
- * 类似 YouTube 转录面板被网页剪藏后的效果。
+ * 构建适合阅读与翻译的连续纯文本：合并全部字幕片段为一段，
+ * 不带时间戳与换行。清洗（实体解码、去标注）由采集层完成。
  */
-export function buildMarkdownTranscript(subtitles: SimpleSubtitleEntry[]): string {
+export function buildPlainTextTranscript(subtitles: SimpleSubtitleEntry[]): string {
   return subtitles
-    .map((subtitle) => ({
-      startTime: subtitle.startTime,
-      text: decodeHtmlEntities(subtitle.text).replace(/\s+/g, ' ').trim(),
-    }))
-    .filter((segment) => segment.text.length > 0)
-    .map((segment) => `**${formatSegmentTimestamp(segment.startTime)}** · ${segment.text}`)
-    .join('\n\n');
+    .map((subtitle) => decodeHtmlEntities(subtitle.text).replace(/\s+/g, ' ').trim())
+    .filter((text) => text.length > 0)
+    .join(' ');
 }
