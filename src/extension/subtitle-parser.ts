@@ -1,3 +1,5 @@
+import { normalizeSubtitleText } from '../core/subtitle-acquisition.js';
+
 /**
  * YouTube SubtitlePlus - 字幕解析器
  * 提供统一的字幕文件解析功能，支持 SRT、ASS
@@ -32,12 +34,16 @@ export class SubtitleParser {
             timeMatch[7],
             timeMatch[8]
           );
-          const text = lines
-            .slice(2)
-            .join('\n')
-            .replace(/<[^>]*>/g, '');
+          const text = normalizeSubtitleText(
+            lines
+              .slice(2)
+              .join('\n')
+              .replace(/<[^>]*>/g, '')
+          );
 
-          subtitles.push({ startTime, endTime, text });
+          if (text.length > 0) {
+            subtitles.push({ startTime, endTime, text });
+          }
         }
       }
     });

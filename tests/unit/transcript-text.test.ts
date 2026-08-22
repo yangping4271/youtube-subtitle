@@ -1,22 +1,40 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPlainTextTranscript } from '../../src/core/transcript-text.js';
+import {
+  buildMarkdownTranscript,
+  decodeHtmlEntities,
+} from '../../src/core/transcript-text.js';
 
-describe('buildPlainTextTranscript', () => {
-  it('将单词级字幕连接为连续的纯文本，而不是每个单词一行', () => {
-    expect(buildPlainTextTranscript([
-      { startTime: 0, endTime: 0.5, text: 'One' },
-      { startTime: 0.5, endTime: 1, text: 'word' },
-      { startTime: 1, endTime: 1.5, text: 'per' },
-      { startTime: 1.5, endTime: 2, text: 'line.' },
-    ])).toBe('One word per line.');
+
+describe('decodeHtmlEntities', () => {
+  it('解码十进制与十六进制数字实体', () => {
+    expect(decodeHtmlEntities('That&#39;s the &quot;gist&quot;')).toBe('That\'s the "gist"');
+    expect(decodeHtmlEntities('&#x27;quoted&#x27;')).toBe("'quoted'");
   });
 
-  it('清理字幕片段内部的换行和多余空白', () => {
-    expect(buildPlainTextTranscript([
-      { startTime: 0, endTime: 1, text: '  Hello\n  world  ' },
-      { startTime: 1, endTime: 2, text: '' },
-      { startTime: 2, endTime: 3, text: 'from\tYouTube' },
-    ])).toBe('Hello world from YouTube');
+  it('解码常见命名实体并保留未知实体原样', () => {
+    expect(decodeHtmlEntities('a &amp; b')).toBe('a & b');
+    expect(decodeHtmlEntities('&unknownentity;')).toBe('&unknownentity;');
+  });
+});
+
+describe('buildMarkdownTranscript', () => {
+  it('每个片段一段，段首带 m:ss 时间标记，并解码 HTML 实体', () => {
+    expect(
+      buildMarkdownTranscript([
+        { startTime: 0, endTime: 2.9, text: 'Pi&#39;s technical makeup' },
+        { startTime: 473, endTime: 480, text: 'is actually very trivial.' },
+      ])
+    ).toBe('**0:00** · Pi\'s technical makeup\n\n**7:53** · is actually very trivial.');
+  });
+
+  it('跳过空片段并压缩片段内部空白', () => {
+    expect(
+      buildMarkdownTranscript([
+        { startTime: 5, endTime: 6, text: '  Hello\n world  ' },
+        { startTime: 6, endTime: 7, text: '' },
+        { startTime: 65, endTime: 70, text: 'Next.' },
+      ])
+    ).toBe('**0:05** · Hello world\n\n**1:05** · Next.');
   });
 });

@@ -459,3 +459,22 @@ describe('subtitle acquisition', () => {
     });
   });
 });
+
+describe('normalizeSubtitleText 清洗', () => {
+  it('解码 HTML 实体', () => {
+    expect(normalizeSubtitleText('That&#39;s the &amp; gist')).toBe("That's the & gist");
+  });
+
+  it('去除 [music] 类非语音标注与括号标注', () => {
+    expect(normalizeSubtitleText('[music] basic gist')).toBe('basic gist');
+    expect(normalizeSubtitleText('execute bash, [applause] read that file')).toBe(
+      'execute bash, read that file'
+    );
+    expect(normalizeSubtitleText('(laughs) it works')).toBe('it works');
+  });
+
+  it('去除 >> 说话人标记并清理纯标注片段', () => {
+    expect(normalizeSubtitleText('>> I am Mario')).toBe('I am Mario');
+    expect(normalizeSubtitleText('>> [music]')).toBe('');
+  });
+});

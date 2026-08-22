@@ -1,5 +1,6 @@
-import type { SimpleSubtitleEntry } from '../types/index.js';
+import { decodeHtmlEntities } from './transcript-text.js';
 import { extractErrorMessage } from '../utils/error-handler.js';
+import type { SimpleSubtitleEntry } from '../types/index.js';
 
 export interface ResolvedCaptionTrackText {
   trackText: string;
@@ -69,13 +70,15 @@ export interface YouTubeSubtitleAcquirer {
 
 /**
  * 只规范化字幕文本中的空白，不改写重复词语。
- *
- * 字幕内容以采集到的源文本为准。此前针对逐词重复 DOM 文本的启发式
- * 会误伤真实口语（例如 “I I really really do do”），而 DOM 重复应在
- * transcript panel 的可见文本选择和行级去重处解决。
+ * 同时解码 HTML 实体（&#39; 等）、去除 [music] 类非语音标注和 >> 说话人标记，
+ * 保证下载、复制和翻译链路拿到的都是干净文本。
  */
 export function normalizeSubtitleText(text: string): string {
-  return text.replace(/\s+/g, ' ').trim();
+  return decodeHtmlEntities(text)
+    .replace(/>{2,}/g, '')
+    .replace(/\s*(?:\[[^\]]*\]|\([^)]*\))/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function normalizeSubtitleTiming(
