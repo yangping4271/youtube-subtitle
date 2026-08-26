@@ -27,7 +27,7 @@ const NON_SPEECH_CUES = new Set([
   'snorts',
 ]);
 
-function isNonSpeechCue(text: string): boolean {
+export function isNonSpeechCue(text: string): boolean {
   const match = text.trim().match(/^(?:\[([^\]]+)\]|\(([^)]+)\))$/);
   if (!match) return false;
 
@@ -132,7 +132,9 @@ export class SubtitleData {
         continue;
       }
 
-      // 计算总音素数（标点符号算作0.5个音素）
+      // 计算总权重（标点符号算作0.5）。这里仅用于在粗粒度字幕内部
+      // 做比例插值；不再强加最小时长，否则短字幕的后几个 token 会
+      // 被挤压成零时长。
       const totalPhonemes = matches.reduce((sum, match) => {
         const token = match[0];
         // 如果是标点符号，算作0.5个音素
@@ -142,12 +144,8 @@ export class SubtitleData {
         return sum + Math.ceil(token.length / CHARS_PER_PHONEME);
       }, 0);
 
-      const timePerPhoneme = duration / Math.max(totalPhonemes, 1);  // 防止除零错误
-
-      // 为每个识别出的词/字符/标点创建独立的时间戳
-      let currentTime = seg.startTime;
-      const MIN_WORD_DURATION = 50; // 最小时长50毫秒
-      const MIN_PUNCTUATION_DURATION = 30; // 标点最小时长30毫秒
+      const safeDuration = Math.max(duration, 0);
+      let consumedPhonemes = 0;
 
       for (const match of matches) {
         const token = match[0];
@@ -157,22 +155,18 @@ export class SubtitleData {
 
         // 计算当前token的音素数量
         const tokenPhonemes = isPunctuation ? 0.5 : Math.ceil(token.length / CHARS_PER_PHONEME);
-        const minDuration = isPunctuation ? MIN_PUNCTUATION_DURATION : MIN_WORD_DURATION;
-
-        // 使用浮点数计算，确保每个token至少有最小时长
-        const tokenDuration = Math.max(timePerPhoneme * tokenPhonemes, minDuration);
-
-        // 创建新的字词级 segment，确保时间不超出原始范围
-        const tokenEndTime = Math.min(currentTime + tokenDuration, seg.endTime);
+        const tokenStartTime = seg.startTime
+          + safeDuration * (consumedPhonemes / Math.max(totalPhonemes, 1));
+        consumedPhonemes += tokenPhonemes;
+        const tokenEndTime = seg.startTime
+          + safeDuration * (consumedPhonemes / Math.max(totalPhonemes, 1));
 
         newSegments.push({
           index: newSegments.length + 1,
-          startTime: currentTime,
+          startTime: tokenStartTime,
           endTime: tokenEndTime,
           text: token,
         });
-
-        currentTime = tokenEndTime;
       }
     }
 

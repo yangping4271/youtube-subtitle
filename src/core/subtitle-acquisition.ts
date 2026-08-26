@@ -1,4 +1,5 @@
 import { decodeHtmlEntities } from './transcript-text.js';
+import { isNonSpeechCue } from './subtitle-data.js';
 import { extractErrorMessage } from '../utils/error-handler.js';
 import type { SimpleSubtitleEntry } from '../types/index.js';
 
@@ -75,8 +76,11 @@ export interface YouTubeSubtitleAcquirer {
  */
 export function normalizeSubtitleText(text: string): string {
   return decodeHtmlEntities(text)
-    .replace(/>{2,}/g, '')
-    .replace(/\s*(?:\[[^\]]*\]|\([^)]*\))/g, ' ')
+    // YouTube transcript panel 用行首的 >> 表示说话人切换。只清理行首，
+    // 保留代码和技术文本中的位移运算符等真实内容。
+    .replace(/^\s*>{2,}\s*/, '')
+    // 只删除明确识别出的非语音提示；[React]、foo(bar) 等内容必须保留。
+    .replace(/\[[^\]]*\]|\([^)]*\)/g, (cue) => isNonSpeechCue(cue) ? ' ' : cue)
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -118,11 +122,16 @@ export function normalizeSubtitleTiming(
 
   return deduplicated.map((subtitle, index) => {
     const next = deduplicated[index + 1];
-    const endTime = Number.isFinite(subtitle.endTime) && subtitle.endTime > subtitle.startTime
+    const sourceEndTime = Number.isFinite(subtitle.endTime) && subtitle.endTime > subtitle.startTime
       ? subtitle.endTime
       : next && next.startTime > subtitle.startTime
         ? next.startTime
         : subtitle.startTime + 5;
+    // SRV3 paragraph 的 d 包含字幕留屏时间，最后一个词可能因此延伸到
+    // 下一段已经开始之后。采集层不允许一条词级字幕越过下一条的开始点。
+    const endTime = next && next.startTime > subtitle.startTime
+      ? Math.min(sourceEndTime, next.startTime)
+      : sourceEndTime;
 
     return {
       ...subtitle,

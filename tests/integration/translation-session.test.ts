@@ -927,6 +927,43 @@ describe('TranslationSession interface', () => {
     expect(result.chinese[0].text).toBe('译:one sentence');
   });
 
+  it('SRV3 词级字幕在断句模型改写文本时仍保持原词序和时间', async () => {
+    const sourceText = "If you haven't used or heard of Raycast AI chat.";
+    const subtitles: SubtitleEntry[] = [
+      { index: 1, startTime: 80, endTime: 320, text: 'If' },
+      { index: 2, startTime: 320, endTime: 480, text: 'you' },
+      { index: 3, startTime: 480, endTime: 719, text: "haven't" },
+      { index: 4, startTime: 719, endTime: 1_280, text: 'used' },
+      { index: 5, startTime: 1_280, endTime: 1_600, text: 'or' },
+      { index: 6, startTime: 1_600, endTime: 1_920, text: 'heard' },
+      { index: 7, startTime: 1_920, endTime: 2_080, text: 'of' },
+      { index: 8, startTime: 2_080, endTime: 2_800, text: 'Raycast' },
+      { index: 9, startTime: 2_800, endTime: 3_200, text: 'AI' },
+      { index: 10, startTime: 3_200, endTime: 3_520, text: 'chat.' },
+    ];
+    const client: ChatCompletionPort = {
+      async callChat(_systemPrompt, userPrompt, options = {}) {
+        if (!options.responseFormat) {
+          return 'If you AI heard chat in a of while Raycast.';
+        }
+        const subtitleMap = readSubtitleMap(userPrompt);
+        return JSON.stringify(Object.fromEntries(
+          Object.entries(subtitleMap).map(([key, text]) => [key, `译:${text}`])
+        ));
+      },
+    };
+
+    const result = await new TranslationSession(createConfig(), client).translate({ subtitles });
+
+    expect(result.english).toEqual([{
+      index: 1,
+      startTime: 80,
+      endTime: 3_520,
+      text: sourceText,
+    }]);
+    expect(result.chinese[0].text).toBe(`译:${sourceText.slice(0, -1)}`);
+  });
+
   it('空字幕和已取消请求通过 interface 返回明确错误', async () => {
     const session = new TranslationSession(
       createConfig(),

@@ -217,8 +217,17 @@ export class TranslationSession {
 
       logger.info('字幕断句处理开始');
 
-      const wordSegmentData = subtitleData.splitToWordSegments();
-      logger.info(`转换为单词: ${wordSegmentData.length()} 个单词`);
+      // YouTube SRV3 已经提供词级时间戳。再次拆词会把段落留屏时间分给
+      // 标点，导致标点越过后续单词并破坏句子边界。
+      const hasWordTimestamps = subtitleData.isWordTimestamp();
+      const wordSegmentData = hasWordTimestamps
+        ? subtitleData
+        : subtitleData.splitToWordSegments();
+      logger.info(
+        hasWordTimestamps
+          ? `保留源词级时间戳: ${wordSegmentData.length()} 个片段`
+          : `转换为单词: ${wordSegmentData.length()} 个单词`
+      );
       logger.info(`使用模型: ${this.config.model}`);
 
       return await this.translateWithPipeline(wordSegmentData, request, observer);

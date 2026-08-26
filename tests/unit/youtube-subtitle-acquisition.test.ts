@@ -161,6 +161,18 @@ describe('subtitle acquisition', () => {
     ]);
   });
 
+  it('把 SRV3 末词的留屏结束时间限制在下一词开始点', () => {
+    expect(normalizeSubtitleTiming([
+      { startTime: 2.08, endTime: 5.6, text: 'Raycast,' },
+      { startTime: 2.8, endTime: 3.2, text: 'AI' },
+      { startTime: 3.2, endTime: 3.52, text: 'chat' },
+    ])).toEqual([
+      { startTime: 2.08, endTime: 2.8, text: 'Raycast,' },
+      { startTime: 2.8, endTime: 3.2, text: 'AI' },
+      { startTime: 3.2, endTime: 3.52, text: 'chat' },
+    ]);
+  });
+
   it('通过 caption track 返回按时间排序且规范化的字幕', async () => {
     installTimedTextDocument([
       { start: '5', dur: '2', text: ' second   subtitle ' },
@@ -465,7 +477,7 @@ describe('normalizeSubtitleText 清洗', () => {
     expect(normalizeSubtitleText('That&#39;s the &amp; gist')).toBe("That's the & gist");
   });
 
-  it('去除 [music] 类非语音标注与括号标注', () => {
+  it('只去除明确的非语音标注', () => {
     expect(normalizeSubtitleText('[music] basic gist')).toBe('basic gist');
     expect(normalizeSubtitleText('execute bash, [applause] read that file')).toBe(
       'execute bash, read that file'
@@ -473,7 +485,13 @@ describe('normalizeSubtitleText 清洗', () => {
     expect(normalizeSubtitleText('(laughs) it works')).toBe('it works');
   });
 
-  it('去除 >> 说话人标记并清理纯标注片段', () => {
+  it('保留有意义的括号内容和技术运算符', () => {
+    expect(normalizeSubtitleText('Use [React] with hooks')).toBe('Use [React] with hooks');
+    expect(normalizeSubtitleText('Call foo(bar) next')).toBe('Call foo(bar) next');
+    expect(normalizeSubtitleText('x >> 2 means shift')).toBe('x >> 2 means shift');
+  });
+
+  it('只去除行首 >> 说话人标记并清理纯标注片段', () => {
     expect(normalizeSubtitleText('>> I am Mario')).toBe('I am Mario');
     expect(normalizeSubtitleText('>> [music]')).toBe('');
   });

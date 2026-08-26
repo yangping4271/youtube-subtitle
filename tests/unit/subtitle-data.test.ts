@@ -57,6 +57,19 @@ describe('SubtitleData', () => {
       expect(segments[1].endTime).toBe(1000);
     });
 
+    it('短片段中的所有 token 都保持正时长', () => {
+      const segments = new SubtitleData([{
+        index: 1,
+        startTime: 0,
+        endTime: 100,
+        text: 'one two three four',
+      }]).splitToWordSegments().getSegments();
+
+      expect(segments).toHaveLength(4);
+      expect(segments.every(segment => segment.endTime > segment.startTime)).toBe(true);
+      expect(segments.at(-1)?.endTime).toBe(100);
+    });
+
     it('应该处理多种标点符号', () => {
       const input: SubtitleEntry[] = [
         {

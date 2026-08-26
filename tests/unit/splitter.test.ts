@@ -213,8 +213,7 @@ describe('mergeSegmentsWithinBatch', () => {
     expect(segments[0].text).toBe('I think we should go now,');
     expect(segments[0].endTime).toBe(1250);
     expect(segments[1].text).toBe('because it is late.');
-    expect(segments[1].startTime).toBeLessThan(1250);
-    expect(segments[1].startTime).toBeGreaterThanOrEqual(segments[0].startTime);
+    expect(segments[1].startTime).toBe(1250);
   });
 
   it('发送给断句模型的文本不应在英文标点前添加空格', async () => {
@@ -252,6 +251,56 @@ describe('mergeSegmentsWithinBatch', () => {
     expect(capturedUserPrompt).toContain("\nHi, I'm Emily.");
     expect(capturedUserPrompt).not.toContain("Hi , I'm Emily .");
     expect(result.getSegments()[0].text).toBe("Hi, I'm Emily.");
+  });
+
+  it('模型改写或重排源文本时忽略其结果', async () => {
+    const source = 'If you heard of Raycast AI chat in a while.';
+    const result = await splitByLLM(
+      source,
+      { callChat: async () => 'If you AI heard chat in a of while Raycast.' },
+      config
+    );
+
+    expect(result.join(' ')).toBe(source);
+  });
+
+  it('普通换行转换为空格而不是粘连单词', async () => {
+    const source = 'Hello world Next sentence here.';
+    const result = await splitByLLM(
+      source,
+      { callChat: async () => 'Hello\nworld<br />Next sentence here.' },
+      config
+    );
+
+    expect(result).toEqual(['Hello world', 'Next sentence here.']);
+  });
+
+  it('跨时间间隔时按源内容拆开，不复制整个 LLM 句子', async () => {
+    const wordSegments: SubtitleEntry[] = [
+      { index: 1, startTime: 0, endTime: 100, text: 'alpha' },
+      { index: 2, startTime: 100, endTime: 200, text: 'beta' },
+      { index: 3, startTime: 3_000, endTime: 3_100, text: 'gamma' },
+      { index: 4, startTime: 3_100, endTime: 3_200, text: 'delta' },
+    ];
+    const preSplitSentences: PreSplitSentence[] = [{
+      text: 'alpha beta gamma delta',
+      wordStartIndex: 0,
+      wordEndIndex: wordSegments.length,
+      startTime: 0,
+      endTime: 3_200,
+    }];
+
+    const result = await mergeSegmentsWithinBatch(
+      preSplitSentences,
+      wordSegments,
+      { callChat: async () => 'alpha beta gamma delta' },
+      config
+    );
+
+    expect(result.getSegments().map(segment => segment.text)).toEqual([
+      'alpha beta',
+      'gamma delta',
+    ]);
   });
 
   it('严重超标但仍可继续拆分时不写入 console.error', async () => {

@@ -5,7 +5,6 @@
 import { setupLogger } from '../utils/logger.js';
 import { buildSplitPrompt } from './prompts.js';
 import { SubtitleData } from './subtitle-data.js';
-import { findBestMatch } from '../utils/similarity.js';
 import type { CancellationSignal } from '../utils/cancellation.js';
 import type { TranslatorConfig, SplitStats, SubtitleEntry, PreSplitSentence } from '../types/index.js';
 
@@ -14,10 +13,6 @@ const logger = setupLogger('splitter');
 // 时间间隔阈值（毫秒）
 const MAX_GAP = 1500; // 1.5秒
 const MAX_WORDS_PER_PRESPLIT = 80;
-const EXACT_MATCH_MAX_SHIFT = 8;
-const MAX_TRANSITION_GAP_MS = 120;
-const DEFAULT_TRANSITION_LEAD_MS = 180;
-const STRONG_PUNCTUATION_TRANSITION_LEAD_MS = 80;
 const TOKEN_BOUNDARY_PUNCTUATION = /([.,!?;:…。，！？；：、])/g;
 
 /**
@@ -217,9 +212,6 @@ export async function mergeSegmentsWithinBatch(
     llmSentences
   );
 
-  // 只微调相邻句子的切换点，不再通过合并短句来延长上一句
-  refineSegmentTransitions(alignedSegments);
-
   return new SubtitleData(alignedSegments);
 }
 
@@ -264,143 +256,69 @@ function tokenizeComparableText(text: string): string[] {
     .filter(token => token.length > 0);
 }
 
-function findSequentialTokenMatch(
-  sentenceTokens: string[],
-  sourceTokens: string[],
-  startIndex: number,
-  maxShift: number = EXACT_MATCH_MAX_SHIFT
-): { position: number; windowSize: number } | null {
-  if (sentenceTokens.length === 0) {
-    return null;
+function appendSourceGroups(
+  output: SubtitleEntry[],
+  sourceSegments: SubtitleEntry[]
+): void {
+  for (const group of groupSegmentsByTimeGaps(sourceSegments, MAX_GAP)) {
+    const text = new SubtitleData(group).toText();
+    if (!text) continue;
+
+    output.push({
+      index: output.length + 1,
+      startTime: group[0].startTime,
+      endTime: group[group.length - 1].endTime,
+      text,
+    });
   }
-
-  const maxStart = Math.min(startIndex + maxShift, sourceTokens.length - sentenceTokens.length);
-  if (maxStart < startIndex) {
-    return null;
-  }
-
-  for (let start = startIndex; start <= maxStart; start++) {
-    let matched = true;
-
-    for (let offset = 0; offset < sentenceTokens.length; offset++) {
-      if (sourceTokens[start + offset] !== sentenceTokens[offset]) {
-        matched = false;
-        break;
-      }
-    }
-
-    if (matched) {
-      return {
-        position: start,
-        windowSize: sentenceTokens.length,
-      };
-    }
-  }
-
-  return null;
 }
 
 /**
- * 基于句子相似度匹配来合并字幕片段
+ * 按断句结果的 token 数顺序消费源片段。源片段是唯一文本来源：LLM 只
+ * 决定边界，不能改写英文；每个源片段也只会被消费一次。
  */
 function mergeSegmentsBasedOnSentences(
   segments: SubtitleEntry[],
   sentences: string[]
 ): SubtitleEntry[] {
   const newSegments: SubtitleEntry[] = [];
-  let currentIndex = 0;
-  let unmatchedCount = 0;
-  const maxUnmatched = 5;
-  const sourceTokens = segments.map(seg => normalizeComparableToken(seg.text));
+  const sourceTokenCounts = segments.map(segment =>
+    Math.max(1, tokenizeComparableText(segment.text).length)
+  );
+  let sourceSegmentIndex = 0;
+  let consumedSourceTokens = 0;
+  let targetTokenCount = 0;
 
-  logger.info(`🔗 开始时间戳对齐: ${sentences.length} 个句子 -> ${segments.length} 个原始片段`);
+  logger.info(`🔗 开始顺序时间戳对齐: ${sentences.length} 个句子 -> ${segments.length} 个原始片段`);
 
-  for (let sentenceIdx = 0; sentenceIdx < sentences.length; sentenceIdx++) {
-    const sentence = sentences[sentenceIdx];
-    const sentenceTokens = tokenizeComparableText(sentence);
+  sentences.forEach((sentence, sentenceIndex) => {
+    targetTokenCount += tokenizeComparableText(sentence).length;
+    let endIndex = sourceSegmentIndex;
 
-    const exactMatch = findSequentialTokenMatch(
-      sentenceTokens,
-      sourceTokens,
-      currentIndex
-    );
-
-    // 使用相似度匹配查找最佳对应位置
-    const match = exactMatch
-      ? { ...exactMatch, similarity: 1.0 }
-      : findBestMatch(
-        sentence,
-        segments,
-        currentIndex,
-        30, // maxShift
-        0.5  // threshold
-      );
-
-    if (match) {
-      const { position, windowSize, similarity } = match;
-
-      // 获取匹配的片段
-      const matchedSegments = segments.slice(position, position + windowSize);
-
-      // 按时间间隔分组
-      const groups = groupSegmentsByTimeGaps(matchedSegments, MAX_GAP);
-
-      // 为每组创建合并的字幕
-      for (const group of groups) {
-        const mergedStartTime = group[0].startTime;
-        const mergedEndTime = group[group.length - 1].endTime;
-
-        newSegments.push({
-          index: newSegments.length + 1,
-          startTime: mergedStartTime,
-          endTime: mergedEndTime,
-          text: sentence, // 使用 LLM 返回的原始句子
-        });
-      }
-
-      // 更新当前索引
-      currentIndex = position + windowSize;
-
-      // 重置未匹配计数
-      unmatchedCount = 0;
-
-      // 输出匹配信息（仅在调试模式）
-      if (similarity < 0.8) {
-        logger.debug(
-          `⚠️ 句子 ${sentenceIdx + 1} 相似度较低: ${(similarity * 100).toFixed(1)}%`
-        );
-      }
-    } else {
-      // 没有找到匹配
-      unmatchedCount++;
-      logger.warn(`❌ 句子 ${sentenceIdx + 1} 未找到匹配: "${sentence.substring(0, 50)}..."`);
-
-      if (unmatchedCount > maxUnmatched) {
-        throw new Error(
-          `时间戳对齐失败：连续 ${unmatchedCount} 个句子未匹配（超过阈值 ${maxUnmatched}）`
-        );
-      }
-
-      // 使用估算时间（降级处理）
-      // 使用固定 5 秒默认持续时间（与下载 SRT 字幕算法一致）
-      const estimatedDuration = 5000; // 固定5秒
-      const lastEndTime = newSegments.length > 0
-        ? newSegments[newSegments.length - 1].endTime
-        : segments[0]?.startTime || 0;
-
-      newSegments.push({
-        index: newSegments.length + 1,
-        startTime: lastEndTime,
-        endTime: lastEndTime + estimatedDuration,
-        text: sentence,
-      });
+    while (
+      endIndex < segments.length
+      && (consumedSourceTokens < targetTokenCount || endIndex === sourceSegmentIndex)
+    ) {
+      consumedSourceTokens += sourceTokenCounts[endIndex];
+      endIndex++;
     }
+
+    // 最后一句兜底消费批次剩余内容，避免舍弃尾部 token。
+    if (sentenceIndex === sentences.length - 1) {
+      endIndex = segments.length;
+    }
+
+    if (endIndex > sourceSegmentIndex) {
+      appendSourceGroups(newSegments, segments.slice(sourceSegmentIndex, endIndex));
+      sourceSegmentIndex = endIndex;
+    }
+  });
+
+  if (sourceSegmentIndex < segments.length) {
+    appendSourceGroups(newSegments, segments.slice(sourceSegmentIndex));
   }
 
-  logger.info(
-    `✅ 时间戳对齐完成: ${newSegments.length} 个字幕片段 (未匹配: ${unmatchedCount})`
-  );
-
+  logger.info(`✅ 时间戳对齐完成: ${newSegments.length} 个字幕片段`);
   return newSegments;
 }
 
@@ -745,15 +663,20 @@ export async function splitByLLM(
   const batchPrefix = batchIndex !== undefined ? `[批次${batchIndex}] ` : '';
   logger.info(`${batchPrefix}API 返回结果: \n\n${response}\n`);
 
-  // 清理响应
-  let result = response;
-  // 移除 <think></think> 标签
-  result = result.replace(/<think>[\s\S]*?<\/think>/g, '');
-  // 移除换行符
-  result = result.replace(/\n+/g, '');
+  // 清理响应并兼容 <br>、<br/>、大小写和普通换行。普通换行必须
+  // 变成空格，不能把 Hello\nworld 粘成 Helloworld。
+  const result = response.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  let sentences = result
+    .split(/<br\s*\/?>/i)
+    .map(segment => segment.replace(/\s+/g, ' ').trim())
+    .filter(segment => segment.length > 0);
 
-  // 按 <br> 分割
-  let sentences = result.split('<br>').map(s => s.trim()).filter(s => s.length > 0);
+  const normalizeIntegrityText = (value: string): string =>
+    value.replace(/\s+/g, ' ').trim();
+  if (normalizeIntegrityText(sentences.join(' ')) !== normalizeIntegrityText(text)) {
+    logger.warn(`${batchPrefix}断句模型改写了源文本，忽略模型边界并使用确定性断句`);
+    sentences = [text];
+  }
 
   // 计算动态阈值
   const toleranceThreshold = Math.floor(maxWordCountEnglish * toleranceMultiplier);
@@ -841,6 +764,10 @@ export async function splitByLLM(
   }
 
   sentences = newSentences;
+  if (normalizeIntegrityText(sentences.join(' ')) !== normalizeIntegrityText(text)) {
+    logger.warn(`${batchPrefix}断句结果未完整覆盖源文本，回退为未改写原文`);
+    sentences = [text];
+  }
 
   // 记录统计信息
   logger.info(`📊 断句质量统计:`);
@@ -861,47 +788,4 @@ export async function splitByLLM(
   logger.info(`✅ ${batchPrefix}断句完成: ${sentences.length} 个句子，耗时 ${(duration / 1000).toFixed(1)}s`);
 
   return sentences;
-}
-
-/**
- * 微调相邻分段切换点：
- * - 不再延长上一句结束时间
- * - 在极短切换间隙下，允许下一句适度提前开始
- */
-function refineSegmentTransitions(segments: SubtitleEntry[]): void {
-  if (segments.length < 2) return;
-
-  for (let i = 1; i < segments.length; i++) {
-    const previous = segments[i - 1];
-    const current = segments[i];
-    const gap = current.startTime - previous.endTime;
-
-    if (gap > MAX_TRANSITION_GAP_MS) {
-      continue;
-    }
-
-    const previousDuration = previous.endTime - previous.startTime;
-    const currentDuration = current.endTime - current.startTime;
-    if (previousDuration <= 0 || currentDuration <= 0) {
-      continue;
-    }
-
-    const leadCap = /[.!?。！？]$/.test(previous.text.trim())
-      ? STRONG_PUNCTUATION_TRANSITION_LEAD_MS
-      : DEFAULT_TRANSITION_LEAD_MS;
-    const leadInMs = Math.min(
-      leadCap,
-      Math.floor(previousDuration * 0.12),
-      Math.floor(currentDuration * 0.2)
-    );
-
-    if (leadInMs <= 0) {
-      continue;
-    }
-
-    const adjustedStartTime = Math.max(previous.startTime, previous.endTime - leadInMs);
-    if (adjustedStartTime < current.startTime) {
-      current.startTime = adjustedStartTime;
-    }
-  }
 }
