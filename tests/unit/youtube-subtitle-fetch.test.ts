@@ -13,6 +13,7 @@ import {
   isTranscriptReady,
   parseTranscriptTimestamp,
   pickPreferredCaptionTrack,
+  resolvePlayerCaptionTrackText,
   shouldForceLegacyTranscriptOpen,
   shouldWaitForTranscriptPanel,
 } from '../../src/extension/youtube-subtitle-fetch.js';
@@ -79,6 +80,27 @@ describe('youtube subtitle fetch helpers', () => {
     expect(tracks).toEqual([
       { languageCode: 'en', baseUrl: 'https://www.youtube.com/api/timedtext?v=1' },
     ]);
+  });
+
+  it('备用 player 策略使用网页客户端返回的字幕轨', async () => {
+    const result = await resolvePlayerCaptionTrackText('video-id', {
+      requestPlayerResponse: async () => ({
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            captionTracks: [{
+              languageCode: 'en',
+              baseUrl: 'https://www.youtube.com/api/timedtext?v=1',
+            }],
+          },
+        },
+      }),
+      requestTrackText: async () => '<timedtext />',
+    });
+
+    expect(result).toMatchObject({
+      source: 'web-player-response',
+      trackLanguageCode: 'en',
+    });
   });
 
   it('点击新 transcript 入口后不再强开旧 panel', () => {

@@ -1137,13 +1137,6 @@ body::before {
     box-shadow: var(--shadow-gold-strong);
 }
 
-.setting-hint {
-    font-size: 11px;
-    color: var(--text-light);
-    margin-top: var(--spacing-xs);
-    padding-left: 2px;
-}
-
 .color-selector {
     display: flex;
     align-items: center;
@@ -1228,62 +1221,6 @@ body::before {
 .advanced-settings .settings-grid {
     padding-top: var(--spacing-md);
     border-top: 2px solid var(--bg-tertiary);
-}
-
-.tips-card {
-    background: linear-gradient(180deg, rgba(18, 31, 49, 0.98) 0%, rgba(13, 23, 38, 0.98) 100%);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 18px;
-    padding: var(--spacing-lg);
-    box-shadow: var(--shadow-sm);
-}
-
-.tips-header {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--text-secondary);
-    margin-bottom: var(--spacing-md);
-    text-align: left;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-}
-
-.tip-item {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--spacing-md);
-    margin-bottom: 0;
-    padding: 10px 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.tip-item:first-of-type {
-    border-top: none;
-    padding-top: 0;
-}
-
-.tip-item:last-child {
-    margin-bottom: 0;
-}
-
-.tip-number {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    background: var(--primary-color);
-    color: var(--text-white);
-    font-size: 10px;
-    font-weight: 700;
-    border-radius: 50%;
-    flex-shrink: 0;
-}
-
-.tip-text {
-    font-size: 12px;
-    color: var(--text-secondary);
-    line-height: 1.4;
 }
 
 /* ========================================
@@ -1956,7 +1893,6 @@ body::before {
 
 :root[data-theme-effective="light"] .translate-control-section,
 :root[data-theme-effective="light"] .settings-card,
-:root[data-theme-effective="light"] .tips-card,
 :root[data-theme-effective="light"] .language-switcher,
 :root[data-theme-effective="light"] .preview-card,
 :root[data-theme-effective="light"] .preset-card,
@@ -1980,7 +1916,6 @@ body::before {
 
 :root[data-theme-effective="light"] .info-row:not(:last-child),
 :root[data-theme-effective="light"] .setting-item,
-:root[data-theme-effective="light"] .tip-item,
 :root[data-theme-effective="light"] .api-actions,
 :root[data-theme-effective="light"] .progress-row {
     border-color: rgba(179, 146, 98, 0.16);
@@ -1988,9 +1923,6 @@ body::before {
 
 :root[data-theme-effective="light"] .info-label,
 :root[data-theme-effective="light"] .switch-label,
-:root[data-theme-effective="light"] .tips-header,
-:root[data-theme-effective="light"] .setting-hint,
-:root[data-theme-effective="light"] .tip-text,
 :root[data-theme-effective="light"] .separate-subtitle,
 :root[data-theme-effective="light"] .drop-text p,
 :root[data-theme-effective="light"] .file-name,

@@ -266,7 +266,7 @@ describe('subtitle acquisition', () => {
     });
   });
 
-  it('全部来源失败时优先返回登录提示并保留诊断', async () => {
+  it('全部来源失败时返回转写面板错误并保留诊断', async () => {
     const acquirer = createYouTubeSubtitleAcquirer({
       captionTrackStrategy: async () => {
         throw new Error('YouTube 要求先登录以确认不是机器人');
@@ -278,7 +278,7 @@ describe('subtitle acquisition', () => {
     });
 
     await expect(acquirer.acquire('video-id')).rejects.toMatchObject({
-      message: 'YouTube 要求先登录以确认不是机器人',
+      message: 'transcript panel unavailable',
       diagnostics: {
         captionTrackError: 'YouTube 要求先登录以确认不是机器人',
         panelError: 'transcript panel unavailable',
@@ -286,7 +286,7 @@ describe('subtitle acquisition', () => {
     });
   });
 
-  it('多条 caption strategy 失败时只向用户返回登录提示', async () => {
+  it('多条 caption strategy 失败时返回转写面板错误', async () => {
     const acquirer = createCoreYouTubeSubtitleAcquirer({
       captionTrackStrategies: [
         async () => {
@@ -304,7 +304,7 @@ describe('subtitle acquisition', () => {
     });
 
     await expect(acquirer.acquire('video-id')).rejects.toMatchObject({
-      message: 'YouTube 要求先登录以确认不是机器人',
+      message: 'transcript panel unavailable',
       diagnostics: {
         captionTrackError:
           '页面 player response 未提供字幕轨; YouTube 要求先登录以确认不是机器人',

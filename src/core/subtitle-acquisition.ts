@@ -5,7 +5,7 @@ import type { SimpleSubtitleEntry } from '../types/index.js';
 
 export interface ResolvedCaptionTrackText {
   trackText: string;
-  source: 'page-player-response' | 'youtubei-player';
+  source: 'page-player-response' | 'web-player-response' | 'youtubei-player';
   fallbackReason?: string;
   trackLanguageCode?: string;
   trackKind?: string;
@@ -339,10 +339,6 @@ export function createYouTubeSubtitleAcquirer(
         return result;
       } catch (panelError) {
         const panelErrorMessage = extractErrorMessage(panelError);
-        const loginError = captionTrackErrors.find((error) =>
-          /登录|sign in/i.test(error)
-        );
-        const message = loginError || panelErrorMessage;
         const diagnostics = {
           captionTrackError,
           panelError: panelErrorMessage,
@@ -354,7 +350,7 @@ export function createYouTubeSubtitleAcquirer(
           diagnostics,
         });
 
-        throw new SubtitleAcquisitionError(message, diagnostics);
+        throw new SubtitleAcquisitionError(panelErrorMessage, diagnostics);
       }
     },
   };

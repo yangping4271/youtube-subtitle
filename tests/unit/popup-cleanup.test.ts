@@ -94,11 +94,12 @@ describe('popup static wiring', () => {
   });
 
   it('保持 API 配置界面简洁，并保护内置供应商', () => {
+    expect(popupHtml).not.toContain('OpenAI、OpenRouter、DeepSeek 为内置配置，不可删除');
     expect(popupHtml).not.toContain('实际翻译请求：');
     expect(popupHtml).not.toContain('测试连接：');
     expect(popupScript).not.toContain('updateApiBaseUrlHint');
     expect(popupScript).toContain('isDefaultApiProviderId');
-    expect(popupScript).toContain('内置配置不可删除');
+    expect(popupScript).not.toContain('内置配置不可删除');
     expect(popupScript).toContain('normalizeApiBaseUrl');
     expect(popupScript).toContain('formatApiResponseError');
     expect(popupScript).toContain('请选择模型');

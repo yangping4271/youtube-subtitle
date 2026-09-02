@@ -150,7 +150,15 @@ class SubtitleExtensionBackground {
           return (result[key] as VideoSubtitleData) || null;
         },
         saveVideoResult: async (videoId, result) => {
-          await chrome.storage.local.set({ [this.videoSubtitleKey(videoId)]: result });
+          const key = this.videoSubtitleKey(videoId);
+          const stored = await chrome.storage.local.get(null);
+          const staleKeys = Object.keys(stored).filter(
+            (storedKey) => storedKey.startsWith('videoSubtitles_') && storedKey !== key
+          );
+          await chrome.storage.local.set({ [key]: result });
+          if (staleKeys.length > 0) {
+            await chrome.storage.local.remove(staleKeys);
+          }
         },
         clearVideoResult: async (videoId) => {
           await chrome.storage.local.remove(this.videoSubtitleKey(videoId));

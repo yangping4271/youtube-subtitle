@@ -79,10 +79,6 @@
             <!-- API设置标签页 -->
             <div class="tab-content" id="apiTab">
                 <div class="settings-card">
-                    <div class="settings-header">
-                        <span>API 配置</span>
-                    </div>
-
                     <div class="settings-grid">
                         <!-- Provider Profile -->
                         <div class="setting-item">
@@ -96,7 +92,6 @@
                                 <button class="provider-icon-btn" id="addProviderBtn" title="新增供应商">+</button>
                                 <button class="provider-icon-btn danger" id="deleteProviderBtn" title="删除供应商">-</button>
                             </div>
-                            <div class="setting-hint">OpenAI、OpenRouter、DeepSeek 为内置配置，不可删除</div>
                         </div>
 
                         <!-- Provider Name -->
@@ -142,10 +137,8 @@
                         <div class="setting-item">
                             <div class="setting-label">
                                 <span class="setting-name">并发请求数</span>
-                                <span class="setting-value" id="threadNumValue">3</span>
                             </div>
                             <input type="number" id="threadNum" min="1" step="1" value="3" class="config-input" inputmode="numeric">
-                            <div class="setting-hint" id="threadNumHint">当前模型上限：2500；并发越高越容易触发服务端限流</div>
                         </div>
                     </div>
 

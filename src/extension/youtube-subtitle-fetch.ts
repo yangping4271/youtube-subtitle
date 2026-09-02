@@ -31,7 +31,7 @@ export interface CaptionTrackLike {
 }
 
 interface WindowCaptionTrackMessage {
-  type: 'YTSP_PageCaptionTracks';
+  type: 'YTSP_PageCaptionTracks' | 'YTSP_WebPlayerResponse';
   payload: CaptionTrackResponseLike | null;
 }
 
@@ -76,6 +76,7 @@ export interface PlayerCaptionTrackResolutionOptions {
 }
 
 const TRANSCRIPT_PANEL_SELECTOR =
+  'ytd-engagement-panel-section-list-renderer[target-id="PAmodern_transcript_view"], ' +
   'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]';
 
 const TRANSCRIPT_TRIGGER_PATTERNS = [
@@ -151,6 +152,32 @@ export function classifyCaptionTrackResponse(
 }
 
 export function requestPageCaptionTrackResponse(timeoutMs = 1000): Promise<CaptionTrackResponseLike | null> {
+  return requestMainWorldPlayerResponse(
+    'YTSP_RequestCaptionTracks',
+    'YTSP_PageCaptionTracks',
+    undefined,
+    timeoutMs
+  );
+}
+
+export function requestWebPlayerResponse(
+  videoId: string,
+  timeoutMs = 5000
+): Promise<CaptionTrackResponseLike | null> {
+  return requestMainWorldPlayerResponse(
+    'YTSP_RequestWebPlayerResponse',
+    'YTSP_WebPlayerResponse',
+    { videoId },
+    timeoutMs
+  );
+}
+
+function requestMainWorldPlayerResponse(
+  requestType: string,
+  responseType: WindowCaptionTrackMessage['type'],
+  detail: unknown,
+  timeoutMs: number
+): Promise<CaptionTrackResponseLike | null> {
   return new Promise((resolve) => {
     const timeoutId = window.setTimeout(() => {
       window.removeEventListener('message', onMessage);
@@ -158,7 +185,7 @@ export function requestPageCaptionTrackResponse(timeoutMs = 1000): Promise<Capti
     }, timeoutMs);
 
     const onMessage = (event: MessageEvent<WindowCaptionTrackMessage>): void => {
-      if (event.source !== window || event.data?.type !== 'YTSP_PageCaptionTracks') {
+      if (event.source !== window || event.data?.type !== responseType) {
         return;
       }
 
@@ -168,32 +195,8 @@ export function requestPageCaptionTrackResponse(timeoutMs = 1000): Promise<Capti
     };
 
     window.addEventListener('message', onMessage);
-    window.dispatchEvent(new CustomEvent('YTSP_RequestCaptionTracks'));
+    window.dispatchEvent(new CustomEvent(requestType, { detail }));
   });
-}
-
-export async function fetchYouTubePlayerResponse(videoId: string): Promise<CaptionTrackResponseLike> {
-  const response = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', createYouTubeRequestInit({
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      context: {
-        client: {
-          clientName: 'ANDROID',
-          clientVersion: '20.10.38',
-        },
-      },
-      videoId,
-    }),
-  }));
-
-  if (!response.ok) {
-    throw new Error(`player 接口请求失败: ${response.status}`);
-  }
-
-  return response.json() as Promise<CaptionTrackResponseLike>;
 }
 
 export async function fetchCaptionTrackText(track: CaptionTrackLike): Promise<string> {
@@ -244,7 +247,14 @@ export async function resolvePlayerCaptionTrackText(
   videoId: string,
   options: PlayerCaptionTrackResolutionOptions = {}
 ): Promise<ResolvedCaptionTrackText> {
-  const requestPlayerResponse = options.requestPlayerResponse || fetchYouTubePlayerResponse;
+  const requestPlayerResponse = options.requestPlayerResponse ||
+    (async (requestedVideoId: string) => {
+      const response = await requestWebPlayerResponse(requestedVideoId);
+      if (!response) {
+        throw new Error('网页 player 接口未返回响应');
+      }
+      return response;
+    });
   const requestTrackText = options.requestTrackText || fetchCaptionTrackText;
   const playerResponse = await requestPlayerResponse(videoId);
   const responseClassification = classifyCaptionTrackResponse(playerResponse);
@@ -264,7 +274,7 @@ export async function resolvePlayerCaptionTrackText(
 
   return {
     trackText: await requestTrackText(track),
-    source: 'youtubei-player',
+    source: 'web-player-response',
     trackLanguageCode: track.languageCode,
     trackKind: track.kind,
   };

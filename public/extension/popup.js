@@ -177,8 +177,6 @@ class PopupController {
 
     updateConcurrencyInputLimit(model) {
         const threadNum = document.getElementById('threadNum');
-        const threadNumValue = document.getElementById('threadNumValue');
-        const threadNumHint = document.getElementById('threadNumHint');
         if (!threadNum) return;
 
         const max = this.getModelConcurrencyLimit(model);
@@ -189,12 +187,6 @@ class PopupController {
             threadNum.max = String(max);
         }
         threadNum.value = String(normalized);
-        if (threadNumValue) threadNumValue.textContent = String(normalized);
-        if (threadNumHint) {
-            threadNumHint.textContent = max === undefined
-                ? '未知模型：使用你填写的并发数；并发越高越容易触发服务端限流'
-                : `当前模型上限：${max}；并发越高越容易触发服务端限流`;
-        }
     }
 
     syncActiveProviderFields() {
@@ -1641,7 +1633,6 @@ class PopupController {
         const llmModel = document.getElementById('llmModel');
         const targetLanguage = document.getElementById('targetLanguage');
         const threadNum = document.getElementById('threadNum');
-        const threadNumValue = document.getElementById('threadNumValue');
 
         if (providerSelect) {
             const providers = this.newApiProviderDraft
@@ -1663,10 +1654,7 @@ class PopupController {
         if (apiKey) apiKey.value = activeProvider?.openaiApiKey || '';
         if (llmModel) llmModel.value = activeProvider?.llmModel || '';
         if (targetLanguage) this.setSelectValue(targetLanguage, this.apiConfig.targetLanguage);
-        if (threadNum) {
-            threadNum.value = activeProvider?.threadNum || 3;
-            if (threadNumValue) threadNumValue.textContent = threadNum.value;
-        }
+        if (threadNum) threadNum.value = activeProvider?.threadNum || 3;
         this.updateConcurrencyInputLimit(activeProvider?.llmModel || '');
         this.setApiProviderFieldMutability(activeProvider);
 
@@ -1674,7 +1662,7 @@ class PopupController {
         if (deleteProviderBtn) {
             const isDefaultProvider = this.isDefaultApiProvider(activeProvider);
             deleteProviderBtn.disabled = !activeProvider || Boolean(this.newApiProviderDraft) || isDefaultProvider;
-            deleteProviderBtn.title = isDefaultProvider ? '内置配置不可删除' : '删除供应商';
+            deleteProviderBtn.title = '删除供应商';
         }
 
         // 检查API状态
@@ -1784,7 +1772,6 @@ class PopupController {
 
         // 并发数
         const threadNum = document.getElementById('threadNum');
-        const threadNumValue = document.getElementById('threadNumValue');
         if (threadNum) {
             threadNum.addEventListener('input', (e) => {
                 const provider = this.getEditingApiProvider();
@@ -1793,7 +1780,6 @@ class PopupController {
                 provider.threadNum = value;
                 e.target.value = String(value);
                 if (!this.newApiProviderDraft) this.syncActiveProviderFields();
-                if (threadNumValue) threadNumValue.textContent = String(value);
             });
         }
 
@@ -1835,7 +1821,6 @@ class PopupController {
     deleteActiveApiProvider() {
         const currentId = this.apiConfig.activeProviderId;
         if (this.isDefaultApiProvider(currentId)) {
-            Toast.warning('OpenAI、OpenRouter、DeepSeek 为内置配置，不可删除');
             return;
         }
 

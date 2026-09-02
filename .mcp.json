@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--autoConnect",
+        "--category-extensions",
+        "--allow-unrestricted-paths",
+        "--no-usage-statistics",
+        "--no-performance-crux"
+      ],
+      "lifecycle": "lazy-keep-alive"
+    }
+  }
+}
