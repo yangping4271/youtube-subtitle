@@ -210,7 +210,6 @@ export class BrowserTranslationCoordinator {
     existingGeneration?: number
   ): Promise<void> {
     if (this.activeRun && request.videoId && this.activeRun.videoId === request.videoId) {
-      console.info(`视频 ${request.videoId} 已有翻译任务，忽略重复启动请求`);
       onPrepared?.();
       return;
     }
@@ -300,9 +299,7 @@ export class BrowserTranslationCoordinator {
                 runId: jobId,
                 signal: publishSignal,
               });
-            } catch (error) {
-              console.warn(`发布部分翻译结果失败，继续运行: ${extractErrorMessage(error)}`);
-            }
+            } catch {}
           },
         }
       );
@@ -482,9 +479,7 @@ export class BrowserTranslationCoordinator {
   private async saveProgressBestEffort(progress: TranslationProgress): Promise<void> {
     try {
       await this.store.saveProgress(progress);
-    } catch (error) {
-      console.warn(`保存翻译进度失败，继续运行: ${extractErrorMessage(error)}`);
-    }
+    } catch {}
   }
 
   private nextRunGeneration(): number {
@@ -495,9 +490,7 @@ export class BrowserTranslationCoordinator {
   private async savePendingJobBestEffort(job: BrowserTranslationJob): Promise<void> {
     try {
       await this.store.savePendingJob(job);
-    } catch (error) {
-      console.warn(`保存翻译任务失败，当前运行继续但可能无法自动恢复: ${extractErrorMessage(error)}`);
-    }
+    } catch {}
   }
 
   private async touchPendingJobBestEffort(
@@ -515,8 +508,6 @@ export class BrowserTranslationCoordinator {
   private async clearPendingJobBestEffort(jobId?: string): Promise<void> {
     try {
       await this.store.clearPendingJob(jobId);
-    } catch (error) {
-      console.warn(`清理翻译任务状态失败: ${extractErrorMessage(error)}`);
-    }
+    } catch {}
   }
 }

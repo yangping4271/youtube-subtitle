@@ -45,8 +45,6 @@ window.addEventListener('YTSP_OpenTranscript', () => {
 
   if (engagementPanel) {
     engagementPanel.visibility = 'ENGAGEMENT_PANEL_VISIBILITY_EXPANDED';
-  } else {
-    console.warn('YouTube SubtitlePlus: Engagement panel not found in Main World.');
   }
 });
 

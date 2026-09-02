@@ -2,10 +2,6 @@
  * JSON 修复模块
  */
 
-import { setupLogger } from './logger.js';
-
-const logger = setupLogger('json_repair');
-
 type JSONValue = string | number | boolean | null | JSONValue[] | { [key: string]: JSONValue };
 
   /**
@@ -404,9 +400,7 @@ export function parseLlmResponse(response: string): Record<string, unknown> {
       return result as Record<string, unknown>;
     }
     return {};
-  } catch (e) {
-    logger.warn(`JSON 解析未成功，交由上层格式降级: ${e}`);
-    logger.warn(`原始响应片段: ${response.slice(0, 100)}...`);
+  } catch {
     return {};
   }
 }

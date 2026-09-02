@@ -3,7 +3,6 @@
  */
 
 import { classifyError, withRetry } from '../utils/retry.js';
-import { setupLogger } from '../utils/logger.js';
 import { createCancellationError } from '../utils/cancellation.js';
 import {
   createApiResponseError,
@@ -11,8 +10,6 @@ import {
 } from '../utils/error-handler.js';
 import { assertRemoteApiBaseUrl, normalizeApiBaseUrl } from '../utils/api-url.js';
 import type { ChatOptions, TranslatorConfig } from '../types/index.js';
-
-const logger = setupLogger('openai-client');
 
 type ThinkingDisableMode = 'deepseek' | 'openrouter' | 'openai-compatible';
 
@@ -146,10 +143,6 @@ export class OpenAIClient {
       body.reasoning_effort = 'none';
     }
 
-    logger.info(
-      `请求参数: provider=${this.providerType}, model=${this.model}, response_format=${responseFormat?.type || 'none'}, reasoning=${thinkingDisableMode}-disabled`
-    );
-
     // 使用 withRetry 包装 API 调用，自动重试 2 次
     return withRetry(
       async () => {
@@ -200,9 +193,6 @@ export class OpenAIClient {
               this.isThinkingCompatibilityError(error, thinkingDisableMode)
             ) {
               this.removeThinkingDisableParameter(body, thinkingDisableMode);
-              logger.warn(
-                `模型或服务不支持关闭思考参数，改用默认思考模式: provider=${this.providerType}, model=${this.model}`
-              );
               return sendRequest();
             }
             throw error;

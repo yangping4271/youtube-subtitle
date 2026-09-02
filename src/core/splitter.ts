@@ -498,8 +498,6 @@ export function aggressiveSplit(text: string, maxWords: number): string[] {
     return result;
   }
 
-  // 找不到语义边界，返回原句
-  logger.warn('⚠️ 未找到语义边界，返回原句');
   return [text];
 }
 
@@ -590,9 +588,6 @@ export function fallbackSplit(text: string, maxWords: number, warningThreshold?:
   for (let i = 0; i < result.length; i++) {
     const segWords = countWords(result[i]);
     logger.info(`   片段${i + 1}(${segWords}字): ${result[i].slice(0, 50)}...`);
-    if (segWords > maxWords) {
-      logger.warn(`   ⚠️ 片段${i + 1}仍超标，需再次分割`);
-    }
   }
 
   // 验证：如果仍有超标片段，递归处理
@@ -674,7 +669,6 @@ export async function splitByLLM(
   const normalizeIntegrityText = (value: string): string =>
     value.replace(/\s+/g, ' ').trim();
   if (normalizeIntegrityText(sentences.join(' ')) !== normalizeIntegrityText(text)) {
-    logger.warn(`${batchPrefix}断句模型改写了源文本，忽略模型边界并使用确定性断句`);
     sentences = [text];
   }
 
@@ -722,13 +716,11 @@ export async function splitByLLM(
           newSentences.push(...splitResults);
         } else {
           stats.tolerated++;
-          logger.warn(`⚠️ 优化失败，接受原句(${wordCount}字)`);
           newSentences.push(segment);
         }
       }
       // 层级4：智能拆分层 (warning < x ≤ max)
       else if (wordCount <= maxThreshold) {
-        logger.warn(`⚠️ 超出警告阈值(${wordCount}/${maxWordCountEnglish}字): ${segment.slice(0, 40)}...`);
         logger.info(`🔧 尝试智能分割...`);
         const splitResults = aggressiveSplit(segment, maxWordCountEnglish);
 
@@ -737,7 +729,6 @@ export async function splitByLLM(
           logger.info(`✅ 智能分割成功: 分为${splitResults.length}段`);
           newSentences.push(...splitResults);
         } else {
-          logger.warn(`⚠️ 智能分割失败，使用降级分割`);
           const fallbackResults = fallbackSplit(segment, maxWordCountEnglish, warningThreshold);
           stats.forced++;
           newSentences.push(...fallbackResults);
@@ -745,7 +736,6 @@ export async function splitByLLM(
       }
       // 层级5：严重超标层 (> max)
       else {
-        logger.warn(`句子超过最大长度(${wordCount}/${maxWordCountEnglish}字)，尝试智能拆分: ${segment.slice(0, 40)}...`);
         logger.info(`🔧 尝试智能分割...`);
         const splitResults = aggressiveSplit(segment, maxWordCountEnglish);
 
@@ -754,7 +744,6 @@ export async function splitByLLM(
           logger.info(`✅ 智能分割成功: 分为${splitResults.length}段`);
           newSentences.push(...splitResults);
         } else {
-          logger.warn(`⚠️ 智能分割失败，使用降级分割进行多次拆分`);
           const fallbackResults = fallbackSplit(segment, maxWordCountEnglish, warningThreshold);
           stats.rejected++;
           newSentences.push(...fallbackResults);
@@ -765,7 +754,6 @@ export async function splitByLLM(
 
   sentences = newSentences;
   if (normalizeIntegrityText(sentences.join(' ')) !== normalizeIntegrityText(text)) {
-    logger.warn(`${batchPrefix}断句结果未完整覆盖源文本，回退为未改写原文`);
     sentences = [text];
   }
 
@@ -778,13 +766,6 @@ export async function splitByLLM(
   if (stats.optimized > 0) {
     logger.info(`   🔧 优化拆分: ${stats.optimized}句 (${toleranceThreshold}-${warningThreshold}字)`);
   }
-  if (stats.forced > 0) {
-    logger.warn(`   🔨 强制拆分: ${stats.forced}句 (${warningThreshold}-${maxThreshold}字)`);
-  }
-  if (stats.rejected > 0) {
-    logger.warn(`   仍有 ${stats.rejected} 句超过长度上限，已使用兜底拆分 (>${maxThreshold}字)`);
-  }
-
   logger.info(`✅ ${batchPrefix}断句完成: ${sentences.length} 个句子，耗时 ${(duration / 1000).toFixed(1)}s`);
 
   return sentences;

@@ -130,7 +130,6 @@ class YouTubeSubtitleOverlay {
       });
       const status = statusResponse.status as { isTranslating?: boolean } | undefined;
       if (status?.isTranslating) {
-        console.log('翻译正在进行中，忽略重复启动请求');
         return;
       }
 
@@ -160,7 +159,6 @@ class YouTubeSubtitleOverlay {
         throw new Error(String(response.error || '启动翻译失败'));
       }
     } catch (error) {
-      console.error('启动翻译失败:', error);
       // 检查是否是扩展上下文失效错误
       if (error instanceof Error && error.message.includes('Extension context invalidated')) {
         this.showErrorNotification('扩展已重新加载，请刷新页面后再试');
@@ -1115,9 +1113,7 @@ class YouTubeSubtitleOverlay {
           this.updateSubtitle();
         }
       }
-    } catch (error) {
-      console.error('加载字幕数据失败:', error);
-    }
+    } catch {}
   }
 
   private toggleAutoLoad(enabled: boolean): void {
@@ -1161,7 +1157,6 @@ class YouTubeSubtitleOverlay {
       const currentVideoId = this.getVideoId();
 
       if (!currentVideoId) {
-        console.error('❌ 无法获取视频ID，跳过字幕保存');
         return;
       }
 
@@ -1209,9 +1204,7 @@ class YouTubeSubtitleOverlay {
           this.updateSubtitle();
         }
       }
-    } catch (error) {
-      console.error('处理自动加载的字幕失败:', error);
-    }
+    } catch {}
   }
 }
 

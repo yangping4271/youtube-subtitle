@@ -1,7 +1,3 @@
-import { setupLogger } from '../utils/logger.js';
-
-const logger = setupLogger('video-metadata');
-
 export function getVideoDescription(): string {
   try {
     for (const selector of [
@@ -11,10 +7,7 @@ export function getVideoDescription(): string {
       const description = document.querySelector(selector)?.textContent?.trim();
       if (description) return description;
     }
-    logger.warn('⚠️ 未找到视频说明');
-  } catch (error) {
-    logger.warn(`获取视频说明失败，继续使用无说明上下文: ${error}`);
-  }
+  } catch {}
   return '';
 }
 
@@ -31,9 +24,6 @@ export function getAISummary(): string | null {
         if (content) return content;
       }
     }
-    logger.info('ℹ️ 该视频没有 AI 生成的摘要');
-  } catch (error) {
-    logger.warn(`获取 AI 摘要失败，继续使用无摘要上下文: ${error}`);
-  }
+  } catch {}
   return null;
 }

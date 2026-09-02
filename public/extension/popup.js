@@ -203,9 +203,7 @@ class PopupController {
         // 先确保默认设置写入 storage，再加载当前状态
         try {
             await this.ensureDefaultSettings();
-        } catch (e) {
-            console.log('确保默认设置时出现问题，但继续加载当前状态:', e);
-        }
+        } catch {}
 
         await this.loadCurrentState();
 
@@ -244,8 +242,7 @@ class PopupController {
             } else {
                 this.themeMode = 'system';
             }
-        } catch (error) {
-            console.warn('加载主题设置失败，使用系统主题:', error);
+        } catch {
             this.themeMode = 'system';
         }
 
@@ -263,8 +260,7 @@ class PopupController {
 
         try {
             await chrome.storage.local.set({ popupThemeMode: mode });
-        } catch (error) {
-            console.error('保存主题设置失败:', error);
+        } catch {
             Toast.error('主题设置保存失败');
         }
     }
@@ -282,9 +278,7 @@ class PopupController {
                     settings: { language, data }
                 })
             ));
-        } catch (error) {
-            console.log('初始化默认设置失败，但不影响继续使用:', error);
-        }
+        } catch {}
     }
 
     // ========================================
@@ -579,8 +573,7 @@ class PopupController {
                     }
                 });
             });
-        } catch (error) {
-            console.warn('获取视频ID失败，当前操作无法关联视频:', error);
+        } catch {
             return null;
         }
     }
@@ -644,14 +637,11 @@ class PopupController {
                                 fontFamily: this.chineseSettings.fontFamily
                             }
                         });
-                    } catch (e) {
-                        console.warn('持久化默认字体修正失败，不影响前端显示:', e);
-                    }
+                    } catch {}
                 }
                 this.loadLanguageSettingsToUI(this.currentLanguage);
             }
-        } catch (error) {
-            console.error('加载当前状态失败:', error);
+        } catch {
             Toast.error('加载设置失败');
         }
     }
@@ -669,7 +659,6 @@ class PopupController {
                 throw new Error(response.error);
             }
         } catch (error) {
-            console.error('切换字幕状态失败:', error);
             Toast.error('操作失败: ' + error.message);
 
             // 恢复开关状态
@@ -687,9 +676,7 @@ class PopupController {
 
             // 显示保存状态提示
             // Toast.success('设置已保存'); // 已保存反馈改为静默，UI变化已足够反馈
-        } catch (error) {
-            console.warn('更新设置失败，继续使用当前页面设置:', error);
-        }
+        } catch {}
     }
 
     resetToDefault() {
@@ -728,8 +715,7 @@ class PopupController {
                 }
                 this.updateVideoDisplay(response.videoId, response.subtitleLoaded ? '已加载字幕' : '无字幕');
             });
-        } catch (error) {
-            console.log('获取视频信息失败，使用空状态继续展示:', error);
+        } catch {
             this.updateVideoDisplay(null, '获取失败');
         }
     }
@@ -771,9 +757,7 @@ class PopupController {
             if (migration.changed) {
                 await chrome.storage.local.set({ apiConfig: this.apiConfig });
             }
-        } catch (error) {
-            console.warn('加载API配置失败，继续使用默认配置:', error);
-        }
+        } catch {}
     }
 
     async persistApiConfig() {
@@ -788,7 +772,6 @@ class PopupController {
             await this.persistApiConfig();
             Toast.success('API配置已保存');
         } catch (error) {
-            console.error('保存API配置失败:', error);
             Toast.error('保存失败: ' + error.message);
         }
     }
@@ -947,9 +930,7 @@ class PopupController {
                 this.apiConfig.targetLanguage = e.target.value;
                 try {
                     await this.persistApiConfig();
-                } catch (error) {
-                    console.warn('保存目标语言失败，当前会话继续使用已选语言:', error);
-                }
+                } catch {}
             });
         }
 
@@ -1152,9 +1133,7 @@ class PopupController {
             } else if (progress && progress.completed) {
                 await this.showTranslationCompleted();
             }
-        } catch (error) {
-            console.log('检查翻译进度失败，保持当前界面状态:', error);
-        }
+        } catch {}
     }
 
     showTranslationProgress(progress) {
@@ -1208,10 +1187,14 @@ class PopupController {
 
     async showTranslationCompleted(options = {}) {
         const autoLoadStatus = document.getElementById('autoLoadStatus');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
         if (autoLoadStatus) {
             autoLoadStatus.textContent = '翻译完成!';
             autoLoadStatus.className = 'load-status success';
         }
+        if (progressFill) progressFill.style.width = '100%';
+        if (progressText) progressText.textContent = '100%';
 
         if (options.enableSubtitle) {
             const subtitleToggle = document.getElementById('subtitleToggle');
@@ -1234,13 +1217,15 @@ class PopupController {
             if (newValue && newValue.isTranslating) {
                 this.showTranslationProgress(newValue);
             } else if (newValue && newValue.error) {
+                if (!this._progressListener) return;
+                chrome.storage.onChanged.removeListener(this._progressListener);
+                this._progressListener = null;
                 this.showTranslationError(newValue.error);
-                chrome.storage.onChanged.removeListener(this._progressListener);
-                this._progressListener = null;
             } else if (newValue && newValue.completed) {
-                await this.showTranslationCompleted({ enableSubtitle: true });
+                if (!this._progressListener) return;
                 chrome.storage.onChanged.removeListener(this._progressListener);
                 this._progressListener = null;
+                await this.showTranslationCompleted({ enableSubtitle: true });
             }
         };
 
@@ -1259,9 +1244,7 @@ class PopupController {
                 action: 'cancelTranslation',
                 videoId: currentVideoId
             });
-        } catch (error) {
-            console.log('发送取消消息失败，继续重置 popup UI:', error);
-        }
+        } catch {}
 
         // 停止监听
         if (this._progressListener) {
@@ -1333,10 +1316,7 @@ class PopupController {
     }
 
     async startTranslation() {
-        console.log('🎬 startTranslation() 被调用');
-
         if (this.isTranslating) {
-            console.log('⚠️ 翻译正在进行中，忽略重复请求');
             return;
         }
 
@@ -1366,11 +1346,8 @@ class PopupController {
 
         // 获取当前视频ID
         const currentVideoId = await this.getCurrentVideoId();
-        console.log('📹 当前视频ID:', currentVideoId);
-
         const translateBtn = document.getElementById('translateBtn');
 
-        console.log('🚀 开始执行翻译流程...');
         const progressRow = document.getElementById('progressRow');
         const progressFill = document.getElementById('progressFill');
         const progressText = document.getElementById('progressText');
@@ -1415,7 +1392,6 @@ class PopupController {
                     const response = await new Promise((resolve, reject) => {
                         chrome.tabs.sendMessage(tabs[0].id, { action: 'getVideoInfo' }, (response) => {
                             if (chrome.runtime.lastError) {
-                                console.log('获取视频信息失败，跳过附加元数据:', chrome.runtime.lastError);
                                 resolve(null);
                             } else {
                                 resolve(response);
@@ -1423,19 +1399,14 @@ class PopupController {
                         });
                     });
 
-                    console.log('📹 获取到的视频信息:', response);
-
                     if (response) {
                         videoInfo = {
                             ytTitle: response.title,
                             description: response.description,
                             aiSummary: response.aiSummary
                         };
-                        console.log('📦 准备传递的视频信息:', videoInfo);
                     }
-                } catch (error) {
-                    console.log('获取视频信息异常，跳过附加元数据:', error);
-                }
+                } catch {}
             }
 
             // 2. 发送消息到后台启动翻译（popup关闭后仍可继续）
@@ -1459,7 +1430,6 @@ class PopupController {
             if (autoLoadStatus) autoLoadStatus.textContent = '翻译已在后台运行...';
             return; // 翻译结果由 storage 监听器处理
         } catch (error) {
-            console.error('翻译失败:', error);
             if (autoLoadStatus) {
                 autoLoadStatus.textContent = `翻译失败: ${error.message}`;
                 autoLoadStatus.className = 'load-status error';

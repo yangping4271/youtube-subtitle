@@ -120,16 +120,12 @@ export async function withRetry<T>(
       }
 
       if (!shouldRetry(lastError)) {
-        logger.error(`❌ ${operationName} 遇到致命错误，不再重试: ${lastError.message}`);
         throw lastError;
       }
 
       if (attempt === maxRetries) {
-        logger.error(`❌ ${operationName} 重试 ${maxRetries} 次后仍失败: ${lastError.message}`);
         throw lastError;
       }
-
-      logger.warn(`⚠️ ${operationName} 失败（尝试 ${attempt + 1}/${maxRetries + 1}）: ${lastError.message}`);
     }
   }
 

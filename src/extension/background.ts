@@ -282,9 +282,7 @@ class SubtitleExtensionBackground {
           // 忽略通知错误
         }
       }
-    } catch (error) {
-      console.warn('更新扩展配置失败，保留现有配置:', error);
-    }
+    } catch {}
   }
 
   async handleMessage(
@@ -352,7 +350,6 @@ class SubtitleExtensionBackground {
 
         case 'startTranslation':
           void this.startBackgroundTranslation(request, sourceTabId, sendResponse).catch((error) => {
-            console.error('后台翻译启动失败:', error);
             sendResponse({ success: false, error: (error as Error).message });
           });
           break;
@@ -375,7 +372,6 @@ class SubtitleExtensionBackground {
           sendResponse({ success: false, error: '未知操作' });
       }
     } catch (error) {
-      console.error('处理消息时出错:', error);
       sendResponse({ success: false, error: (error as Error).message });
     }
   }
@@ -441,7 +437,6 @@ class SubtitleExtensionBackground {
     subtitleData?: SimpleSubtitleEntry[]
   ): Promise<void> {
     if (!videoId) {
-      console.error('❌ 保存字幕失败: 缺少视频ID');
       return;
     }
 
@@ -565,9 +560,7 @@ class SubtitleExtensionBackground {
           });
         }
       }
-    } catch (error) {
-      console.warn('向content script发送消息失败，继续等待后续同步:', error);
-    }
+    } catch {}
   }
 
   isYouTubePage(url?: string): boolean {

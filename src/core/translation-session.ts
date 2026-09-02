@@ -2,7 +2,6 @@
  * 翻译会话 - 整合完整的断句、翻译和结果聚合流程
  */
 
-import { extractErrorMessage } from '../utils/error-handler.js';
 import { normalizeConcurrency } from '../utils/concurrency.js';
 import { setupLogger } from '../utils/logger.js';
 import {
@@ -274,7 +273,6 @@ export class TranslationSession {
     logger.info(`预分句 ${preSplitSentences.length} 个句子，分为 ${batches.length} 批`);
 
     if (batches.length === 0) {
-      logger.warn('没有可处理的批次');
       return { english: [], chinese: [] };
     }
 
@@ -393,14 +391,12 @@ export class TranslationSession {
    * 观察器只接收会话状态，不参与决定翻译是否成功。
    */
   private async notifyObserver(
-    label: string,
+    _label: string,
     notify: () => Promise<void> | void | undefined
   ): Promise<void> {
     try {
       await notify();
-    } catch (error) {
-      logger.warn(`${label}观察器执行失败，继续返回翻译结果: ${extractErrorMessage(error)}`);
-    }
+    } catch {}
   }
 
   /**

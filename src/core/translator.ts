@@ -302,24 +302,18 @@ export class Translator {
   }
 
   private handleBatchTranslationFailure(
-    error: unknown,
-    prefix: string,
-    level: string,
-    fallback: string
+    error: unknown
   ): null {
     const currentError = error instanceof Error ? error : new Error(String(error));
 
     if (currentError.name === 'AbortError') {
-      logger.info(`${prefix}${level} 已取消`);
       throw currentError;
     }
 
     if (shouldPropagateWithoutTranslationFallback(currentError)) {
-      logger.error(`${prefix}${level} 失败，翻译不可继续: ${currentError.message}`);
       throw currentError;
     }
 
-    logger.warn(`${prefix}${level} 未完成，进入 ${fallback}: ${currentError.message}`);
     return null;
   }
 
@@ -352,10 +346,7 @@ export class Translator {
       currentBatchLabel,
       signal
     ).catch(error => this.handleBatchTranslationFailure(
-      error,
-      prefix,
-      'Level 1',
-      '后续降级'
+      error
     ));
 
     // 检查是否需要重试（API 失败或有翻译失败条目）
@@ -371,10 +362,7 @@ export class Translator {
         `${currentBatchLabel}-重试`,
         signal
       ).catch(error => this.handleBatchTranslationFailure(
-        error,
-        prefix,
-        'Level 2',
-        'Level 3'
+        error
       ));
 
       let recoveredCount = 0;
@@ -555,9 +543,6 @@ export class Translator {
         }
 
         this.batchResponseFormat = nextFormat;
-        logger.warn(
-          `${prefix}${getBatchFormatLabel(format)} 不可用，降级到 ${getBatchFormatLabel(nextFormat)}: ${currentError.message}`
-        );
       }
     }
 
@@ -576,19 +561,11 @@ export class Translator {
 
   private buildBatchResults(
     batch: [string, string][],
-    translationMap: Record<string, string>,
-    prefix: string
+    translationMap: Record<string, string>
   ): TranslatedEntry[] {
-    const failedIds: number[] = [];
-
     const results = batch.map(([key, originalText]) => {
       const id = parseInt(key, 10);
       const translation = translationMap[key] ?? '';
-      const isFailed = translationMap[key] === undefined;
-
-      if (isFailed) {
-        failedIds.push(id);
-      }
 
       return {
         index: id,
@@ -598,10 +575,6 @@ export class Translator {
         translation,
       };
     });
-
-    if (failedIds.length > 0) {
-      logger.info(`${prefix}⚠️ ${failedIds.length} 条字幕翻译失败 (ID: ${failedIds.join(', ')})`);
-    }
 
     return results;
   }
@@ -638,7 +611,7 @@ export class Translator {
 
     if (format === 'json_schema' || format === 'json_object' || format === 'json') {
       const translationMap = parseJsonTranslations(response, keys);
-      return this.buildBatchResults(batch, translationMap, prefix);
+      return this.buildBatchResults(batch, translationMap);
     }
 
     const repairedResponse = repairMalformedXml(response);
@@ -647,7 +620,7 @@ export class Translator {
     }
 
     const xmlMap = parseXmlTags(repairedResponse.text);
-    return this.buildBatchResults(batch, xmlMap, prefix);
+    return this.buildBatchResults(batch, xmlMap);
   }
 
   /**
@@ -680,16 +653,13 @@ export class Translator {
         translation = response.trim();
         logger.info(`单条翻译成功 ID ${key}: ${value} -> ${translation}`);
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
         if (error instanceof Error && error.name === 'AbortError') {
           logger.info(`字幕 ID ${key} 的单条翻译已取消`);
           throw error;
         }
         if (error instanceof Error && shouldPropagateWithoutTranslationFallback(error)) {
-          logger.error(`字幕 ID ${key} 遇到 API 错误，停止返回空翻译: ${errorMsg}`);
           throw error;
         }
-        logger.warn(`字幕 ID ${key} 单条翻译失败，保留空翻译: ${errorMsg}`);
         translation = '';
       }
 

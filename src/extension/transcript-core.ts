@@ -123,8 +123,7 @@ async function copyTranscriptText(finalText: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(fullContent);
     showNotification('字幕已复制');
-  } catch (err) {
-    console.error('Failed to copy: ', err);
+  } catch {
     showNotification('复制失败');
   }
 }

@@ -49,6 +49,7 @@ bun run test:subtitle-fixture
 - 竞态、取消、恢复、并发和字幕时间对齐 case 属于高价值回归测试，精简时不要仅因文件较长而删除。
 - 测试 fixture 必须提交到 `tests/fixtures/`，或者通过显式参数传入；测试不能隐式依赖 `tmp/`、`log/`、`.env` 或开发者本机密钥。
 - 真实浏览器端到端验证使用 Chrome DevTools MCP，不保留依赖本地密钥的手工 E2E 脚本或测试页面。
+- 可选信息缺失、兼容性降级、重试中间态和成功兜底不得输出 `warn`/`error`；只有导致当前操作或翻译任务最终失败的错误才使用错误日志和用户提示。
 
 ## Chrome MCP 回归
 
