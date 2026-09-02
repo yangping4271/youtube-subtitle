@@ -10,7 +10,7 @@ import {
 } from './api-url.js';
 
 export const API_CONFIG_SCHEMA_VERSION = 4;
-export const API_CONFIG_MIGRATION_NOTICE = '已移除不支持的本地 API 配置，请选择远程 HTTPS API。';
+export const API_CONFIG_MIGRATION_NOTICE = '请选择 API 供应商并填写兼容的 API 地址和模型。';
 export const MAX_API_CONCURRENCY = 2500;
 
 export const MODEL_CONCURRENCY_LIMITS: Record<string, number> = {
@@ -250,7 +250,7 @@ export function normalizeApiConfig(apiConfig: Partial<ApiConfig> | null | undefi
   return migrateApiConfig(apiConfig).config;
 }
 
-/** 只校验最终会使用的 provider，允许迁移时清理未激活的旧本地 provider。 */
+/** 校验最终会使用的 provider，并保留其他尚未激活的兼容配置。 */
 export function assertApiConfigUsesRemoteEndpoints(
   apiConfig: Partial<ApiConfig> | null | undefined
 ): void {

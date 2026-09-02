@@ -166,34 +166,6 @@ class PopupController {
         return baseUrl;
     }
 
-    updateApiBaseUrlHint(provider) {
-        const hint = document.getElementById('apiBaseUrlHint');
-        if (!hint) return;
-
-        const baseUrl = provider?.openaiBaseUrl?.trim() || '';
-        if (!baseUrl) {
-            hint.textContent = '只需填写域名。系统会自动补全实际的翻译和测试接口路径';
-            return;
-        }
-
-        const validationError = window.SubtitleConfig.getApiEndpointValidationError(baseUrl);
-        if (validationError) {
-            hint.textContent = validationError;
-            return;
-        }
-
-        const requestBaseUrl = window.SubtitleConfig.normalizeApiBaseUrl(
-            baseUrl,
-            provider.providerType
-        );
-        if (!requestBaseUrl) {
-            hint.textContent = '只需填写域名。系统会自动补全实际的翻译和测试接口路径';
-            return;
-        }
-
-        hint.textContent = `实际翻译请求：${requestBaseUrl}/chat/completions；测试连接：${requestBaseUrl}/models`;
-    }
-
     getModelConcurrencyLimit(model) {
         return window.SubtitleConfig.getModelConcurrencyLimit(model);
     }
@@ -1617,25 +1589,12 @@ class PopupController {
 
     async loadApiConfig() {
         try {
-            const result = await chrome.storage.local.get(['apiConfig', 'apiConfigMigrationNotice']);
+            const result = await chrome.storage.local.get(['apiConfig']);
             const migration = window.SubtitleConfig.migrateApiConfig(result.apiConfig || {});
             this.apiConfig = migration.config;
 
             if (migration.changed) {
-                await chrome.storage.local.set({
-                    apiConfig: this.apiConfig,
-                    ...(migration.requiresProviderSelection || migration.removedProviderIds.length > 0
-                        ? { apiConfigMigrationNotice: window.SubtitleConfig.API_CONFIG_MIGRATION_NOTICE }
-                        : {})
-                });
-            }
-
-            const migrationNotice = migration.requiresProviderSelection || migration.removedProviderIds.length > 0
-                ? window.SubtitleConfig.API_CONFIG_MIGRATION_NOTICE
-                : result.apiConfigMigrationNotice;
-            if (migrationNotice) {
-                Toast.warning(migrationNotice, 4000);
-                await chrome.storage.local.remove('apiConfigMigrationNotice');
+                await chrome.storage.local.set({ apiConfig: this.apiConfig });
             }
         } catch (error) {
             console.warn('加载API配置失败，继续使用默认配置:', error);
@@ -1645,15 +1604,7 @@ class PopupController {
     async persistApiConfig() {
         const migration = window.SubtitleConfig.migrateApiConfig(this.apiConfig);
         this.apiConfig = migration.config;
-        await chrome.storage.local.set({
-            apiConfig: this.apiConfig,
-            ...(migration.requiresProviderSelection || migration.removedProviderIds.length > 0
-                ? { apiConfigMigrationNotice: window.SubtitleConfig.API_CONFIG_MIGRATION_NOTICE }
-                : {})
-        });
-        if (migration.requiresProviderSelection || migration.removedProviderIds.length > 0) {
-            Toast.warning(window.SubtitleConfig.API_CONFIG_MIGRATION_NOTICE, 4000);
-        }
+        await chrome.storage.local.set({ apiConfig: this.apiConfig });
     }
 
     async saveApiConfig() {
@@ -1709,7 +1660,6 @@ class PopupController {
         }
         if (providerName) providerName.value = activeProvider?.name || '';
         if (apiBaseUrl) apiBaseUrl.value = this.getApiBaseUrlInputValue(activeProvider);
-        this.updateApiBaseUrlHint(activeProvider);
         if (apiKey) apiKey.value = activeProvider?.openaiApiKey || '';
         if (llmModel) llmModel.value = activeProvider?.llmModel || '';
         if (targetLanguage) this.setSelectValue(targetLanguage, this.apiConfig.targetLanguage);
@@ -1778,7 +1728,6 @@ class PopupController {
                 const provider = this.getEditingApiProvider();
                 if (!provider || this.isDefaultApiProvider(provider)) return;
                 provider.openaiBaseUrl = e.target.value.trim();
-                this.updateApiBaseUrlHint(provider);
                 if (!this.newApiProviderDraft) this.syncActiveProviderFields();
             };
             apiBaseUrl.addEventListener('input', updateBaseUrl);
@@ -2030,6 +1979,10 @@ class PopupController {
                 this.isTranslating = true;
                 this.showTranslationProgress(progress);
                 this.startProgressListener();
+            } else if (progress && progress.error) {
+                this.showTranslationError(progress.error);
+            } else if (progress && progress.completed) {
+                await this.showTranslationCompleted();
             }
         } catch (error) {
             console.log('检查翻译进度失败，保持当前界面状态:', error);
@@ -2075,6 +2028,34 @@ class PopupController {
         if (autoLoadStatus) autoLoadStatus.textContent = stepNames[progress.step] || '翻译中...';
     }
 
+    showTranslationError(error) {
+        const autoLoadStatus = document.getElementById('autoLoadStatus');
+        if (autoLoadStatus) {
+            autoLoadStatus.textContent = `翻译失败: ${error}`;
+            autoLoadStatus.className = 'load-status error';
+        }
+        this.resetTranslationButton();
+        void this.updateTranslateButton();
+    }
+
+    async showTranslationCompleted(options = {}) {
+        const autoLoadStatus = document.getElementById('autoLoadStatus');
+        if (autoLoadStatus) {
+            autoLoadStatus.textContent = '翻译完成!';
+            autoLoadStatus.className = 'load-status success';
+        }
+
+        if (options.enableSubtitle) {
+            const subtitleToggle = document.getElementById('subtitleToggle');
+            if (subtitleToggle) subtitleToggle.checked = true;
+            await this.toggleSubtitle(true);
+        }
+
+        this.resetTranslationButton();
+        await this.updateTranslateButton();
+        this.updateSubtitleInfoWithRetry();
+    }
+
     startProgressListener() {
         if (this._progressListener) return;
 
@@ -2082,35 +2063,15 @@ class PopupController {
             if (areaName !== 'local' || !changes.translationProgress) return;
 
             const newValue = (await this.getTranslationStatus()).progress;
-            const autoLoadStatus = document.getElementById('autoLoadStatus');
 
             if (newValue && newValue.isTranslating) {
                 this.showTranslationProgress(newValue);
             } else if (newValue && newValue.error) {
-                // 翻译失败
-                if (autoLoadStatus) {
-                    autoLoadStatus.textContent = `翻译失败: ${newValue.error}`;
-                    autoLoadStatus.className = 'load-status error';
-                }
-                this.resetTranslationButton();
-                await this.updateTranslateButton();
+                this.showTranslationError(newValue.error);
                 chrome.storage.onChanged.removeListener(this._progressListener);
                 this._progressListener = null;
-            } else {
-                // 翻译完成
-                if (autoLoadStatus) {
-                    autoLoadStatus.textContent = '翻译完成!';
-                    autoLoadStatus.className = 'load-status success';
-                }
-
-                // 启用字幕显示
-                const subtitleToggle = document.getElementById('subtitleToggle');
-                if (subtitleToggle) subtitleToggle.checked = true;
-                await this.toggleSubtitle(true);
-
-                this.resetTranslationButton();
-                await this.updateTranslateButton();
-                this.updateSubtitleInfoWithRetry();
+            } else if (newValue && newValue.completed) {
+                await this.showTranslationCompleted({ enableSubtitle: true });
                 chrome.storage.onChanged.removeListener(this._progressListener);
                 this._progressListener = null;
             }

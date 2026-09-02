@@ -233,12 +233,7 @@ export async function loadConfig(): Promise<TranslatorConfig> {
   const migration = migrateApiConfig((result.apiConfig as ApiConfig) || {});
   if (migration.changed && storage.set) {
     try {
-      await storage.set({
-        apiConfig: migration.config,
-        ...(migration.requiresProviderSelection || migration.removedProviderIds.length > 0
-          ? { apiConfigMigrationNotice: API_CONFIG_MIGRATION_NOTICE }
-          : {}),
-      });
+      await storage.set({ apiConfig: migration.config });
     } catch {
       // 配置迁移写回失败时仍使用本轮内存中的安全配置。
     }

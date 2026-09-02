@@ -4,7 +4,6 @@
  */
 
 import {
-  API_CONFIG_MIGRATION_NOTICE,
   assertApiConfigUsesRemoteEndpoints,
   getDefaultEnglishSettings,
   getDefaultChineseSettings,
@@ -252,9 +251,6 @@ class SubtitleExtensionBackground {
 
       if (migration.changed) {
         updates.apiConfig = migration.config;
-        if (migration.requiresProviderSelection || migration.removedProviderIds.length > 0) {
-          updates.apiConfigMigrationNotice = API_CONFIG_MIGRATION_NOTICE;
-        }
       }
 
       if (needsFix) {
@@ -716,7 +712,7 @@ class SubtitleExtensionBackground {
         translationProgress: {
           isTranslating: false,
           videoId: pendingJob.request.videoId,
-          error: `已停止恢复不支持的本地 API 任务: ${(error as Error).message}`,
+          error: `已停止恢复无效 API 任务: ${(error as Error).message}`,
           timestamp: Date.now(),
         },
       });

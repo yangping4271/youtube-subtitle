@@ -324,7 +324,12 @@ export class BrowserTranslationCoordinator {
         signal: controller.signal,
       });
       if (this.activeRun !== run || controller.signal.aborted) return;
-      await this.store.clearProgress();
+      await this.store.saveProgress({
+        isTranslating: false,
+        completed: true,
+        videoId: request.videoId,
+        timestamp: this.now(),
+      });
       await this.clearPendingJobBestEffort(jobId);
     } catch (error) {
       if (!prepared) {

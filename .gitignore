@@ -31,6 +31,8 @@ AGENTS.md
 
 # Agent local state
 .agents/
+.codex/
+.grok/
 skills-lock.json
 
 # Local temp outputs

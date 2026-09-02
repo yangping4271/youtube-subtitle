@@ -136,8 +136,39 @@ describe('BrowserTranslationCoordinator interface', () => {
         signal: expect.any(AbortSignal),
       })
     );
-    expect(store.clearProgress).toHaveBeenCalledOnce();
+    expect(store.clearProgress).not.toHaveBeenCalled();
+    expect(store.saveProgress).toHaveBeenLastCalledWith(expect.objectContaining({
+      isTranslating: false,
+      completed: true,
+      videoId: 'video-1',
+      timestamp: expect.any(Number),
+    }));
     expect(store.clearPendingJob).toHaveBeenCalledOnce();
+  });
+
+  it('status 在成功完成后返回持久化完成状态', async () => {
+    const { session } = createHarness(() => 1_700);
+
+    await session.start({
+      videoId: 'video-complete',
+      tabId: 7,
+      subtitles: [{ startTime: 1, endTime: 2, text: 'hello' }],
+    });
+
+    await expect(session.status({ videoId: 'video-complete' })).resolves.toEqual({
+      isTranslating: false,
+      progress: expect.objectContaining({
+        isTranslating: false,
+        completed: true,
+        videoId: 'video-complete',
+        timestamp: 1_700,
+      }),
+      cachedResult: expect.objectContaining({
+        videoId: 'video-complete',
+        englishSubtitles: translatedResult.english,
+        chineseSubtitles: translatedResult.chinese,
+      }),
+    });
   });
 
   it('翻译失败时会取消已进入异步 publisher 的 partial 并清理当前 run', async () => {
@@ -431,7 +462,12 @@ describe('BrowserTranslationCoordinator interface', () => {
         signal: expect.any(AbortSignal),
       })
     );
-    expect(store.clearProgress).toHaveBeenCalledTimes(1);
+    expect(store.clearProgress).not.toHaveBeenCalled();
+    expect(store.saveProgress).toHaveBeenLastCalledWith(expect.objectContaining({
+      isTranslating: false,
+      completed: true,
+      videoId: 'video-2',
+    }));
   });
 
   it('一个视频不会显示或取消另一个视频的运行', async () => {

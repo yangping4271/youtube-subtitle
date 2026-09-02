@@ -73,6 +73,14 @@ describe('popup static wiring', () => {
     expect(popupScript).toContain('Number.isFinite(progress.current)');
   });
 
+  it('根据持久化完成状态显示翻译完成，而不是把空进度当成完成', () => {
+    expect(popupScript).toContain('progress && progress.completed');
+    expect(popupScript).toContain('newValue && newValue.completed');
+    expect(popupScript).toContain('async showTranslationCompleted(options = {})');
+    expect(popupScript).toContain("autoLoadStatus.textContent = '翻译完成!';");
+    expect(popupScript).not.toContain('} else {\n                // 翻译完成');
+  });
+
   it('API 配置只使用 config.js 提供的 normalization implementation', () => {
     expect(popupScript).toContain('window.SubtitleConfig.normalizeApiConfig');
     expect(popupScript).not.toContain('normalizeApiConfig(config = {})');
@@ -85,9 +93,10 @@ describe('popup static wiring', () => {
     expect(popupScript).toContain('getModelConcurrencyLimit');
   });
 
-  it('明确显示 API 自动补全后的实际请求路径，并保护内置供应商', () => {
-    expect(popupHtml).toContain('实际翻译请求： https://api.openai.com/v1/chat/completions');
-    expect(popupHtml).toContain('测试连接： https://api.openai.com/v1/models');
+  it('保持 API 配置界面简洁，并保护内置供应商', () => {
+    expect(popupHtml).not.toContain('实际翻译请求：');
+    expect(popupHtml).not.toContain('测试连接：');
+    expect(popupScript).not.toContain('updateApiBaseUrlHint');
     expect(popupScript).toContain('isDefaultApiProviderId');
     expect(popupScript).toContain('内置配置不可删除');
     expect(popupScript).toContain('normalizeApiBaseUrl');
@@ -103,14 +112,13 @@ describe('popup static wiring', () => {
     expect(popupHtml).toMatch(/id="llmModel"[^>]*required/);
   });
 
-  it('只允许远程 HTTPS API，不保留本地模型入口', () => {
-    expect(manifest.host_permissions).not.toContain('http://127.0.0.1/*');
-    expect(manifest.optional_host_permissions).not.toContain('http://localhost/*');
-    expect(popupHtml).toContain('仅支持远程 HTTPS API');
-    expect(popupHtml).not.toContain('本地兼容 API');
-    expect(popupHtml).not.toContain('本地 Qwen');
-    expect(popupScript).toContain('getApiEndpointValidationError');
-    expect(popupScript).toContain('migration.requiresProviderSelection');
+  it('支持兼容 API，且不显示额外说明或迁移提示', () => {
+    expect(manifest.host_permissions).toContain('http://127.0.0.1/*');
+    expect(manifest.optional_host_permissions).toContain('http://localhost/*');
+    expect(popupHtml).not.toContain('仅支持远程 HTTPS API');
+    expect(popupHtml).not.toContain('配置说明');
+    expect(popupScript).not.toContain('apiConfigMigrationNotice');
+    expect(popupScript).toContain('window.SubtitleConfig.migrateApiConfig');
     expect(popupScript).toContain('this.apiConfig.requiresProviderSelection = false;');
     expect(popupScript).toContain('async persistApiConfig()');
     expect(popupScript).toContain('await this.persistApiConfig();');

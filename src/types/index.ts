@@ -65,7 +65,7 @@ export interface ApiProviderConfig {
 export interface ApiConfig extends Partial<ApiProviderConfig> {
   schemaVersion?: number;
   activeProviderId?: string;
-  /** 迁移删除激活 provider 后，必须由用户明确选择新的远程 provider。 */
+  /** 没有可用的激活 provider 时，必须由用户明确选择。 */
   requiresProviderSelection?: boolean;
   providers?: ApiProviderConfig[];
   openaiBaseUrl: string;
@@ -223,6 +223,7 @@ export interface VideoSubtitleData {
 /** 翻译进度状态 */
 export interface TranslationProgress {
   isTranslating: boolean;
+  completed?: boolean;
   videoId?: string;
   step?: string;
   current?: number;
