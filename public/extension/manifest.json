@@ -27,9 +27,6 @@
         "*://www.youtube.com/*"
       ],
       "js": [
-        "config.js",
-        "subtitle-parser.js",
-        "transcript-core.js",
         "content.js"
       ],
       "css": [

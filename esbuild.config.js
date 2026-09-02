@@ -27,15 +27,6 @@ const extensionEntries = [
     outfile: `${outDir}/inject.js`,
   },
   {
-    entryPoints: ['src/extension/subtitle-parser.ts'],
-    outfile: `${outDir}/subtitle-parser.js`,
-    globalName: 'SubtitleParserModule',
-  },
-  {
-    entryPoints: ['src/extension/transcript-core.ts'],
-    outfile: `${outDir}/transcript-core.js`,
-  },
-  {
     entryPoints: ['src/extension/background.ts'],
     outfile: `${outDir}/background.js`,
     globalName: 'BackgroundModule',
