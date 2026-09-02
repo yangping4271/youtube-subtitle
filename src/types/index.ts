@@ -93,15 +93,6 @@ export interface TranslatorConfig {
   maxMultiplier: number;
 }
 
-/** LLM API 响应 */
-export interface LLMResponse {
-  choices: Array<{
-    message: {
-      content: string;
-    };
-  }>;
-}
-
 /** Chat API 的 JSON Schema 输出格式 */
 export interface JsonSchemaResponseFormat {
   type: 'json_schema';
@@ -231,30 +222,3 @@ export interface TranslationProgress {
   error?: string;
   timestamp?: number;
 }
-
-/** Chrome 消息类型 */
-export type ChromeMessageAction =
-  | 'getSubtitleData'
-  | 'getBilingualSubtitleData'
-  | 'saveSubtitleData'
-  | 'saveBilingualSubtitles'
-  | 'saveVideoSubtitles'
-  | 'toggleSubtitle'
-  | 'updateSettings'
-  | 'clearSubtitleData'
-  | 'forceReset'
-  | 'setSubtitleEnabled'
-  | 'startTranslation'
-  | 'cancelTranslation'
-  | 'getTranslationStatus'
-  | 'loadSubtitle'
-  | 'loadBilingualSubtitles'
-  | 'clearData'
-  | 'getVideoInfo'
-  | 'getSubtitleStatus'
-  | 'getYouTubeSubtitles'
-  | 'printEnglishSubtitles'
-  | 'toggleAutoLoad'
-  | 'autoLoadSuccess'
-  | 'autoLoadError'
-  | 'logSubtitleFetchSource';

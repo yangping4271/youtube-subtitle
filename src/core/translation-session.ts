@@ -549,7 +549,7 @@ export class TranslationSession {
             await onPartialResult(this.buildBilingualResult(chunk, translatedChunk), siblingSignal);
           }
 
-          return { start, chunk, translatedChunk };
+          return { start, translatedChunk };
         } catch (error) {
           if (!siblingFailed) {
             siblingFailed = true;
@@ -560,7 +560,7 @@ export class TranslationSession {
       }));
 
       const translated: TranslatedEntry[] = [];
-      for (const { start, chunk, translatedChunk } of translatedChunks) {
+      for (const { start, translatedChunk } of translatedChunks) {
         translated.push(...translatedChunk.map(entry => ({
           ...entry,
           index: start + entry.index,

@@ -22,7 +22,7 @@ function createHarness(now: () => number = () => Date.now()) {
   const cachedResults = new Map<string, VideoSubtitleData>();
 
   const executor: ExtensionTranslationExecutor = {
-    translate: vi.fn(async (request, observer) => {
+    translate: vi.fn(async (_request, observer) => {
       await observer.onProgress?.('translate', 1, 2);
       await observer.onPartialResult?.(translatedResult);
       return translatedResult;

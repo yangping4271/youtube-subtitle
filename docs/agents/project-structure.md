@@ -14,7 +14,6 @@ public/
 tests/
 ├── unit/            # 单元测试
 ├── integration/     # 离线集成测试
-├── manual/          # 真实 API / 手动测试
 └── fixtures/        # 测试样例文件
 
 scripts/             # 开发辅助脚本
@@ -28,7 +27,7 @@ dist/
 - `src/extension/` 只处理 Chrome API 和页面交互
 - `src/core/` 保持纯逻辑，避免浏览器依赖
 - `public/extension/` 只放静态资源，不放构建产物
-- `tests/manual/` 不进入默认测试流程
+- 真实浏览器端到端验证通过 Chrome DevTools MCP 执行，不保留依赖本地密钥的手工测试
 - `dist/` 只放构建结果，不提交源码
 
 ## 添加新功能

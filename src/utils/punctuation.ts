@@ -3,15 +3,6 @@
  */
 
 /**
- * Normalize English punctuation for subtitles
- * Removes: . , ; :
- * Keeps: ? ! ... ' "
- */
-export function normalizeEnglishPunctuation(text: string): string {
-  return text.replace(/[.,;:]/g, '');
-}
-
-/**
  * Normalize Chinese punctuation for subtitles
  * Keeps sentence-internal punctuation, removes weak trailing punctuation,
  * and adds spacing between Chinese characters and ASCII words/numbers.

@@ -181,72 +181,22 @@ body::before {
     line-height: 1.08;
 }
 
-.title-version {
-    display: inline-block;
-    margin-left: 4px;
-    font-size: 10px;
-    color: var(--text-secondary);
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    vertical-align: middle;
-}
+
 
 /* 🎛️ 主开关设计 */
-.master-toggle {
-    position: relative;
-    display: inline-block;
-    width: 52px;
-    height: 28px;
-    cursor: pointer;
-}
 
-.master-toggle input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
 
-.toggle-slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(255, 255, 255, 0.3);
-    transition: var(--transition-normal);
-    border-radius: 28px;
-    border: 2px solid rgba(255, 255, 255, 0.4);
-}
 
-.toggle-slider:before {
-    position: absolute;
-    content: "";
-    height: 20px;
-    width: 20px;
-    left: 2px;
-    bottom: 2px;
-    background-color: var(--text-white);
-    transition: var(--transition-normal);
-    border-radius: 50%;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
 
-.master-toggle input:checked+.toggle-slider {
-    background-color: rgba(255, 255, 255, 0.2);
-    border-color: rgba(255, 255, 255, 0.6);
-}
 
-.master-toggle input:checked+.toggle-slider:before {
-    transform: translateX(24px);
-    background-color: #10b981;
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
-}
 
-.toggle-slider:hover {
-    background-color: rgba(255, 255, 255, 0.25);
-}
+
+
+
+
+
+
+
 
 /* ========================================
    🗂️ 标签页导航 - 电影院风格
@@ -292,9 +242,7 @@ body::before {
     font-weight: 600;
 }
 
-.tab-icon {
-    display: none;
-}
+
 
 .tab-text {
     font-size: 11px;
@@ -385,48 +333,14 @@ body::before {
    ======================================== */
 
 /* 📂 字幕上传模式选择 */
-.upload-mode-tabs {
-    margin-bottom: var(--spacing-2xl);
-}
 
-.tab-selector {
-    display: flex;
-    background: var(--bg-secondary);
-    border-radius: var(--radius-xl);
-    padding: 6px;
-    box-shadow: var(--shadow-sm);
-    gap: 4px;
-    /* 增加按钮之间的间距 */
-}
 
-.mode-tab {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-md);
-    padding: var(--spacing-md) var(--spacing-lg);
-    /* 减小内部间距 */
-    border: none;
-    border-radius: var(--radius-lg);
-    /* 增加圆角 */
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all var(--transition-normal);
-    position: relative;
-    overflow: hidden;
-    min-height: 42px;
-    /* 减小最小高度 */
-}
+
+
+
 
 /* 处理没有图标的标签按钮 */
-.mode-tab:not(:has(.tab-icon)) {
-    gap: 0;
-    /* 没有图标时不需要间距 */
-}
+
 
 .mode-tab:hover:not(.active) {
     background: rgba(102, 126, 234, 0.1);
@@ -443,10 +357,7 @@ body::before {
     /* 增强上移效果 */
 }
 
-.mode-tab .tab-icon {
-    font-size: 18px;
-    /* 稍微增大图标 */
-}
+
 
 .mode-tab .tab-text {
     font-weight: 600;
@@ -454,357 +365,83 @@ body::before {
 }
 
 /* 上传内容区域 */
-.upload-content {
-    display: none;
-    animation: fadeInUp 0.4s ease-out;
-}
+
 
 .upload-content.active {
     display: block;
 }
 
 /* 🎭 ASS双语字幕上传卡片 */
-.ass-upload-card {
-    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-    border-radius: var(--radius-xl);
-    padding: var(--spacing-2xl);
-    color: var(--text-white);
-    box-shadow: var(--shadow-lg);
-    position: relative;
-    overflow: hidden;
-}
 
-.ass-upload-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, transparent 50%);
-    pointer-events: none;
-}
 
-.ass-card-header {
-    text-align: center;
-    margin-bottom: var(--spacing-xl);
-    z-index: 1;
-    position: relative;
-}
 
-.ass-title {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-sm);
-    font-size: 18px;
-    font-weight: 700;
-    margin-bottom: var(--spacing-sm);
-}
 
-.ass-icon {
-    font-size: 20px;
-    animation: sparkle 3s infinite;
-}
 
-@keyframes sparkle {
 
-    0%,
-    100% {
-        transform: scale(1) rotate(0deg);
-        opacity: 1;
-    }
 
-    50% {
-        transform: scale(1.1) rotate(5deg);
-        opacity: 0.8;
-    }
-}
 
-.ass-subtitle {
-    font-size: 14px;
-    opacity: 0.9;
-    font-weight: 400;
-}
-
-.ass-drop-zone {
-    background: rgba(255, 255, 255, 0.15);
-    border: 2px dashed rgba(255, 255, 255, 0.5);
-    border-radius: var(--radius-lg);
-    padding: var(--spacing-2xl);
-    text-align: center;
-    cursor: pointer;
-    transition: all var(--transition-normal);
-    margin-bottom: var(--spacing-lg);
-    backdrop-filter: blur(10px);
-}
-
-.ass-drop-zone:hover {
-    background: rgba(255, 255, 255, 0.2);
-    border-color: rgba(255, 255, 255, 0.8);
-    transform: translateY(-2px);
-}
-
-.ass-drop-zone.dragover {
-    background: rgba(255, 255, 255, 0.25);
-    border-color: var(--text-white);
-    transform: scale(1.02);
-}
-
-.ass-drop-content {
-    pointer-events: none;
-}
-
-.ass-drop-icon {
-    font-size: 48px;
-    margin-bottom: var(--spacing-md);
-    opacity: 0.9;
-}
-
-.ass-drop-text strong {
-    display: block;
-    font-size: 16px;
-    margin-bottom: var(--spacing-sm);
-    font-weight: 600;
-}
-
-.ass-drop-text p {
-    font-size: 13px;
-    opacity: 0.8;
-    margin: 0;
-}
 
 /* ASS文件状态 */
-.ass-file-status {
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-lg);
-    margin-top: var(--spacing-lg);
-    backdrop-filter: blur(10px);
-}
 
-.status-header {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-md);
-    min-height: 40px;
-}
 
-.status-filename {
-    flex: 1;
-    font-weight: 600;
-    font-size: 14px;
-    min-width: 0;
-    /* 允许文本缩放 */
-    word-break: break-word;
-    line-height: 1.3;
-}
 
-.status-remove {
-    background: rgba(255, 255, 255, 0.2);
-    color: var(--text-white);
-    border: none;
-    border-radius: var(--radius-md);
-    min-width: 32px;
-    height: 32px;
-    padding: 0 8px;
-    cursor: pointer;
-    font-weight: bold;
-    font-size: 16px;
-    transition: all var(--transition-fast);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-}
 
-.status-remove:hover {
-    background: rgba(239, 68, 68, 0.9);
-    transform: scale(1.05);
-    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
-}
+
+
+
+
+
 
 /* 📑 分别上传模式 */
-.separate-upload-header {
-    text-align: center;
-    margin-bottom: var(--spacing-xl);
-    padding: var(--spacing-lg);
-    background: var(--bg-secondary);
-    border-radius: var(--radius-lg);
-}
 
-.separate-title {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-sm);
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: var(--spacing-sm);
-}
 
-.separate-icon {
-    font-size: 18px;
-}
 
-.separate-subtitle {
-    font-size: 13px;
-    color: var(--text-secondary);
-}
+
+
+
+
 
 /* 📂 文件上传区域 */
-.file-upload-section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-lg);
-}
 
-.file-card {
-    background: var(--bg-primary);
-    border: 2px solid var(--bg-tertiary);
-    border-radius: var(--radius-lg);
-    padding: var(--spacing-lg);
-    transition: all var(--transition-normal);
-    position: relative;
-}
 
-.file-card:hover {
-    border-color: var(--primary-color);
-    box-shadow: var(--shadow-md);
-    transform: translateY(-2px);
-}
 
-.file-card.has-file {
-    border-color: var(--success-color);
-    background: var(--success-bg);
-    box-shadow: 0 0 0 1px var(--success-color);
-}
 
-.file-header {
-    display: flex;
-    align-items: center;
-    margin-bottom: var(--spacing-md);
-    gap: var(--spacing-md);
-}
 
-.file-flag {
-    font-size: 20px;
-}
 
-.file-type {
-    font-weight: 600;
-    color: var(--text-primary);
-    flex: 1;
-}
 
-.file-formats {
-    font-size: 11px;
-    color: var(--text-light);
-    background: var(--bg-tertiary);
-    padding: 2px 6px;
-    border-radius: var(--radius-sm);
-    font-weight: 500;
-}
 
-.file-drop-zone {
-    border: 2px dashed var(--bg-tertiary);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-xl);
-    text-align: center;
-    cursor: pointer;
-    transition: all var(--transition-normal);
-    background: var(--bg-secondary);
-    margin-bottom: var(--spacing-md);
-}
 
-.file-drop-zone:hover {
-    border-color: var(--primary-color);
-    background: rgba(102, 126, 234, 0.05);
-}
 
-.file-drop-zone.dragover {
-    border-color: var(--primary-color);
-    background: rgba(102, 126, 234, 0.1);
-    border-style: solid;
-    transform: scale(1.02);
-}
 
-.drop-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--spacing-sm);
-}
 
-.drop-icon {
-    font-size: 28px;
-    color: var(--text-secondary);
-    margin-bottom: var(--spacing-sm);
-}
 
-.drop-text strong {
-    display: block;
-    font-size: 14px;
-    color: var(--text-primary);
-    margin-bottom: var(--spacing-xs);
-}
 
-.drop-text p {
-    font-size: 12px;
-    color: var(--text-secondary);
-}
 
-.file-info {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--bg-tertiary);
-    border-radius: var(--radius-sm);
-    padding: var(--spacing-md);
-    min-height: 36px;
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /* 🏷️ 智能文件名显示 - 解决长文件名问题 */
-.file-name {
-    flex: 1;
-    font-size: 12px;
-    color: var(--text-secondary);
-    font-weight: 500;
 
-    /* 智能截断 */
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 250px;
-    /* 限制最大宽度 */
 
-    /* 悬停显示完整名称 */
-    cursor: default;
-}
 
-.file-card.has-file .file-name {
-    color: var(--success-color);
-    font-weight: 600;
-}
 
-.file-remove {
-    background: none;
-    border: none;
-    color: var(--text-light);
-    font-size: 16px;
-    cursor: pointer;
-    padding: 2px 6px;
-    border-radius: var(--radius-sm);
-    transition: all var(--transition-fast);
-    margin-left: var(--spacing-sm);
-}
 
-.file-remove:hover {
-    background: var(--error-bg);
-    color: var(--error-color);
-    transform: scale(1.1);
-}
+
+
 
 /* ========================================
    ⚙️ 设置标签页样式
@@ -872,9 +509,7 @@ body::before {
     box-shadow: inset 0 0 0 1px rgba(246, 199, 90, 0.24);
 }
 
-.lang-flag {
-    font-size: 16px;
-}
+
 
 .lang-name {
     font-size: 12px;
@@ -882,122 +517,30 @@ body::before {
 }
 
 /* 🔍 预览卡片 */
-.preview-card {
-    background: var(--bg-primary);
-    border: 2px solid var(--bg-tertiary);
-    border-radius: var(--radius-lg);
-    padding: var(--spacing-lg);
-    margin-bottom: var(--spacing-lg);
-    box-shadow: var(--shadow-sm);
-}
 
-.preview-header {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: var(--spacing-md);
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-}
 
-.preview-stage {
-    background: #1a1a1a;
-    /* 模拟视频背景 */
-    border-radius: var(--radius-md);
-    padding: var(--spacing-xl);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-    min-height: 80px;
-    justify-content: center;
-    border: 1px solid #333;
-}
 
-.preview-subtitle {
-    border-radius: 4px;
-    padding: 4px 8px;
-    text-align: center;
-    white-space: nowrap;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
 
-.preview-subtitle.english {
-    font-size: calc(var(--english-font-size) * 0.4);
-    /* 缩放显示 */
-    color: var(--english-font-color);
-    font-family: var(--english-font-family);
-    font-weight: var(--english-font-weight);
-    -webkit-text-stroke: var(--english-text-stroke);
-    text-shadow: var(--english-text-shadow);
-    line-height: var(--english-line-height);
-}
 
-.preview-subtitle.chinese {
-    font-size: calc(var(--chinese-font-size) * 0.4);
-    /* 缩放显示 */
-    color: var(--chinese-font-color);
-    font-family: var(--chinese-font-family);
-    font-weight: var(--chinese-font-weight);
-    -webkit-text-stroke: var(--chinese-text-stroke);
-    text-shadow: var(--chinese-text-shadow);
-    line-height: var(--chinese-line-height);
-}
+
+
+
+
+
+
 
 /* ⚡ 快速预设 */
-.preset-card {
-    background: var(--bg-primary);
-    border: 2px solid var(--bg-tertiary);
-    border-radius: var(--radius-lg);
-    padding: var(--spacing-lg);
-    margin-bottom: var(--spacing-lg);
-    box-shadow: var(--shadow-sm);
-}
 
-.preset-header {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: var(--spacing-md);
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-}
 
-.preset-grid {
-    position: relative;
-}
 
-.preset-group {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: var(--spacing-sm);
-}
 
-.preset-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--spacing-xs);
-    padding: var(--spacing-md);
-    background: var(--bg-secondary);
-    border: 2px solid var(--bg-tertiary);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    font-size: 12px;
-    color: var(--text-secondary);
-}
 
-.preset-item:hover {
-    border-color: var(--primary-color);
-    background: rgba(102, 126, 234, 0.05);
-    color: var(--primary-color);
-    transform: translateY(-2px);
-}
+
+
+
+
+
+
 
 .preset-item.active {
     border-color: var(--primary-color);
@@ -1007,14 +550,9 @@ body::before {
     box-shadow: var(--shadow-md);
 }
 
-.preset-icon {
-    font-size: 20px;
-}
 
-.preset-name {
-    font-weight: inherit;
-    white-space: nowrap;
-}
+
+
 
 /* ⚙️ 设置卡片 - 电影院风格 */
 .settings-card {
@@ -1172,27 +710,9 @@ body::before {
 }
 
 /* 📋 高级设置折叠 */
-.advanced-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--spacing-md);
-    margin: var(--spacing-lg) 0 var(--spacing-md);
-    background: var(--bg-secondary);
-    border: 2px solid var(--bg-tertiary);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-secondary);
-}
 
-.advanced-toggle:hover {
-    border-color: var(--primary-color);
-    color: var(--primary-color);
-    background: rgba(102, 126, 234, 0.05);
-}
+
+
 
 .advanced-toggle.active {
     border-color: var(--primary-color);
@@ -1204,12 +724,7 @@ body::before {
     transform: rotate(90deg);
 }
 
-.advanced-settings {
-    max-height: 0;
-    overflow: hidden;
-    transition: all var(--transition-normal);
-    opacity: 0;
-}
+
 
 .advanced-settings.active {
     max-height: 400px;
@@ -1258,53 +773,24 @@ body::before {
 /* ========================================
    🔧 工具类和辅助样式
    ======================================== */
-.hidden {
-    display: none !important;
-}
 
-.invisible {
-    visibility: hidden !important;
-}
+
+
 
 /* 通用过渡效果类 */
-.transition-fast {
-    transition: all var(--transition-fast);
-}
 
-.transition-normal {
-    transition: all var(--transition-normal);
-}
+
+
 
 /* 通用 hover 提升效果 */
-.hover-lift:hover {
-    transform: translateY(-2px);
-}
 
-.hover-scale:hover {
-    transform: scale(1.1);
-}
+
+
 
 /* 通用阴影效果 */
-.hover-shadow:hover {
-    box-shadow: var(--shadow-md);
-}
+
 
 /* 动画效果类 */
-.fade-in {
-    animation: fadeIn var(--transition-normal) ease-out;
-}
-
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
 
 .bounce {
     animation: bounce 0.6s ease-out;
@@ -1472,9 +958,7 @@ body::before {
 }
 
 /* 模型输入包装器 */
-.model-input-wrapper {
-    width: 100%;
-}
+
 
 .model-input-wrapper .config-input {
     margin-top: var(--spacing-sm);
@@ -1557,31 +1041,11 @@ body::before {
    🚀 翻译按钮样式
    ======================================== */
 
-.translate-btn {
-    background: var(--primary-gradient);
-    color: var(--text-white);
-    border: none;
-    border-radius: var(--radius-md);
-    padding: var(--spacing-sm) var(--spacing-lg);
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-}
 
-.translate-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
-}
 
-.translate-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-}
+
+
+
 
 .translate-btn.translating {
     background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
@@ -1755,27 +1219,9 @@ body::before {
     box-shadow: 0 18px 40px rgba(97, 83, 92, 0.22);
 }
 
-.retranslate-btn {
-    min-width: 48px;
-    padding: var(--spacing-lg);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(212, 175, 55, 0.2);
-    border: 2px solid rgba(212, 175, 55, 0.4);
-    border-radius: var(--radius-md);
-    color: var(--primary-color);
-    font-size: 18px;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-}
 
-.retranslate-btn:hover {
-    background: rgba(212, 175, 55, 0.3);
-    border-color: rgba(212, 175, 55, 0.6);
-    transform: translateY(-2px) rotate(180deg);
-    box-shadow: var(--shadow-gold);
-}
+
+
 
 /* ========================================
    Daylight Theme Override
@@ -1897,12 +1343,7 @@ body::before {
 :root[data-theme-effective="light"] .preview-card,
 :root[data-theme-effective="light"] .preset-card,
 :root[data-theme-effective="light"] .file-card,
-:root[data-theme-effective="light"] .separate-upload-header {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(250, 245, 236, 0.96) 100%);
-    color: var(--text-primary);
-    border: 1px solid rgba(179, 146, 98, 0.16);
-    box-shadow: var(--shadow-md);
-}
+
 
 :root[data-theme-effective="light"] .video-info-card {
     background: rgba(255, 249, 240, 0.92);
@@ -1937,9 +1378,7 @@ body::before {
 :root[data-theme-effective="light"] .preset-header,
 :root[data-theme-effective="light"] .file-type,
 :root[data-theme-effective="light"] .drop-text strong,
-:root[data-theme-effective="light"] .separate-title {
-    color: var(--text-primary);
-}
+
 
 :root[data-theme-effective="light"] .progress-bar {
     background: rgba(179, 146, 98, 0.18);
@@ -1983,20 +1422,11 @@ body::before {
 :root[data-theme-effective="light"] .reset-btn,
 :root[data-theme-effective="light"] .setting-select,
 :root[data-theme-effective="light"] .config-input,
-:root[data-theme-effective="light"] .status-test-btn {
-    background: rgba(255, 250, 243, 0.96);
-    color: var(--text-primary);
-    border: 1px solid rgba(179, 146, 98, 0.18);
-}
+
 
 :root[data-theme-effective="light"] .test-api-btn:hover,
 :root[data-theme-effective="light"] .provider-icon-btn:hover,
-:root[data-theme-effective="light"] .status-test-btn:hover {
-    background: rgba(47, 111, 237, 0.08);
-    color: var(--info-color);
-    border-color: rgba(47, 111, 237, 0.22);
-    box-shadow: none;
-}
+
 
 :root[data-theme-effective="light"] .provider-icon-btn.danger:hover {
     background: rgba(214, 69, 69, 0.08);
@@ -2057,25 +1487,14 @@ body::before {
     box-shadow: inset 0 0 0 1px rgba(47, 111, 237, 0.16);
 }
 
-:root[data-theme-effective="light"] .preview-stage {
-    background:
-        radial-gradient(circle at top, rgba(89, 104, 129, 0.22), transparent 40%),
-        linear-gradient(180deg, #273447 0%, #1d2734 100%);
-    border: 1px solid rgba(24, 33, 47, 0.24);
-}
+
 
 :root[data-theme-effective="light"] .preset-item,
 :root[data-theme-effective="light"] .file-drop-zone,
-:root[data-theme-effective="light"] .file-info {
-    background: rgba(255, 249, 240, 0.94);
-    border-color: rgba(179, 146, 98, 0.16);
-    color: var(--text-secondary);
-}
+
 
 :root[data-theme-effective="light"] .preset-item:hover,
-:root[data-theme-effective="light"] .file-drop-zone:hover {
-    background: rgba(255, 138, 61, 0.07);
-}
+
 
 :root[data-theme-effective="light"] .preset-item.active {
     background: linear-gradient(135deg, #ff8a3d 0%, #ff6b4a 100%);
@@ -2083,28 +1502,15 @@ body::before {
     color: #fffdfb;
 }
 
-:root[data-theme-effective="light"] .file-card.has-file {
-    background: rgba(31, 157, 103, 0.08);
-    box-shadow: 0 0 0 1px rgba(31, 157, 103, 0.18);
-}
 
-:root[data-theme-effective="light"] .file-card.has-file .file-name {
-    color: #16784f;
-}
 
-:root[data-theme-effective="light"] .file-formats {
-    background: rgba(234, 223, 206, 0.86);
-    color: #697b90;
-}
 
-:root[data-theme-effective="light"] .ass-upload-card {
-    background: linear-gradient(135deg, #ff9a52 0%, #ff7452 100%);
-    box-shadow: 0 24px 46px rgba(255, 122, 69, 0.24);
-}
 
-:root[data-theme-effective="light"] .ass-file-status {
-    background: rgba(255, 255, 255, 0.18);
-}
+
+
+
+
+
 
 :root[data-theme-effective="light"] .api-status.success {
     background: rgba(31, 157, 103, 0.12);

@@ -417,14 +417,6 @@ export function classifyErrorWithSuggestion(error: unknown): ErrorInfo {
 }
 
 /**
- * 格式化错误信息
- */
-export function formatErrorWithSuggestion(error: unknown): string {
-  const errorInfo = classifyErrorWithSuggestion(error);
-  return `${errorInfo.message}\n${errorInfo.suggestion}`;
-}
-
-/**
  * 自定义翻译错误类
  */
 export class TranslationError extends Error {

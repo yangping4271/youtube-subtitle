@@ -77,9 +77,6 @@ class PopupController {
         this.subtitleData = [];
         this.englishSubtitles = [];
         this.chineseSubtitles = [];
-        this.currentFileName = '';
-        this.englishFileName = '';
-        this.chineseFileName = '';
 
         // 当前选择的语言和设置
         this.currentLanguage = 'english';
@@ -266,32 +263,6 @@ class PopupController {
         this.setupTabs();
         this.bindEvents();
 
-        // 监听来自content script的消息（全局监听）
-        if (!this.messageListenerBound) {
-            chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-                if (request.action === 'autoLoadSuccess') {
-                    this.updateAutoLoadStatus('成功: ' + request.filename, 'success');
-
-                    // 🔧 修复：如果消息包含字幕数据，直接使用，否则再同步
-                    if (request.englishSubtitles || request.chineseSubtitles || request.subtitleData) {
-                        this.englishSubtitles = request.englishSubtitles || [];
-                        this.chineseSubtitles = request.chineseSubtitles || [];
-                        this.subtitleData = request.subtitleData || [];
-                        this.englishFileName = request.englishFileName || '';
-                        this.chineseFileName = request.chineseFileName || '';
-                        this.currentFileName = request.fileName || '';
-                        this.updateSubtitleInfoWithRetry();
-                    } else {
-                        // 后备方案：从存储中同步数据
-                        this.getCurrentVideoInfo();
-                    }
-                } else if (request.action === 'autoLoadError') {
-                    this.updateAutoLoadStatus('失败: ' + request.error, 'error');
-                }
-            });
-            this.messageListenerBound = true;
-        }
-
         // 先确保默认设置写入 storage，再加载当前状态
         try {
             await this.ensureDefaultSettings();
@@ -300,7 +271,6 @@ class PopupController {
         }
 
         await this.loadCurrentState();
-        this.setupFileNameTooltips();
 
         // 初始化API设置
         await this.loadApiConfig();
@@ -504,228 +474,12 @@ class PopupController {
             });
         }
 
-        // 文件移除事件
-        const englishRemove = document.getElementById('englishRemove');
-        const chineseRemove = document.getElementById('chineseRemove');
-        const assRemove = document.getElementById('assRemove');
-
-        if (englishRemove) {
-            englishRemove.addEventListener('click', () => {
-                this.removeFile('english');
-            });
-        }
-
-        if (chineseRemove) {
-            chineseRemove.addEventListener('click', () => {
-                this.removeFile('chinese');
-            });
-        }
-
-        if (assRemove) {
-            assRemove.addEventListener('click', () => {
-                this.removeASSFile();
-            });
-        }
-
         // 设置控件事件
         this.bindSettingsEvents();
 
         // 翻译按钮和API设置事件
         this.bindTranslateEvents();
         this.bindApiSettingsEvents();
-    }
-
-    bindFileUploadEvents(language, uploadAreaId, fileInputId) {
-        const uploadArea = document.getElementById(uploadAreaId);
-        const fileInput = document.getElementById(fileInputId);
-
-        if (!uploadArea || !fileInput) return;
-
-        // 点击上传
-        uploadArea.addEventListener('click', () => fileInput.click());
-        fileInput.addEventListener('change', (e) => this.handleFileSelect(e, language));
-
-        // 拖拽上传
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('dragover');
-        });
-
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('dragover');
-        });
-
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                this.processFile(files[0], language);
-            }
-        });
-    }
-
-    bindASSUploadEvents() {
-        const assUploadArea = document.getElementById('assUploadArea');
-        const assFileInput = document.getElementById('assFileInput');
-
-        if (!assUploadArea || !assFileInput) return;
-
-        // 点击上传
-        assUploadArea.addEventListener('click', () => assFileInput.click());
-        assFileInput.addEventListener('change', (e) => this.handleASSFileSelect(e));
-
-        // 拖拽上传
-        assUploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            assUploadArea.classList.add('dragover');
-        });
-
-        assUploadArea.addEventListener('dragleave', () => {
-            assUploadArea.classList.remove('dragover');
-        });
-
-        assUploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            assUploadArea.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                this.processASSFile(files[0]);
-            }
-        });
-    }
-
-    handleASSFileSelect(event) {
-        const file = event.target.files[0];
-        if (file) {
-            this.processASSFile(file);
-        }
-    }
-
-    async processASSFile(file) {
-        try {
-            // 验证文件类型
-            if (!file.name.toLowerCase().endsWith('.ass')) {
-                throw new Error('请选择ASS格式的字幕文件');
-            }
-
-            Toast.show('正在解析ASS双语字幕文件...', 'info');
-
-            // 读取文件内容
-            const content = await this.readFileAsText(file);
-
-            // 解析ASS文件，使用统一的 SubtitleParser
-            const assResult = SubtitleParser.parseASS(content);
-
-            if (assResult.english.length === 0 && assResult.chinese.length === 0) {
-                throw new Error('ASS文件解析失败或未找到有效的双语字幕');
-            }
-
-            // 设置字幕数据，但不设置英文和中文的文件名
-            this.englishSubtitles = assResult.english;
-            this.chineseSubtitles = assResult.chinese;
-            // 不设置 englishFileName 和 chineseFileName，避免在分别上传区域显示
-
-            // 获取当前视频ID并保存字幕
-            const currentVideoId = await this.getCurrentVideoId();
-            let response;
-
-            if (currentVideoId) {
-                // 基于视频ID保存字幕
-                const targetLangName = this.getTargetLanguageName(this.apiConfig.targetLanguage || 'zh');
-                response = await chrome.runtime.sendMessage({
-                    action: 'saveVideoSubtitles',
-                    videoId: currentVideoId,
-                    englishSubtitles: this.englishSubtitles,
-                    chineseSubtitles: this.chineseSubtitles,
-                    englishFileName: file.name + ' (原语言)',
-                    chineseFileName: file.name + ` (${targetLangName})`
-                });
-            } else {
-                // 后备方案：使用旧的保存方式
-                response = await chrome.runtime.sendMessage({
-                    action: 'saveBilingualSubtitles',
-                    englishSubtitles: this.englishSubtitles,
-                    chineseSubtitles: this.chineseSubtitles,
-                    englishFileName: '', // 清空英文文件名
-                    chineseFileName: ''  // 清空中文文件名
-                });
-            }
-
-            if (response.success) {
-                this.updateSubtitleInfoWithRetry();
-                this.updateASSFileStatus(file.name, assResult);
-
-                // 更新自动加载状态显示
-                this.getCurrentVideoInfo();
-
-                Toast.success(
-                    `成功加载ASS双语字幕: ${assResult.english.length} 条英文, ${assResult.chinese.length} 条中文`,
-                    'success'
-                );
-
-                // 自动启用字幕显示
-                const subtitleToggle = document.getElementById('subtitleToggle');
-                if (subtitleToggle && !subtitleToggle.checked) {
-                    subtitleToggle.checked = true;
-                    this.toggleSubtitle(true);
-                }
-            } else {
-                throw new Error(response.error);
-            }
-        } catch (error) {
-            console.error('处理ASS文件失败:', error);
-            Toast.error('ASS文件处理失败: ' + error.message);
-        }
-    }
-
-    updateASSFileStatus(filename, assResult) {
-        const assFileStatus = document.getElementById('assFileStatus');
-        const assFileName = document.getElementById('assFileName');
-
-        if (assFileStatus && assFileName) {
-            // 使用更短的截断长度，更适合界面显示
-            const displayName = this.truncateFileName(filename, 18);
-            assFileName.textContent = displayName;
-            // 设置完整文件名作为title，用于工具提示
-            assFileName.setAttribute('title', filename);
-            assFileStatus.style.display = 'block';
-        }
-    }
-
-    removeASSFile() {
-        // 清除ASS文件状态显示
-        const assFileStatus = document.getElementById('assFileStatus');
-        if (assFileStatus) {
-            assFileStatus.style.display = 'none';
-        }
-
-        // 清除文件输入
-        const assFileInput = document.getElementById('assFileInput');
-        if (assFileInput) {
-            assFileInput.value = '';
-        }
-
-        // 清除字幕数据
-        this.englishSubtitles = [];
-        this.chineseSubtitles = [];
-        this.englishFileName = '';
-        this.chineseFileName = '';
-
-        // 更新UI显示
-        this.updateSubtitleInfoWithRetry();
-
-        // 更新自动加载状态显示
-        this.getCurrentVideoInfo();
-
-        // 保存到后台
-        chrome.runtime.sendMessage({
-            action: 'clearSubtitleData'
-        });
-
-        // 注意：不再自动关闭字幕开关，让用户手动控制
-
-        Toast.success('已移除ASS字幕');
     }
 
     bindSettingsEvents() {
@@ -1023,17 +777,12 @@ class PopupController {
                     this.subtitleData = videoSubtitles.subtitleData || [];
                     this.englishSubtitles = videoSubtitles.englishSubtitles || [];
                     this.chineseSubtitles = videoSubtitles.chineseSubtitles || [];
-                    this.englishFileName = videoSubtitles.englishFileName || '';
-                    this.chineseFileName = videoSubtitles.chineseFileName || '';
-                    this.currentFileName = videoSubtitles.fileName || '';
                 } else {
                     // 使用全局数据作为后备
-                    const { subtitleData, englishSubtitles, chineseSubtitles, englishFileName, chineseFileName } = globalResponse.data;
+                    const { subtitleData, englishSubtitles, chineseSubtitles } = globalResponse.data;
                     this.subtitleData = subtitleData || [];
                     this.englishSubtitles = englishSubtitles || [];
                     this.chineseSubtitles = chineseSubtitles || [];
-                    this.englishFileName = englishFileName || '';
-                    this.chineseFileName = chineseFileName || '';
                 }
 
                 // 定义默认设置（从统一配置中心获取）
@@ -1072,9 +821,6 @@ class PopupController {
                     }
                 }
 
-                // 延迟执行字幕统计更新，确保DOM完全就绪
-                await this.updateSubtitleInfoWithRetry();
-
                 // 加载当前语言设置到UI
                 this.loadLanguageSettingsToUI(this.currentLanguage);
             }
@@ -1084,310 +830,14 @@ class PopupController {
         }
     }
 
-    handleFileSelect(event, language) {
-        const file = event.target.files[0];
-        if (file) {
-            this.processFile(file, language);
-        }
-    }
-
-    async processFile(file, language) {
-        try {
-            // 验证文件类型
-            if (!this.isValidSubtitleFile(file)) {
-                throw new Error('不支持的文件格式，请选择 SRT、VTT 或 ASS 文件');
-            }
-
-            Toast.show(`正在解析${language === 'english' ? '英文' : '中文'}字幕文件...`, 'info');
-
-            // 读取文件内容
-            const content = await this.readFileAsText(file);
-
-            // 检查是否是ASS文件
-            const isASSFile = file.name.split('.').pop().toLowerCase() === 'ass';
-
-            if (isASSFile) {
-                // 在分别上传模式中，禁止ASS文件
-                throw new Error('ASS文件请使用"双语ASS"上传模式，这里只支持单语SRT/VTT文件');
-            }
-
-            // 普通SRT/VTT文件处理
-            const subtitleData = this.parseSubtitle(content, file.name);
-
-            if (subtitleData.length === 0) {
-                throw new Error('字幕文件解析失败或文件为空');
-            }
-
-            // 保存字幕数据
-            const currentVideoId = await this.getCurrentVideoId();
-            let response;
-
-            if (language === 'english') {
-                this.englishSubtitles = subtitleData;
-                this.englishFileName = file.name;
-
-                if (currentVideoId) {
-                    // 基于视频ID保存字幕
-                    response = await chrome.runtime.sendMessage({
-                        action: 'saveVideoSubtitles',
-                        videoId: currentVideoId,
-                        englishSubtitles: this.englishSubtitles,
-                        chineseSubtitles: this.chineseSubtitles,
-                        englishFileName: this.englishFileName,
-                        chineseFileName: this.chineseFileName
-                    });
-                } else {
-                    // 后备方案：使用旧的保存方式
-                    response = await chrome.runtime.sendMessage({
-                        action: 'saveBilingualSubtitles',
-                        englishSubtitles: this.englishSubtitles,
-                        chineseSubtitles: this.chineseSubtitles,
-                        englishFileName: this.englishFileName,
-                        chineseFileName: this.chineseFileName
-                    });
-                }
-            } else {
-                this.chineseSubtitles = subtitleData;
-                this.chineseFileName = file.name;
-
-                if (currentVideoId) {
-                    // 基于视频ID保存字幕
-                    response = await chrome.runtime.sendMessage({
-                        action: 'saveVideoSubtitles',
-                        videoId: currentVideoId,
-                        englishSubtitles: this.englishSubtitles,
-                        chineseSubtitles: this.chineseSubtitles,
-                        englishFileName: this.englishFileName,
-                        chineseFileName: this.chineseFileName
-                    });
-                } else {
-                    // 后备方案：使用旧的保存方式
-                    response = await chrome.runtime.sendMessage({
-                        action: 'saveBilingualSubtitles',
-                        englishSubtitles: this.englishSubtitles,
-                        chineseSubtitles: this.chineseSubtitles,
-                        englishFileName: this.englishFileName,
-                        chineseFileName: this.chineseFileName
-                    });
-                }
-            }
-
-            if (response.success) {
-                this.updateSubtitleInfoWithRetry();
-                this.updateFileCardState(language, true);
-
-                // 更新自动加载状态显示
-                this.getCurrentVideoInfo();
-
-                Toast.success(`成功加载 ${subtitleData.length} 条${language === 'english' ? '英文' : '中文'}字幕`);
-
-                // 自动启用字幕显示
-                const subtitleToggle = document.getElementById('subtitleToggle');
-                if (subtitleToggle && !subtitleToggle.checked) {
-                    subtitleToggle.checked = true;
-                    this.toggleSubtitle(true);
-                }
-            } else {
-                throw new Error(response.error);
-            }
-
-        } catch (error) {
-            console.error('处理文件失败:', error);
-            Toast.error('文件处理失败: ' + error.message);
-        }
-    }
-
     // ========================================
     // 智能文件名处理和工具提示
     // ========================================
-    setupFileNameTooltips() {
-        const fileNames = document.querySelectorAll('.file-name');
-        fileNames.forEach(nameElement => {
-            nameElement.addEventListener('mouseenter', (e) => {
-                const fullName = e.target.getAttribute('title');
-                if (fullName && fullName !== e.target.textContent) {
-                    this.showTooltip(e.target, fullName);
-                }
-            });
-
-            nameElement.addEventListener('mouseleave', () => {
-                this.hideTooltip();
-            });
-        });
-    }
-
-    showTooltip(element, text) {
-        // 移除现有工具提示
-        this.hideTooltip();
-
-        const tooltip = document.createElement('div');
-        tooltip.className = 'file-tooltip';
-        tooltip.textContent = text;
-        tooltip.style.cssText = `
-            position: absolute;
-            background: #1a1a1a;
-            color: white;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            z-index: 1000;
-            max-width: 300px;
-            word-break: break-all;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            pointer-events: none;
-        `;
-
-        document.body.appendChild(tooltip);
-
-        const rect = element.getBoundingClientRect();
-        tooltip.style.top = (rect.top - tooltip.offsetHeight - 8) + 'px';
-        tooltip.style.left = Math.max(8, rect.left) + 'px';
-
-        // 确保工具提示不超出屏幕
-        const tooltipRect = tooltip.getBoundingClientRect();
-        if (tooltipRect.right > window.innerWidth - 8) {
-            tooltip.style.left = (window.innerWidth - tooltipRect.width - 8) + 'px';
-        }
-
-        this.currentTooltip = tooltip;
-    }
-
-    hideTooltip() {
-        if (this.currentTooltip) {
-            this.currentTooltip.remove();
-            this.currentTooltip = null;
-        }
-    }
-
     // 智能截断文件名
-    truncateFileName(fileName, maxLength = 25) {
-        if (fileName.length <= maxLength) {
-            return fileName;
-        }
-
-        const extension = fileName.substring(fileName.lastIndexOf('.'));
-        const nameWithoutExt = fileName.substring(0, fileName.lastIndexOf('.'));
-        const availableLength = maxLength - extension.length - 3; // 3 for "..."
-
-        if (availableLength < 1) {
-            return '...' + extension;
-        }
-
-        return nameWithoutExt.substring(0, availableLength) + '...' + extension;
-    }
-
-    updateFileCardState(language, hasFile) {
-        const card = document.getElementById(language + 'Card');
-        const fileName = document.getElementById(language + 'FileName');
-        const removeBtn = document.getElementById(language + 'Remove');
-
-        // 如果元素不存在则直接返回(UI 已简化)
-        if (!card || !fileName || !removeBtn) return;
-
-        if (hasFile) {
-            card.classList.add('has-file');
-            const fullFileName = language === 'english' ? this.englishFileName : this.chineseFileName;
-            const displayName = this.truncateFileName(fullFileName);
-
-            fileName.textContent = displayName;
-            fileName.setAttribute('title', fullFileName);
-            removeBtn.style.display = 'block';
-        } else {
-            card.classList.remove('has-file');
-            fileName.textContent = '未选择文件';
-            fileName.setAttribute('title', '');
-            removeBtn.style.display = 'none';
-        }
-    }
-
-    removeFile(language) {
-        if (language === 'english') {
-            this.englishSubtitles = [];
-            this.englishFileName = '';
-        } else {
-            this.chineseSubtitles = [];
-            this.chineseFileName = '';
-        }
-
-        this.updateFileCardState(language, false);
-        this.updateSubtitleInfoWithRetry();
-
-        // 更新自动加载状态显示
-        this.getCurrentVideoInfo();
-
-        // 保存到后台 - 基于当前视频ID
-        this.getCurrentVideoId().then(currentVideoId => {
-            if (currentVideoId) {
-                // 基于视频ID保存字幕
-                chrome.runtime.sendMessage({
-                    action: 'saveVideoSubtitles',
-                    videoId: currentVideoId,
-                    englishSubtitles: this.englishSubtitles,
-                    chineseSubtitles: this.chineseSubtitles,
-                    englishFileName: this.englishFileName,
-                    chineseFileName: this.chineseFileName
-                });
-            } else {
-                // 后备方案：使用旧的保存方式
-                chrome.runtime.sendMessage({
-                    action: 'saveBilingualSubtitles',
-                    englishSubtitles: this.englishSubtitles,
-                    chineseSubtitles: this.chineseSubtitles,
-                    englishFileName: this.englishFileName,
-                    chineseFileName: this.chineseFileName
-                });
-            }
-        });
-
-        Toast.success(`已移除${language === 'english' ? '英文' : '中文'}字幕`);
-    }
-
     // 简化版：直接调用更新方法，避免复杂重试逻辑
-    async updateSubtitleInfoWithRetry() {
-        this.updateSubtitleInfo();
-    }
-
-    updateSubtitleInfo() {
-        // 同步文件卡片状态
-        this.updateFileCardState('english', !!this.englishFileName);
-        this.updateFileCardState('chinese', !!this.chineseFileName);
-    }
-
     // ========================================
     // 其他方法保持不变
     // ========================================
-
-    isValidSubtitleFile(file) {
-        const validExtensions = ['srt', 'ass'];
-        const extension = file.name.split('.').pop().toLowerCase();
-        return validExtensions.includes(extension);
-    }
-
-    readFileAsText(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target.result);
-            reader.onerror = () => reject(new Error('文件读取失败'));
-            reader.readAsText(file, 'UTF-8');
-        });
-    }
-
-    parseSubtitle(content, filename) {
-        const extension = filename.split('.').pop().toLowerCase();
-
-        try {
-            if (extension === 'srt') {
-                return SubtitleParser.parseSRT(content);
-            } else if (extension === 'ass') {
-                return SubtitleParser.parseASS(content);
-            } else {
-                throw new Error('不支持的文件格式');
-            }
-        } catch (error) {
-            console.error('解析字幕失败:', error);
-            return [];
-        }
-    }
 
     async toggleSubtitle(enabled) {
         try {
@@ -1511,43 +961,27 @@ class PopupController {
 
                 if (videoSubtitles) {
                     // 使用当前视频的字幕数据
-                    const oldEnglishCount = this.englishSubtitles.length;
-                    const oldChineseCount = this.chineseSubtitles.length;
 
                     this.subtitleData = videoSubtitles.subtitleData || [];
                     this.englishSubtitles = videoSubtitles.englishSubtitles || [];
                     this.chineseSubtitles = videoSubtitles.chineseSubtitles || [];
-                    this.englishFileName = videoSubtitles.englishFileName || '';
-                    this.chineseFileName = videoSubtitles.chineseFileName || '';
-                    this.currentFileName = videoSubtitles.fileName || '';
                 } else {
                     // 当前视频没有字幕数据，清空显示
-                    const oldEnglishCount = this.englishSubtitles.length;
-                    const oldChineseCount = this.chineseSubtitles.length;
 
                     this.subtitleData = [];
                     this.englishSubtitles = [];
                     this.chineseSubtitles = [];
-                    this.englishFileName = '';
-                    this.chineseFileName = '';
-                    this.currentFileName = '';
                 }
             } else {
                 // 无法获取视频ID，使用全局数据作为后备
                 const response = await chrome.runtime.sendMessage({ action: 'getBilingualSubtitleData' });
                 if (response.success) {
-                    const oldEnglishCount = this.englishSubtitles.length;
-                    const oldChineseCount = this.chineseSubtitles.length;
 
                     this.englishSubtitles = response.data.englishSubtitles || [];
                     this.chineseSubtitles = response.data.chineseSubtitles || [];
-                    this.englishFileName = response.data.englishFileName || '';
-                    this.chineseFileName = response.data.chineseFileName || '';
                 }
             }
 
-            // 更新统计显示
-            this.updateSubtitleInfoWithRetry();
         } catch (error) {
             console.log('同步字幕数据异常，保留当前界面状态:', error);
         }
@@ -1565,7 +999,6 @@ class PopupController {
                 }
                 if (response.hasSubtitles && (response.englishCount > 0 || response.chineseCount > 0)) {
                     this.syncSubtitleDataFromContentScript()
-                        .then(() => this.updateSubtitleInfoWithRetry())
                         .catch(error => console.log('初始化字幕数据同步失败，稍后可重试:', error));
                 }
             });
@@ -2038,7 +1471,6 @@ class PopupController {
 
         this.resetTranslationButton();
         await this.updateTranslateButton();
-        this.updateSubtitleInfoWithRetry();
     }
 
     startProgressListener() {
@@ -2312,21 +1744,6 @@ class PopupController {
                 });
             });
         });
-    }
-
-    getTargetLanguageName(langCode) {
-        const mapping = {
-            'zh': '简体中文',
-            'zh-cn': '简体中文',
-            'zh-tw': '繁体中文',
-            'ja': '日文',
-            'en': 'English',
-            'ko': '韩文',
-            'fr': '法文',
-            'de': '德文',
-            'es': '西班牙文'
-        };
-        return mapping[langCode.toLowerCase()] || langCode;
     }
 
     initCurrentVideoState() {

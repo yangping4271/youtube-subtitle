@@ -293,23 +293,11 @@ class SubtitleExtensionBackground {
     const sourceTabId = sender.tab?.id;
     try {
       switch (request.action) {
-        case 'getSubtitleData': {
-          const data = await this.getSubtitleData();
-          sendResponse({ success: true, data });
-          break;
-        }
-
         case 'getBilingualSubtitleData': {
           const bilingualData = await this.getBilingualSubtitleData();
           sendResponse({ success: true, data: bilingualData });
           break;
         }
-
-        case 'saveSubtitleData':
-          await this.saveSubtitleData(request.data as SimpleSubtitleEntry[]);
-          await this.notifyContentScript('loadSubtitle', { subtitleData: request.data }, sourceTabId);
-          sendResponse({ success: true });
-          break;
 
         case 'saveBilingualSubtitles':
           await this.saveBilingualSubtitles(
@@ -350,18 +338,9 @@ class SubtitleExtensionBackground {
           sendResponse({ success: true });
           break;
 
-        case 'forceReset':
-          await this.forceReset(sourceTabId);
-          sendResponse({ success: true });
-          break;
-
         case 'setSubtitleEnabled':
           await this.setSubtitleEnabled(request.enabled || false);
           sendResponse({ success: true });
-          break;
-
-        case 'autoLoadSuccess':
-        case 'autoLoadError':
           break;
 
         case 'logSubtitleFetchSource':
@@ -422,23 +401,6 @@ class SubtitleExtensionBackground {
       subtitleEnabled: (result.subtitleEnabled as boolean) || false,
       englishSettings: (result.englishSettings as SubtitleStyleSettings) || {},
       chineseSettings: (result.chineseSettings as SubtitleStyleSettings) || {},
-    };
-  }
-
-  async getSubtitleData(): Promise<{
-    subtitleData: SimpleSubtitleEntry[];
-    subtitleEnabled: boolean;
-    subtitleSettings: Record<string, unknown>;
-  }> {
-    const result = await chrome.storage.local.get([
-      'subtitleData',
-      'subtitleEnabled',
-      'subtitleSettings',
-    ]);
-    return {
-      subtitleData: (result.subtitleData as SimpleSubtitleEntry[]) || [],
-      subtitleEnabled: (result.subtitleEnabled as boolean) || false,
-      subtitleSettings: (result.subtitleSettings as Record<string, unknown>) || {},
     };
   }
 
@@ -516,10 +478,6 @@ class SubtitleExtensionBackground {
     });
   }
 
-  async saveSubtitleData(data: SimpleSubtitleEntry[]): Promise<void> {
-    await chrome.storage.local.set({ subtitleData: data });
-  }
-
   async toggleSubtitle(enabled: boolean, tabId?: number): Promise<void> {
     await chrome.storage.local.set({ subtitleEnabled: enabled });
     await this.notifyContentScript('toggleSubtitle', { enabled }, tabId);
@@ -577,22 +535,6 @@ class SubtitleExtensionBackground {
     }
 
     await this.notifyContentScript('clearData', {}, tabId);
-  }
-
-  async forceReset(tabId?: number): Promise<void> {
-    await chrome.storage.local.clear();
-
-    await chrome.storage.local.set({
-      subtitleEnabled: false,
-      subtitleData: [],
-      englishSubtitles: [],
-      chineseSubtitles: [],
-      englishSettings: getDefaultEnglishSettings(),
-      chineseSettings: getDefaultChineseSettings(),
-      autoLoadEnabled: false,
-    });
-
-    await this.notifyContentScript('forceReset', {}, tabId);
   }
 
   async notifyContentScript(

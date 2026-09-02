@@ -363,7 +363,7 @@ describe('TranslationSession interface', () => {
     );
 
     const chatCompletion: ChatCompletionPort = {
-      async callChat(_systemPrompt, userPrompt, options = {}) {
+      async callChat(_systemPrompt, userPrompt) {
         if (!userPrompt.includes('<subtitles>')) {
           const sourceText = userPrompt.slice(userPrompt.lastIndexOf('\n') + 1);
           if (sourceText.includes('fatal sentence')) {
@@ -473,7 +473,7 @@ describe('TranslationSession interface', () => {
     );
 
     const chatCompletion: ChatCompletionPort = {
-      async callChat(_systemPrompt, userPrompt, options = {}) {
+      async callChat(_systemPrompt, userPrompt) {
         if (!userPrompt.includes('<subtitles>')) {
           const sourceText = userPrompt.slice(userPrompt.lastIndexOf('\n') + 1);
           if (sourceText.includes('fatal sentence')) {

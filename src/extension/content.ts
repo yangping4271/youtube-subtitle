@@ -203,8 +203,6 @@ class YouTubeSubtitleOverlay {
             this.clearSubtitleData();
           }
           break;
-        case 'forceReset':
-          this.forceReset();
           break;
         case 'updateSettings':
           if (request.language && request.settings) {
@@ -1023,25 +1021,6 @@ class YouTubeSubtitleOverlay {
     this.hideSubtitle();
   }
 
-  private forceReset(): void {
-    this.stopSubtitleSyncLoop();
-    this.subtitleData = [];
-    this.englishSubtitles = [];
-    this.chineseSubtitles = [];
-    this.currentVideo = null;
-
-    this.englishSettings = getDefaultEnglishSettings();
-    this.chineseSettings = getDefaultChineseSettings();
-
-    this.autoLoadEnabled = false;
-    this.currentVideoId = null;
-    this.translationRunGate.reset();
-
-    this.isEnabled = false;
-    this.hideSubtitle();
-
-    this.applyStyles();
-  }
 
   private updateLanguageSettings(
     language: 'english' | 'chinese',

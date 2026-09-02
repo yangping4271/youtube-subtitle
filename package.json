@@ -12,7 +12,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:manual": "vitest run --config vitest.manual.config.ts",
     "test:real-srt": "bun scripts/test-real-srt.ts",
     "test:subtitle-fixture": "bun scripts/test-subtitle-fixture.ts",
     "build:verify": "bun run build && bun run test:subtitle-fixture"

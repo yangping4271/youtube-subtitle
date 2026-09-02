@@ -171,11 +171,6 @@ export const DEFAULT_SUBTITLE_CONFIG: SubtitleConfig = {
   },
 };
 
-/** 获取默认 API 配置的深拷贝 */
-export function getDefaultApiConfig(): ApiConfig {
-  return JSON.parse(JSON.stringify(DEFAULT_API_CONFIG));
-}
-
 /** 获取英文字幕默认配置的深拷贝 */
 export function getDefaultEnglishSettings(): SubtitleStyleSettings {
   return JSON.parse(JSON.stringify(DEFAULT_SUBTITLE_CONFIG.english));
@@ -244,13 +239,6 @@ export async function loadConfig(): Promise<TranslatorConfig> {
   }
 
   return buildTranslatorConfig(migration.config);
-}
-
-/**
- * 获取默认翻译器配置
- */
-export function getDefaultTranslatorConfig(): TranslatorConfig {
-  return { ...DEFAULT_TRANSLATOR_CONFIG };
 }
 
 /**
