@@ -27,10 +27,13 @@ log/
 
 # Local notes
 TODO.md
-AGENTS.md
 
 # Agent local state
-.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/reuse-chrome-devtools/
+!.agents/skills/reuse-chrome-devtools/SKILL.md
 .codex/
 .grok/
 skills-lock.json

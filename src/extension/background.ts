@@ -4,11 +4,13 @@
  */
 
 import {
-  assertApiConfigUsesRemoteEndpoints,
   getDefaultEnglishSettings,
   getDefaultChineseSettings,
-  migrateApiConfig,
 } from './config';
+import {
+  assertApiConfigUsesRemoteEndpoints,
+  migrateApiConfig,
+} from '../utils/api-config';
 import { formatSubtitleFetchLog } from './subtitle-fetch-log';
 import {
   BrowserTranslationCoordinator,

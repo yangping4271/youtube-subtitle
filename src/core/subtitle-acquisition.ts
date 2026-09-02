@@ -3,6 +3,16 @@ import { isNonSpeechCue } from './subtitle-data.js';
 import { extractErrorMessage } from '../utils/error-handler.js';
 import type { SimpleSubtitleEntry } from '../types/index.js';
 
+export const ENGLISH_SUBTITLE_REQUIRED_MESSAGE =
+  '当前视频没有英文字幕，仅支持翻译英文字幕。';
+
+export class EnglishSubtitleRequiredError extends Error {
+  constructor() {
+    super(ENGLISH_SUBTITLE_REQUIRED_MESSAGE);
+    this.name = 'EnglishSubtitleRequiredError';
+  }
+}
+
 export interface ResolvedCaptionTrackText {
   trackText: string;
   source: 'page-player-response' | 'web-player-response' | 'youtubei-player';
@@ -277,6 +287,7 @@ export function createYouTubeSubtitleAcquirer(
   return {
     async acquire(videoId: string): Promise<SubtitleAcquisitionResult> {
       const captionTrackErrors: string[] = [];
+      let englishTrackUnavailable = false;
 
       for (const acquireCaptionTrack of dependencies.captionTrackStrategies) {
         try {
@@ -310,11 +321,27 @@ export function createYouTubeSubtitleAcquirer(
           });
           return result;
         } catch (error) {
+          if (error instanceof EnglishSubtitleRequiredError) {
+            englishTrackUnavailable = true;
+          }
           captionTrackErrors.push(extractErrorMessage(error));
         }
       }
 
       const captionTrackError = captionTrackErrors.join('; ') || '字幕轨不可用';
+      if (englishTrackUnavailable) {
+        const diagnostics = { captionTrackError };
+        void reportBestEffort(videoId, {
+          source: 'unavailable',
+          subtitleCount: 0,
+          diagnostics,
+        });
+        throw new SubtitleAcquisitionError(
+          ENGLISH_SUBTITLE_REQUIRED_MESSAGE,
+          diagnostics
+        );
+      }
+
       try {
         const subtitles = normalizeSubtitleTiming(
           await dependencies.acquireTranscriptPanelSubtitles()

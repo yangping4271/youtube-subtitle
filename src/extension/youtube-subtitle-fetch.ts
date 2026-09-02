@@ -1,5 +1,6 @@
 import {
   createYouTubeSubtitleAcquirer,
+  EnglishSubtitleRequiredError,
   normalizeSubtitleText,
   normalizeSubtitleTiming,
 } from '../core/subtitle-acquisition.js';
@@ -118,10 +119,10 @@ export function extractCaptionTracks(response: CaptionTrackResponseLike | null |
 }
 
 export function pickPreferredCaptionTrack<T extends CaptionTrackLike>(tracks: T[]): T | undefined {
-  return tracks.find((track) => track.languageCode === 'en' && track.kind !== 'asr') ||
-    tracks.find((track) => track.languageCode === 'en') ||
-    tracks.find((track) => track.kind !== 'asr') ||
-    tracks[0];
+  const englishTracks = tracks.filter((track) =>
+    /^en(?:-|$)/i.test(track.languageCode || '')
+  );
+  return englishTracks.find((track) => track.kind !== 'asr') || englishTracks[0];
 }
 
 export function classifyCaptionTrackResponse(
@@ -230,7 +231,11 @@ export async function resolvePageCaptionTrackText(
   const requestPageResponse = options.requestPageResponse || requestPageCaptionTrackResponse;
   const requestTrackText = options.requestTrackText || fetchCaptionTrackText;
   const pagePlayerResponse = await requestPageResponse();
-  const track = pickPreferredCaptionTrack(extractCaptionTracks(pagePlayerResponse));
+  const tracks = extractCaptionTracks(pagePlayerResponse);
+  const track = pickPreferredCaptionTrack(tracks);
+  if (!track && tracks.length > 0) {
+    throw new EnglishSubtitleRequiredError();
+  }
   if (!track?.baseUrl) {
     throw new Error('页面 player response 未提供字幕轨');
   }
@@ -268,6 +273,9 @@ export async function resolvePlayerCaptionTrackText(
   }
 
   const track = pickPreferredCaptionTrack(tracks);
+  if (!track) {
+    throw new EnglishSubtitleRequiredError();
+  }
   if (!track?.baseUrl) {
     throw new Error('字幕轨缺少 baseUrl');
   }

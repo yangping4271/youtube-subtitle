@@ -5,7 +5,7 @@ This context covers acquiring YouTube subtitles, translating them, and presentin
 ## Language
 
 **Subtitle acquisition（字幕获取）**:
-Obtaining one ordered set of timed subtitle entries from the best available YouTube source, together with information about which source produced it.
+Obtaining one ordered set of timed English subtitle entries from the best available YouTube source, together with information about which source produced it. Videos without an English caption track are unsupported.
 _Avoid_: Subtitle fetch path, transcript scraping
 
 **Subtitle output（字幕输出）**:

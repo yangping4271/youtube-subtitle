@@ -20,7 +20,6 @@ const extensionEntries = [
   {
     entryPoints: ['src/extension/config.ts'],
     outfile: `${outDir}/config.js`,
-    globalName: 'ConfigModule',
   },
   {
     entryPoints: ['src/extension/inject.ts'],
@@ -29,12 +28,10 @@ const extensionEntries = [
   {
     entryPoints: ['src/extension/background.ts'],
     outfile: `${outDir}/background.js`,
-    globalName: 'BackgroundModule',
   },
   {
     entryPoints: ['src/extension/content.ts'],
     outfile: `${outDir}/content.js`,
-    globalName: 'ContentModule',
   },
 ];
 

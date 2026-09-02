@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createYouTubeSubtitleAcquirer as createCoreYouTubeSubtitleAcquirer,
+  EnglishSubtitleRequiredError,
+  ENGLISH_SUBTITLE_REQUIRED_MESSAGE,
   normalizeSubtitleText,
   normalizeSubtitleTiming,
 } from '../../src/core/subtitle-acquisition.js';
@@ -264,6 +266,27 @@ describe('subtitle acquisition', () => {
         fallbackReason: 'caption track unavailable',
       },
     });
+  });
+
+  it('确认没有英文字幕轨时不读取其他语言的 transcript panel', async () => {
+    const acquireTranscriptPanelSubtitles = vi.fn(async () => [
+      { startTime: 1, endTime: 3, text: '中文字幕' },
+    ]);
+    const acquirer = createYouTubeSubtitleAcquirer({
+      captionTrackStrategy: async () => {
+        throw new EnglishSubtitleRequiredError();
+      },
+      acquireTranscriptPanelSubtitles,
+      reportAcquisition: async () => {},
+    });
+
+    await expect(acquirer.acquire('video-id')).rejects.toMatchObject({
+      message: ENGLISH_SUBTITLE_REQUIRED_MESSAGE,
+      diagnostics: {
+        captionTrackError: ENGLISH_SUBTITLE_REQUIRED_MESSAGE,
+      },
+    });
+    expect(acquireTranscriptPanelSubtitles).not.toHaveBeenCalled();
   });
 
   it('全部来源失败时返回转写面板错误并保留诊断', async () => {

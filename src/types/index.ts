@@ -151,12 +151,6 @@ export interface SubtitleConfig {
   ui: UIConfig;
 }
 
-/** 支持的模型选项 */
-export interface ModelOption {
-  value: string;
-  text: string;
-}
-
 /** 支持的语言选项 */
 export interface LanguageOption {
   value: string;

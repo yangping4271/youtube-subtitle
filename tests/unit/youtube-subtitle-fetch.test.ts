@@ -197,6 +197,32 @@ describe('youtube subtitle fetch helpers', () => {
     expect(track?.baseUrl).toContain('timedtext?v=1');
   });
 
+  it('只选择英文字幕轨并支持地区代码', () => {
+    expect(pickPreferredCaptionTrack([
+      { languageCode: 'zh-CN', baseUrl: 'https://www.youtube.com/zh' },
+      { languageCode: 'ja', baseUrl: 'https://www.youtube.com/ja' },
+    ])).toBeUndefined();
+
+    expect(pickPreferredCaptionTrack([
+      { languageCode: 'en-US', baseUrl: 'https://www.youtube.com/en-US' },
+    ])?.languageCode).toBe('en-US');
+  });
+
+  it('player 只有非英文字幕轨时返回明确错误', async () => {
+    await expect(resolvePlayerCaptionTrackText('video-id', {
+      requestPlayerResponse: async () => ({
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            captionTracks: [{
+              languageCode: 'zh-CN',
+              baseUrl: 'https://www.youtube.com/zh',
+            }],
+          },
+        },
+      }),
+    })).rejects.toThrow('当前视频没有英文字幕，仅支持翻译英文字幕。');
+  });
+
   it('字幕轨返回空 HTML 时包含 content-type 便于排查', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,

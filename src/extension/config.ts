@@ -6,10 +6,8 @@
 import type {
   SubtitleStyleSettings,
   SubtitleConfig,
-  ModelOption,
   LanguageOption,
   ApiConfig,
-  ApiProviderConfig,
   TranslatorConfig,
 } from '../types';
 import { DEFAULT_CONCURRENCY } from '../utils/concurrency.js';
@@ -18,8 +16,6 @@ import {
   API_CONFIG_MIGRATION_NOTICE,
   API_CONFIG_SCHEMA_VERSION,
   DEFAULT_API_PROVIDERS,
-  MAX_API_CONCURRENCY,
-  MODEL_CONCURRENCY_LIMITS,
   assertApiConfigUsesRemoteEndpoints,
   getModelConcurrencyLimit,
   isDefaultApiProviderId,
@@ -28,27 +24,6 @@ import {
 } from '../utils/api-config.js';
 import { popupConfigBridge } from './config-bridge.js';
 import type { PopupConfigBridge } from './config-bridge.js';
-
-export { normalizeApiBaseUrl } from '../utils/api-url.js';
-export { getApiHostPermissionPattern } from './config-bridge.js';
-export {
-  assertRemoteApiBaseUrl,
-  getApiEndpointValidationError,
-  isRemoteApiBaseUrl,
-} from '../utils/api-url.js';
-export {
-  API_CONFIG_MIGRATION_NOTICE,
-  API_CONFIG_SCHEMA_VERSION,
-  DEFAULT_API_PROVIDERS,
-  DEFAULT_API_PROVIDER_IDS,
-  MAX_API_CONCURRENCY,
-  MODEL_CONCURRENCY_LIMITS,
-  assertApiConfigUsesRemoteEndpoints,
-  getModelConcurrencyLimit,
-  isDefaultApiProviderId,
-  migrateApiConfig,
-  normalizeApiConfig,
-} from '../utils/api-config.js';
 
 // Chrome API 类型声明
 declare const chrome: {
@@ -90,13 +65,6 @@ const DEFAULT_TRANSLATOR_CONFIG: TranslatorConfig = {
   maxMultiplier: 2.0,
 };
 
-export function getActiveApiProvider(
-  apiConfig: Partial<ApiConfig> | null | undefined
-): ApiProviderConfig | undefined {
-  const normalized = normalizeApiConfig(apiConfig);
-  return normalized.providers!.find(provider => provider.id === normalized.activeProviderId);
-}
-
 export function buildTranslatorConfig(
   apiConfig: Partial<ApiConfig> | null | undefined
 ): TranslatorConfig {
@@ -114,20 +82,6 @@ export function buildTranslatorConfig(
     disableThinking: true,
   };
 }
-
-/** 支持的 LLM 模型列表 */
-export const SUPPORTED_MODELS: ModelOption[] = [
-  { value: 'gpt-4o-mini', text: 'GPT-4o Mini (推荐)' },
-  { value: 'gpt-4o', text: 'GPT-4o' },
-  { value: 'gpt-4-turbo', text: 'GPT-4 Turbo' },
-  { value: 'gpt-3.5-turbo', text: 'GPT-3.5 Turbo' },
-  { value: 'claude-3-haiku-20240307', text: 'Claude 3 Haiku' },
-  { value: 'claude-3-sonnet-20240229', text: 'Claude 3 Sonnet' },
-  { value: 'google/gemini-3-flash-preview', text: 'Gemini 3 Flash (Preview)' },
-  { value: 'google/gemini-flash-1.5', text: 'Gemini 1.5 Flash' },
-  { value: 'google/gemini-pro-1.5', text: 'Gemini 1.5 Pro' },
-  { value: 'custom', text: '自定义模型...' },
-];
 
 /** 支持的目标语言列表 */
 export const SUPPORTED_LANGUAGES: LanguageOption[] = [
@@ -278,33 +232,18 @@ declare global {
     SubtitleConfig: {
       getDefaultEnglishSettings: typeof getDefaultEnglishSettings;
       getDefaultChineseSettings: typeof getDefaultChineseSettings;
-      getDefaultConfig: typeof getDefaultConfig;
-      validateSettings: typeof validateSettings;
       isEmptySettings: typeof isEmptySettings;
       DEFAULT_API_CONFIG: typeof DEFAULT_API_CONFIG;
-      DEFAULT_API_PROVIDERS: typeof DEFAULT_API_PROVIDERS;
       isDefaultApiProviderId: typeof isDefaultApiProviderId;
-      MAX_API_CONCURRENCY: typeof MAX_API_CONCURRENCY;
-      API_CONFIG_MIGRATION_NOTICE: typeof API_CONFIG_MIGRATION_NOTICE;
-      API_CONFIG_SCHEMA_VERSION: typeof API_CONFIG_SCHEMA_VERSION;
-      MODEL_CONCURRENCY_LIMITS: typeof MODEL_CONCURRENCY_LIMITS;
       normalizeConcurrency: PopupConfigBridge['normalizeConcurrency'];
       getModelConcurrencyLimit: typeof getModelConcurrencyLimit;
       normalizeApiBaseUrl: PopupConfigBridge['normalizeApiBaseUrl'];
       normalizeApiConfig: typeof normalizeApiConfig;
       migrateApiConfig: typeof migrateApiConfig;
-      assertApiConfigUsesRemoteEndpoints: typeof assertApiConfigUsesRemoteEndpoints;
-      getActiveApiProvider: typeof getActiveApiProvider;
-      getApiEndpointValidationError: PopupConfigBridge['getApiEndpointValidationError'];
       getApiHostPermissionPattern: PopupConfigBridge['getApiHostPermissionPattern'];
       formatApiResponseError: PopupConfigBridge['formatApiResponseError'];
-      SUPPORTED_MODELS: typeof SUPPORTED_MODELS;
       SUPPORTED_LANGUAGES: typeof SUPPORTED_LANGUAGES;
     };
-    // 直接暴露的便捷函数（popup.js 需要）
-    getDefaultEnglishSettings: typeof getDefaultEnglishSettings;
-    getDefaultChineseSettings: typeof getDefaultChineseSettings;
-    getDefaultConfig: typeof getDefaultConfig;
   }
 }
 
@@ -312,28 +251,13 @@ if (typeof window !== 'undefined') {
   window.SubtitleConfig = {
     getDefaultEnglishSettings,
     getDefaultChineseSettings,
-    getDefaultConfig,
-    validateSettings,
     isEmptySettings,
     DEFAULT_API_CONFIG,
-    DEFAULT_API_PROVIDERS,
     isDefaultApiProviderId,
-    MAX_API_CONCURRENCY,
-    API_CONFIG_MIGRATION_NOTICE,
-    API_CONFIG_SCHEMA_VERSION,
-    MODEL_CONCURRENCY_LIMITS,
     ...popupConfigBridge,
     getModelConcurrencyLimit,
     normalizeApiConfig,
     migrateApiConfig,
-    assertApiConfigUsesRemoteEndpoints,
-    getActiveApiProvider,
-    SUPPORTED_MODELS,
     SUPPORTED_LANGUAGES,
   };
-
-  // 直接暴露便捷函数（popup.js 依赖）
-  window.getDefaultEnglishSettings = getDefaultEnglishSettings;
-  window.getDefaultChineseSettings = getDefaultChineseSettings;
-  window.getDefaultConfig = getDefaultConfig;
 }

@@ -1,56 +1,12 @@
-// ========================================
-// YouTube字幕助手 - 现代化弹窗控制器
-// ========================================
-
-// 轻量级Toast提示系统
 class Toast {
-    static show(message, type = 'info', duration = 2000) {
-        // 创建toast元素
+    static show(message, type, duration) {
         const toast = document.createElement('div');
         toast.className = `toast toast-${type}`;
         toast.textContent = message;
-
-        // 设置样式
-        const colors = {
-            success: { bg: 'rgba(16, 185, 129, 0.9)', color: '#ffffff' },
-            error: { bg: 'rgba(239, 68, 68, 0.9)', color: '#ffffff' },
-            warning: { bg: 'rgba(245, 158, 11, 0.9)', color: '#ffffff' },
-            info: { bg: 'rgba(59, 130, 246, 0.9)', color: '#ffffff' }
-        };
-
-        const style = colors[type] || colors.info;
-        toast.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%) translateY(60px);
-            padding: 10px 16px;
-            background: ${style.bg};
-            color: ${style.color};
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 500;
-            z-index: 9999;
-            opacity: 0;
-            transition: all 0.3s ease-out;
-            max-width: 300px;
-            text-align: center;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            backdrop-filter: blur(8px);
-        `;
-
         document.body.appendChild(toast);
-
-        // 动画显示
+        requestAnimationFrame(() => toast.classList.add('visible'));
         setTimeout(() => {
-            toast.style.opacity = '1';
-            toast.style.transform = 'translateX(-50%) translateY(0)';
-        }, 10);
-
-        // 自动隐藏
-        setTimeout(() => {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateX(-50%) translateY(-60px)';
+            toast.classList.remove('visible');
             setTimeout(() => toast.remove(), 300);
         }, duration);
     }
@@ -63,38 +19,21 @@ class Toast {
         this.show(message, 'error', duration);
     }
 
-    static warning(message, duration = 2500) {
-        this.show(message, 'warning', duration);
-    }
-
-    static info(message, duration = 2000) {
-        this.show(message, 'info', duration);
-    }
 }
+
+const { getDefaultEnglishSettings, getDefaultChineseSettings } =
+    window.SubtitleConfig;
 
 class PopupController {
     constructor() {
-        this.subtitleData = [];
-        this.englishSubtitles = [];
-        this.chineseSubtitles = [];
-
-        // 当前选择的语言和设置
         this.currentLanguage = 'english';
-
-        // API配置（独立版本）
         this.apiConfig = window.SubtitleConfig.normalizeApiConfig(
             window.SubtitleConfig.DEFAULT_API_CONFIG
         );
         this.newApiProviderDraft = null;
         this.isTranslating = false;
-
-        // 使用默认设置初始化（从统一配置中心加载）
         this.englishSettings = getDefaultEnglishSettings();
         this.chineseSettings = getDefaultChineseSettings();
-
-        // UI状态
-        this.currentTab = 'files';
-        this.advancedExpanded = false;
         this.themeMode = 'system';
         this.themeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
         this.handleSystemThemeChange = () => {
@@ -256,8 +195,6 @@ class PopupController {
     }
 
     async init() {
-        // 从统一配置中心初始化 CSS 变量
-        this.initCSSVariablesFromConfig();
         await this.loadThemePreference();
 
         this.setupTabs();
@@ -276,50 +213,10 @@ class PopupController {
         await this.loadApiConfig();
         this.initApiSettingsUI();
 
-        // 初始化翻译模式
-        this.initCurrentVideoState();
-
-        // 主动检查一次当前视频的字幕状态，初始化计数
-        this.checkCurrentVideoSubtitleStatus();
-
-        // 监听存储变化，实时更新计数（基于当前视频ID）
-        this.observeSubtitleStorageChanges();
-
-        // 检查是否有正在进行的翻译
+        this.getCurrentVideoInfo();
         this.checkTranslationProgress();
-
-        // 始终监听翻译进度（无论翻译从哪里触发）
         this.startProgressListener();
-
-        // 更新翻译按钮文案
         await this.updateTranslateButton();
-    }
-
-    /**
-     * 从统一配置中心初始化 CSS 变量
-     * 确保 CSS 变量使用的默认值与 config.js 中定义的一致
-     */
-    initCSSVariablesFromConfig() {
-        const config = getDefaultConfig();
-        const root = document.documentElement;
-
-        // 英文字幕 CSS 变量
-        root.style.setProperty('--english-font-size', config.english.fontSize + 'px');
-        root.style.setProperty('--english-font-color', config.english.fontColor);
-        root.style.setProperty('--english-font-family', config.english.fontFamily);
-        root.style.setProperty('--english-font-weight', config.english.fontWeight);
-        root.style.setProperty('--english-text-stroke', config.english.textStroke || 'none');
-        root.style.setProperty('--english-text-shadow', config.english.textShadow);
-        root.style.setProperty('--english-line-height', config.english.lineHeight);
-
-        // 中文字幕 CSS 变量
-        root.style.setProperty('--chinese-font-size', config.chinese.fontSize + 'px');
-        root.style.setProperty('--chinese-font-color', config.chinese.fontColor);
-        root.style.setProperty('--chinese-font-family', config.chinese.fontFamily);
-        root.style.setProperty('--chinese-font-weight', config.chinese.fontWeight);
-        root.style.setProperty('--chinese-text-stroke', config.chinese.textStroke || 'none');
-        root.style.setProperty('--chinese-text-shadow', config.chinese.textShadow);
-        root.style.setProperty('--chinese-line-height', config.chinese.lineHeight);
     }
 
     getEffectiveTheme() {
@@ -372,55 +269,19 @@ class PopupController {
         }
     }
 
-    // 监听chrome.storage变化，保持计数同步与简化更新路径
-    observeSubtitleStorageChanges() {
-        if (this._storageObserved) return;
-        this._storageObserved = true;
-        chrome.storage.onChanged.addListener((changes, areaName) => {
-            if (areaName !== 'local') return;
-            const keys = Object.keys(changes);
-            const subtitleResultChanged = keys.some((key) => key.startsWith('videoSubtitles_'))
-                || keys.includes('englishSubtitles')
-                || keys.includes('chineseSubtitles');
-            if (subtitleResultChanged) {
-                this.syncSubtitleDataFromContentScript().catch((error) => {
-                    console.log('字幕结果变化后同步失败:', error);
-                });
-            }
-        });
-    }
-
-    // 确保默认设置存在于storage中
     async ensureDefaultSettings() {
         try {
             const result = await chrome.storage.local.get(['englishSettings', 'chineseSettings']);
-            let needsSave = false;
-
-            if (!result.englishSettings || Object.keys(result.englishSettings).length === 0) {
-                await chrome.runtime.sendMessage({
+            const updates = [
+                ['english', this.englishSettings, result.englishSettings],
+                ['chinese', this.chineseSettings, result.chineseSettings]
+            ].filter(([, , stored]) => !stored || Object.keys(stored).length === 0);
+            await Promise.all(updates.map(([language, data]) =>
+                chrome.runtime.sendMessage({
                     action: 'updateSettings',
-                    settings: {
-                        language: 'english',
-                        data: this.englishSettings
-                    }
-                });
-                needsSave = true;
-            }
-
-            if (!result.chineseSettings || Object.keys(result.chineseSettings).length === 0) {
-                await chrome.runtime.sendMessage({
-                    action: 'updateSettings',
-                    settings: {
-                        language: 'chinese',
-                        data: this.chineseSettings
-                    }
-                });
-                needsSave = true;
-            }
-
-            if (needsSave) {
-                // 设置已初始化
-            }
+                    settings: { language, data }
+                })
+            ));
         } catch (error) {
             console.log('初始化默认设置失败，但不影响继续使用:', error);
         }
@@ -431,7 +292,6 @@ class PopupController {
     // ========================================
     setupTabs() {
         const tabButtons = document.querySelectorAll('.tab-button');
-        const tabContents = document.querySelectorAll('.tab-content');
 
         tabButtons.forEach(button => {
             button.addEventListener('click', (e) => {
@@ -458,8 +318,6 @@ class PopupController {
         if (targetContent) {
             targetContent.classList.add('active');
         }
-
-        this.currentTab = tabId;
     }
 
     // ========================================
@@ -750,57 +608,28 @@ class PopupController {
     // ========================================
     async loadCurrentState() {
         try {
-            const currentVideoId = await this.getCurrentVideoId();
-
-            // 加载全局设置
-            const globalResponse = await chrome.runtime.sendMessage({ action: 'getBilingualSubtitleData' });
-            let videoSubtitles = null;
-
-            // 视频结果由 browser-side Translation session 统一读取
-            if (currentVideoId) {
-                videoSubtitles = (await this.getTranslationStatus(currentVideoId)).cachedResult;
-            }
-
-            if (globalResponse.success) {
+            const response = await chrome.runtime.sendMessage({ action: 'getBilingualSubtitleData' });
+            if (response.success) {
                 const {
                     subtitleEnabled,
                     englishSettings,
                     chineseSettings
-                } = globalResponse.data;
+                } = response.data;
 
-                // 更新UI状态
                 const subtitleToggle = document.getElementById('subtitleToggle');
                 if (subtitleToggle) subtitleToggle.checked = subtitleEnabled;
 
-                // 优先使用当前视频的字幕数据，否则使用全局数据作为后备
-                if (videoSubtitles) {
-                    this.subtitleData = videoSubtitles.subtitleData || [];
-                    this.englishSubtitles = videoSubtitles.englishSubtitles || [];
-                    this.chineseSubtitles = videoSubtitles.chineseSubtitles || [];
-                } else {
-                    // 使用全局数据作为后备
-                    const { subtitleData, englishSubtitles, chineseSubtitles } = globalResponse.data;
-                    this.subtitleData = subtitleData || [];
-                    this.englishSubtitles = englishSubtitles || [];
-                    this.chineseSubtitles = chineseSubtitles || [];
-                }
-
-                // 定义默认设置（从统一配置中心获取）
                 const defaultEnglishSettings = getDefaultEnglishSettings();
                 const defaultChineseSettings = getDefaultChineseSettings();
-
-                // 使用默认设置作为后备：当对象为空时回退到默认
-                const isEmpty = (obj) => !obj || Object.keys(obj).length === 0;
+                const isEmpty = (obj) => !obj || window.SubtitleConfig.isEmptySettings(obj);
                 this.englishSettings = isEmpty(englishSettings) ? defaultEnglishSettings : englishSettings;
                 this.chineseSettings = isEmpty(chineseSettings) ? defaultChineseSettings : chineseSettings;
 
-                // 额外修正：若英文字体为 'inherit' 或缺失，强制回退为默认首选字体
                 let needPersistFix = false;
                 if (!this.englishSettings.fontFamily || this.englishSettings.fontFamily === 'inherit') {
                     this.englishSettings.fontFamily = defaultEnglishSettings.fontFamily;
                     needPersistFix = true;
                 }
-                // 额外修正：若中文字幕粗细缺失或为非数值字符串，回退为 900
                 if (!this.chineseSettings.fontWeight) {
                     this.chineseSettings.fontWeight = defaultChineseSettings.fontWeight;
                     needPersistFix = true;
@@ -808,20 +637,17 @@ class PopupController {
 
                 if (needPersistFix) {
                     try {
-                        // 持久化修正，避免下次仍显示系统默认
                         await this.updateSettings({ language: 'english', data: { fontFamily: this.englishSettings.fontFamily } });
                         await this.updateSettings({
                             language: 'chinese', data: {
                                 fontWeight: this.chineseSettings.fontWeight,
-                                fontFamily: this.chineseSettings.fontFamily  // 确保也包含 fontFamily
+                                fontFamily: this.chineseSettings.fontFamily
                             }
                         });
                     } catch (e) {
                         console.warn('持久化默认字体修正失败，不影响前端显示:', e);
                     }
                 }
-
-                // 加载当前语言设置到UI
                 this.loadLanguageSettingsToUI(this.currentLanguage);
             }
         } catch (error) {
@@ -829,15 +655,6 @@ class PopupController {
             Toast.error('加载设置失败');
         }
     }
-
-    // ========================================
-    // 智能文件名处理和工具提示
-    // ========================================
-    // 智能截断文件名
-    // 简化版：直接调用更新方法，避免复杂重试逻辑
-    // ========================================
-    // 其他方法保持不变
-    // ========================================
 
     async toggleSubtitle(enabled) {
         try {
@@ -896,14 +713,6 @@ class PopupController {
         Toast.success('已恢复默认设置');
     }
 
-    updateAutoLoadStatus(message, type) {
-        const autoLoadStatus = document.getElementById('autoLoadStatus');
-        if (autoLoadStatus) {
-            autoLoadStatus.textContent = message;
-            autoLoadStatus.className = `load-status ${type}`;
-        }
-    }
-
     async getCurrentVideoInfo() {
         try {
             // 获取当前活动的YouTube标签页
@@ -918,8 +727,6 @@ class PopupController {
                     return;
                 }
                 this.updateVideoDisplay(response.videoId, response.subtitleLoaded ? '已加载字幕' : '无字幕');
-                this.syncSubtitleDataFromContentScript()
-                    .catch(error => console.log('字幕数据同步失败，保留当前界面状态:', error));
             });
         } catch (error) {
             console.log('获取视频信息失败，使用空状态继续展示:', error);
@@ -948,63 +755,6 @@ class PopupController {
             } else if (status && (status.includes('加载中') || status.includes('检测中'))) {
                 statusElement.classList.add('loading');
             }
-        }
-    }
-
-    async syncSubtitleDataFromContentScript() {
-        try {
-            // 获取当前视频ID
-            const currentVideoId = await this.getCurrentVideoId();
-
-            if (currentVideoId) {
-                const videoSubtitles = (await this.getTranslationStatus(currentVideoId)).cachedResult;
-
-                if (videoSubtitles) {
-                    // 使用当前视频的字幕数据
-
-                    this.subtitleData = videoSubtitles.subtitleData || [];
-                    this.englishSubtitles = videoSubtitles.englishSubtitles || [];
-                    this.chineseSubtitles = videoSubtitles.chineseSubtitles || [];
-                } else {
-                    // 当前视频没有字幕数据，清空显示
-
-                    this.subtitleData = [];
-                    this.englishSubtitles = [];
-                    this.chineseSubtitles = [];
-                }
-            } else {
-                // 无法获取视频ID，使用全局数据作为后备
-                const response = await chrome.runtime.sendMessage({ action: 'getBilingualSubtitleData' });
-                if (response.success) {
-
-                    this.englishSubtitles = response.data.englishSubtitles || [];
-                    this.chineseSubtitles = response.data.chineseSubtitles || [];
-                }
-            }
-
-        } catch (error) {
-            console.log('同步字幕数据异常，保留当前界面状态:', error);
-        }
-    }
-
-    // 🔧 新增：主动检查当前视频的字幕状态
-    async checkCurrentVideoSubtitleStatus() {
-        try {
-            // 获取当前活动的标签页并询问content script
-            const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (tabs.length === 0) return;
-            chrome.tabs.sendMessage(tabs[0].id, { action: 'getSubtitleStatus' }, (response) => {
-                if (chrome.runtime.lastError || !response) {
-                    return;
-                }
-                if (response.hasSubtitles && (response.englishCount > 0 || response.chineseCount > 0)) {
-                    this.syncSubtitleDataFromContentScript()
-                        .catch(error => console.log('初始化字幕数据同步失败，稍后可重试:', error));
-                }
-            });
-
-        } catch (error) {
-            console.log('检查视频字幕状态失败，稍后可重试:', error);
         }
     }
 
@@ -1513,10 +1263,6 @@ class PopupController {
             console.log('发送取消消息失败，继续重置 popup UI:', error);
         }
 
-        // 清空当前数据
-        this.englishSubtitles = [];
-        this.chineseSubtitles = [];
-
         // 停止监听
         if (this._progressListener) {
             chrome.storage.onChanged.removeListener(this._progressListener);
@@ -1746,10 +1492,6 @@ class PopupController {
         });
     }
 
-    initCurrentVideoState() {
-        // 获取当前视频信息
-        this.getCurrentVideoInfo();
-    }
 }
 
 // 初始化popup控制器

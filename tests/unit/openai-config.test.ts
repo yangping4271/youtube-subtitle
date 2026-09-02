@@ -1,17 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildTranslatorConfig,
-  getApiEndpointValidationError,
-  getApiHostPermissionPattern,
-  getModelConcurrencyLimit,
   loadConfig,
-  normalizeApiBaseUrl,
-  normalizeApiConfig,
-  migrateApiConfig,
   validateConfig,
 } from '../../src/extension/config.js';
+import { getApiHostPermissionPattern } from '../../src/extension/config-bridge.js';
 import { OpenAIClient } from '../../src/services/openai-client.js';
 import type { TranslatorConfig } from '../../src/types/index.js';
+import {
+  getModelConcurrencyLimit,
+  migrateApiConfig,
+  normalizeApiConfig,
+} from '../../src/utils/api-config.js';
+import {
+  getApiEndpointValidationError,
+  normalizeApiBaseUrl,
+} from '../../src/utils/api-url.js';
 import { formatApiResponseError } from '../../src/utils/error-handler.js';
 
 function createConfig(overrides: Partial<TranslatorConfig> = {}): TranslatorConfig {

@@ -9,24 +9,6 @@ import { extractErrorMessage } from '../utils/error-handler.js';
 import { getVideoDescription, getAISummary } from './video-metadata.js';
 import { acquireYouTubeSubtitles } from './youtube-subtitle-fetch.js';
 
-interface UserConfig {
-  buttonIcons: {
-    download: string;
-    copy: string;
-  };
-}
-
-const USER_CONFIG: UserConfig = {
-  buttonIcons: {
-    download: '↓',
-    copy: '📋',
-  },
-};
-
-function getWatchFlexyElement(): HTMLElement | null {
-  return document.querySelector('ytd-watch-flexy');
-}
-
 function showNotification(message: string): void {
   const overlay = document.createElement('div');
   overlay.classList.add('YTSP-overlay');
@@ -42,7 +24,7 @@ function showNotification(message: string): void {
 }
 
 export function getVideoInfo(): VideoInfo {
-  const watchFlexyElement = getWatchFlexyElement();
+  const watchFlexyElement = document.querySelector<HTMLElement>('ytd-watch-flexy');
   if (!watchFlexyElement) {
     return {
       ytTitle: 'N/A',
@@ -166,14 +148,6 @@ async function selectAndCopyTranscript(): Promise<void> {
   await copyTranscriptText(finalText);
 }
 
-function handleDownloadClick(): void {
-  void downloadTranscriptAsSRT();
-}
-
-function handleCopyClick(): void {
-  void selectAndCopyTranscript();
-}
-
 interface ButtonConfig {
   id: string;
   text: string;
@@ -181,95 +155,67 @@ interface ButtonConfig {
   tooltip: string;
 }
 
-function buttonLocation(buttons: ButtonConfig[], callback?: () => void): void {
-  const masthead = document.querySelector('#end');
-
-  if (masthead) {
-    buttons.forEach(({ id, text, clickHandler, tooltip }) => {
-      if (document.getElementById(id)) return;
-
-      const buttonWrapper = document.createElement('div');
-      buttonWrapper.classList.add('YTSP-button-wrapper');
-
-      const button = document.createElement('button');
-      button.id = id;
-      button.textContent = text;
-      button.classList.add('YTSP-button-style');
-      button.addEventListener('click', clickHandler);
-
-      const tooltipDiv = document.createElement('div');
-      tooltipDiv.textContent = tooltip;
-      tooltipDiv.classList.add('YTSP-button-tooltip');
-
-      const arrowDiv = document.createElement('div');
-      arrowDiv.classList.add('YTSP-button-tooltip-arrow');
-      tooltipDiv.appendChild(arrowDiv);
-
-      let tooltipTimeout: ReturnType<typeof setTimeout>;
-      button.addEventListener('mouseenter', () => {
-        tooltipTimeout = setTimeout(() => {
-          tooltipDiv.style.visibility = 'visible';
-          tooltipDiv.style.opacity = '1';
-        }, 700);
-      });
-
-      button.addEventListener('mouseleave', () => {
-        clearTimeout(tooltipTimeout);
-        tooltipDiv.style.visibility = 'hidden';
-        tooltipDiv.style.opacity = '0';
-      });
-
-      buttonWrapper.appendChild(button);
-      buttonWrapper.appendChild(tooltipDiv);
-      masthead.prepend(buttonWrapper);
-    });
-  } else {
-    const observer = new MutationObserver((_mutations, obs) => {
-      const mastheadEl = document.querySelector('#end');
-      if (mastheadEl) {
-        obs.disconnect();
-        if (callback) callback();
-      }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-  }
-}
+const BUTTONS: ButtonConfig[] = [
+  {
+    id: 'transcript-download-button',
+    text: '↓',
+    clickHandler: () => void downloadTranscriptAsSRT(),
+    tooltip: '下载字幕',
+  },
+  {
+    id: 'transcript-copy-button',
+    text: '📋',
+    clickHandler: () => void selectAndCopyTranscript(),
+    tooltip: '复制字幕',
+  },
+];
 
 function createButtons(): void {
-  const buttonsToCreate: ButtonConfig[] = [
-    {
-      id: 'transcript-download-button',
-      text: USER_CONFIG.buttonIcons.download,
-      clickHandler: handleDownloadClick,
-      tooltip: '下载字幕',
-    },
-    {
-      id: 'transcript-copy-button',
-      text: USER_CONFIG.buttonIcons.copy,
-      clickHandler: handleCopyClick,
-      tooltip: '复制字幕',
-    },
-  ];
+  const masthead = document.querySelector('#end');
+  if (!masthead) return;
 
-  buttonLocation(buttonsToCreate, () => createButtons());
+  BUTTONS.forEach(({ id, text, clickHandler, tooltip }) => {
+    if (document.getElementById(id)) return;
+
+    const buttonWrapper = document.createElement('div');
+    buttonWrapper.classList.add('YTSP-button-wrapper');
+
+    const button = document.createElement('button');
+    button.id = id;
+    button.textContent = text;
+    button.classList.add('YTSP-button-style');
+    button.addEventListener('click', clickHandler);
+
+    const tooltipDiv = document.createElement('div');
+    tooltipDiv.textContent = tooltip;
+    tooltipDiv.classList.add('YTSP-button-tooltip');
+    const arrowDiv = document.createElement('div');
+    arrowDiv.classList.add('YTSP-button-tooltip-arrow');
+    tooltipDiv.appendChild(arrowDiv);
+
+    let tooltipTimeout: ReturnType<typeof setTimeout>;
+    button.addEventListener('mouseenter', () => {
+      tooltipTimeout = setTimeout(() => {
+        tooltipDiv.style.visibility = 'visible';
+        tooltipDiv.style.opacity = '1';
+      }, 700);
+    });
+    button.addEventListener('mouseleave', () => {
+      clearTimeout(tooltipTimeout);
+      tooltipDiv.style.visibility = 'hidden';
+      tooltipDiv.style.opacity = '0';
+    });
+
+    buttonWrapper.append(button, tooltipDiv);
+    masthead.prepend(buttonWrapper);
+  });
 }
 
 function init(): void {
   createButtons();
 
-  const observer = new MutationObserver(() => {
-    if (!document.getElementById('transcript-download-button') && document.querySelector('#end')) {
-      createButtons();
-    }
-  });
+  const observer = new MutationObserver(createButtons);
   observer.observe(document.body, { childList: true, subtree: true });
-
-  let lastUrl = location.href;
-  new MutationObserver(() => {
-    if (location.href !== lastUrl) {
-      lastUrl = location.href;
-    }
-  }).observe(document.body, { childList: true, subtree: true });
 }
 
 if (document.readyState === 'loading') {
