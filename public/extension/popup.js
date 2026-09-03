@@ -656,7 +656,7 @@ class PopupController {
             });
 
             if (response.success) {
-                Toast.success(enabled ? '字幕显示已开启' : '字幕显示已关闭');
+                return;
             } else {
                 throw new Error(response.error);
             }
