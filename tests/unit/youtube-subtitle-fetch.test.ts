@@ -306,6 +306,18 @@ describe('youtube subtitle fetch helpers', () => {
     ]);
   });
 
+  it('只解析本次旧版命令返回的 DOM 字幕快照', () => {
+    expect(extractTranscriptPanelResponseSubtitles({
+      legacyDomSegments: [
+        { timestamp: '0:00', text: 'Current video first sentence.' },
+        { timestamp: '0:04', text: 'Current video second sentence.' },
+      ],
+    })).toEqual([
+      { startTime: 0, endTime: 4, text: 'Current video first sentence.' },
+      { startTime: 4, endTime: 9, text: 'Current video second sentence.' },
+    ]);
+  });
+
   it('优先使用 transcript 节点中的毫秒属性作为开始时间', () => {
     const timestampNode = {
       textContent: '5:46',

@@ -42,7 +42,7 @@ export class SubtitleAcquisitionError extends Error {
 }
 
 export interface SubtitleAcquisitionDependencies {
-  acquireTranscriptApiSubtitles: () => Promise<SimpleSubtitleEntry[]>;
+  acquireTranscriptApiSubtitles: (videoId: string) => Promise<SimpleSubtitleEntry[]>;
   acquireTranscriptPanelSubtitles: () => Promise<SimpleSubtitleEntry[]>;
   reportAcquisition: (
     videoId: string,
@@ -152,7 +152,7 @@ export function createYouTubeSubtitleAcquirer(
 
       try {
         const result = buildResult(
-          await dependencies.acquireTranscriptApiSubtitles(),
+          await dependencies.acquireTranscriptApiSubtitles(videoId),
           'transcript-api',
           {}
         );

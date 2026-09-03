@@ -11,7 +11,15 @@ export type TranslationRunEvent =
 
 export interface TranslationRunPublication {
   runId: string;
+  videoId?: string;
   signal: CancellationSignal;
+}
+
+export function isTranslationPublicationForVideo(
+  publicationVideoId: string | undefined,
+  currentVideoId: string | null
+): boolean {
+  return !publicationVideoId || publicationVideoId === currentVideoId;
 }
 
 export class TranslationRunGate {

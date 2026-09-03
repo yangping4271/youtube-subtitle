@@ -117,6 +117,7 @@ describe('BrowserTranslationCoordinator interface', () => {
       translatedResult,
       expect.objectContaining({
         runId: expect.any(String),
+        videoId: 'video-1',
         signal: expect.any(AbortSignal),
       })
     );
@@ -133,6 +134,7 @@ describe('BrowserTranslationCoordinator interface', () => {
       translatedResult,
       expect.objectContaining({
         runId: expect.any(String),
+        videoId: 'video-1',
         signal: expect.any(AbortSignal),
       })
     );

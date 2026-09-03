@@ -2,6 +2,8 @@
  * YouTube Subtitle Translator - Main World 注入脚本
  * 在页面上下文中运行，可访问 YouTube 的自定义元素属性
  */
+import { rewriteTranscriptParamsVideoId } from '../core/youtube-transcript-params.js';
+
 interface YouTubeEngagementPanel extends HTMLElement {
   visibility?: string;
 }
@@ -16,6 +18,7 @@ interface YouTubePageWindow extends Window {
 
 interface YouTubePlayerElement extends HTMLElement {
   getPlayerResponse?: () => unknown;
+  getVideoData?: () => { video_id?: string };
 }
 
 interface YouTubeAppElement extends HTMLElement {
@@ -161,6 +164,52 @@ function findLegacyTranscriptRequest(data: unknown): LegacyTranscriptRequest | n
   return null;
 }
 
+async function waitForLegacyTranscriptRefresh(
+  previousSegments: Map<Element, string>,
+  timeoutMs = 5000
+): Promise<Element[]> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const segments = Array.from(
+      document.querySelectorAll('ytd-transcript-segment-renderer')
+    );
+    const changedSegment = segments.find((segment) =>
+      previousSegments.get(segment) !== readLegacyTranscriptSegment(segment)
+    );
+    if (changedSegment) {
+      const panel = changedSegment.closest(
+        'ytd-engagement-panel-section-list-renderer'
+      );
+      return panel
+        ? Array.from(panel.querySelectorAll('ytd-transcript-segment-renderer'))
+        : segments;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
+  }
+  return [];
+}
+
+function readLegacyTranscriptSegment(segment: Element): string {
+  const timestamp = (
+    segment.querySelector('.segment-timestamp, #start-offset')
+      ?.textContent || ''
+  ).trim();
+  const text = (
+    segment.querySelector('#segment-text, .segment-text, yt-formatted-string')
+      ?.textContent || ''
+  ).trim();
+  return `${timestamp}\u0000${text}`;
+}
+
+function extractLegacyTranscriptSegments(
+  segments: Element[]
+): Array<{ timestamp: string; text: string }> {
+  return segments.flatMap((segment) => {
+    const [timestamp, text] = readLegacyTranscriptSegment(segment).split('\u0000');
+    return timestamp && text ? [{ timestamp, text }] : [];
+  });
+}
+
 window.addEventListener('YTSP_OpenTranscript', () => {
   const engagementPanel = document.querySelector(
     'ytd-engagement-panel-section-list-renderer[target-id="PAmodern_transcript_view"], ' +
@@ -176,27 +225,47 @@ window.addEventListener('YTSP_StartTranslation', () => {
   window.postMessage({ type: 'YTSP_StartTranslation' }, '*');
 });
 
-window.addEventListener('YTSP_RequestTranscriptPanel', async () => {
+window.addEventListener('YTSP_RequestTranscriptPanel', async (event) => {
   const pageWindow = window as YouTubePageWindow;
   const player = document.getElementById('movie_player') as YouTubePlayerElement | null;
+  const requestedVideoId = (
+    event as CustomEvent<{ videoId?: unknown }>
+  ).detail?.videoId;
+  const playerVideoId = player?.getVideoData?.()?.video_id;
+  if (
+    typeof requestedVideoId === 'string' &&
+    typeof playerVideoId === 'string' &&
+    requestedVideoId !== playerVideoId
+  ) {
+    window.postMessage({
+      type: 'YTSP_TranscriptPanelResponse',
+      payload: { status: 'unavailable', videoId: requestedVideoId },
+    }, '*');
+    return;
+  }
   const playerResponse = (
     player?.getPlayerResponse?.() || pageWindow.ytInitialPlayerResponse
   ) as {
     captions?: {
       playerCaptionsTracklistRenderer?: {
-        captionTracks?: Array<{ languageCode?: string }>;
+        captionTracks?: Array<{ languageCode?: string; kind?: string }>;
       };
     };
   } | null;
   const tracks =
     playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+  const englishTracks = tracks.filter((track) =>
+    /^en(?:-|$)/i.test(track.languageCode || '')
+  );
+  const englishTrack =
+    englishTracks.find((track) => track.kind !== 'asr') || englishTracks[0];
   if (
     tracks.length > 0 &&
-    !tracks.some((track) => /^en(?:-|$)/i.test(track.languageCode || ''))
+    !englishTrack
   ) {
     window.postMessage({
       type: 'YTSP_TranscriptPanelResponse',
-      payload: { status: 'english-unavailable' },
+      payload: { status: 'english-unavailable', videoId: requestedVideoId },
     }, '*');
     return;
   }
@@ -211,10 +280,41 @@ window.addEventListener('YTSP_RequestTranscriptPanel', async () => {
     const app = document.querySelector('ytd-app') as YouTubeAppElement | null;
     if (typeof app?.resolveCommand === 'function') {
       try {
-        app.resolveCommand(legacyRequest);
+        const params = typeof requestedVideoId === 'string'
+          ? rewriteTranscriptParamsVideoId(
+            legacyRequest.getTranscriptEndpoint.params,
+            requestedVideoId,
+            englishTrack?.languageCode || 'en',
+            englishTrack?.kind
+          )
+          : legacyRequest.getTranscriptEndpoint.params;
+        if (!params) {
+          throw new Error('transcript params 与当前视频不匹配');
+        }
+        const currentRequest: LegacyTranscriptRequest = {
+          ...legacyRequest,
+          getTranscriptEndpoint: {
+            ...legacyRequest.getTranscriptEndpoint,
+            params,
+          },
+        };
+        const previousSegments = new Map(
+          Array.from(
+            document.querySelectorAll('ytd-transcript-segment-renderer'),
+            (segment) => [segment, readLegacyTranscriptSegment(segment)]
+          )
+        );
+        app.resolveCommand(currentRequest);
+        const freshSegments = await waitForLegacyTranscriptRefresh(previousSegments);
         window.postMessage({
           type: 'YTSP_TranscriptPanelResponse',
-          payload: { status: 'dom-loading' },
+          payload: {
+            status: freshSegments.length > 0 ? 'ok' : 'unavailable',
+            response: {
+              legacyDomSegments: extractLegacyTranscriptSegments(freshSegments),
+            },
+            videoId: requestedVideoId,
+          },
         }, '*');
         return;
       } catch {
@@ -226,7 +326,7 @@ window.addEventListener('YTSP_RequestTranscriptPanel', async () => {
   if (!context || !request) {
     window.postMessage({
       type: 'YTSP_TranscriptPanelResponse',
-      payload: { status: 'unavailable' },
+      payload: { status: 'unavailable', videoId: requestedVideoId },
     }, '*');
     return;
   }
@@ -256,13 +356,13 @@ window.addEventListener('YTSP_RequestTranscriptPanel', async () => {
     window.postMessage({
       type: 'YTSP_TranscriptPanelResponse',
       payload: response.ok
-        ? { status: 'ok', response: await response.json() }
-        : { status: 'unavailable' },
+        ? { status: 'ok', response: await response.json(), videoId: requestedVideoId }
+        : { status: 'unavailable', videoId: requestedVideoId },
     }, '*');
   } catch {
     window.postMessage({
       type: 'YTSP_TranscriptPanelResponse',
-      payload: { status: 'unavailable' },
+      payload: { status: 'unavailable', videoId: requestedVideoId },
     }, '*');
   }
 });

@@ -74,6 +74,7 @@ const TRANSCRIPT_START_TIME_ATTRIBUTES = [
 ];
 
 export function requestTranscriptPanelResponse(
+  videoId?: string,
   timeoutMs = 5000
 ): Promise<unknown | null> {
   return new Promise((resolve) => {
@@ -89,14 +90,24 @@ export function requestTranscriptPanelResponse(
       ) {
         return;
       }
+      const payload = event.data.payload;
+      if (
+        videoId &&
+        (!payload || typeof payload !== 'object' ||
+          (payload as { videoId?: unknown }).videoId !== videoId)
+      ) {
+        return;
+      }
 
       window.clearTimeout(timeoutId);
       window.removeEventListener('message', onMessage);
-      resolve(event.data.payload || null);
+      resolve(payload || null);
     };
 
     window.addEventListener('message', onMessage);
-    window.dispatchEvent(new CustomEvent('YTSP_RequestTranscriptPanel'));
+    window.dispatchEvent(new CustomEvent('YTSP_RequestTranscriptPanel', {
+      detail: { videoId },
+    }));
   });
 }
 
@@ -324,6 +335,24 @@ export function extractTranscriptPanelResponseSubtitles(
   response: unknown
 ): SimpleSubtitleEntry[] {
   const segments: Array<{ timestamp: string; text: string }> = [];
+  const legacySegments = (
+    response as {
+      legacyDomSegments?: Array<{ timestamp?: unknown; text?: unknown }>;
+    } | null
+  )?.legacyDomSegments;
+  if (Array.isArray(legacySegments)) {
+    legacySegments.forEach((segment) => {
+      if (
+        typeof segment.timestamp === 'string' &&
+        typeof segment.text === 'string'
+      ) {
+        segments.push({
+          timestamp: segment.timestamp,
+          text: segment.text,
+        });
+      }
+    });
+  }
 
   const visit = (value: unknown): void => {
     if (!value || typeof value !== 'object') {
@@ -507,23 +536,15 @@ async function acquireTranscriptPanelSubtitles(): Promise<SimpleSubtitleEntry[]>
   throw new Error('转写面板已打开，但字幕内容尚未加载完成，请稍后重试。');
 }
 
-async function acquireTranscriptPanelApiSubtitles(): Promise<SimpleSubtitleEntry[]> {
-  const payload = await requestTranscriptPanelResponse() as {
+async function acquireTranscriptPanelApiSubtitles(
+  videoId: string
+): Promise<SimpleSubtitleEntry[]> {
+  const payload = await requestTranscriptPanelResponse(videoId, 7000) as {
     status?: string;
     response?: unknown;
   } | null;
   if (payload?.status === 'english-unavailable') {
     throw new EnglishSubtitleRequiredError();
-  }
-
-  if (payload?.status === 'dom-loading') {
-    for (let retry = 0; retry < 80; retry += 1) {
-      const subtitles = readTranscriptPanelSubtitles(true);
-      if (subtitles.length > 0) {
-        return subtitles;
-      }
-      await delay(100);
-    }
   }
 
   const subtitles = extractTranscriptPanelResponseSubtitles(

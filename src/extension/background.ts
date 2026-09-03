@@ -197,6 +197,7 @@ class SubtitleExtensionBackground {
       englishSubtitles: result.english,
       chineseSubtitles: result.chinese,
       translationRunId: publication.runId,
+      videoId: publication.videoId,
     }, tabId, publication.signal);
   }
 

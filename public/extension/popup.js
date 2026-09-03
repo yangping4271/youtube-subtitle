@@ -1466,7 +1466,15 @@ class PopupController {
 
                 chrome.tabs.sendMessage(tabs[0].id, { action: 'getYouTubeSubtitles' }, (response) => {
                     if (chrome.runtime.lastError) {
-                        reject(new Error(chrome.runtime.lastError.message));
+                        const message = chrome.runtime.lastError.message || '';
+                        if (
+                            message.includes('Could not establish connection') ||
+                            message.includes('Receiving end does not exist')
+                        ) {
+                            reject(new Error('扩展已更新，请刷新页面后重试'));
+                        } else {
+                            reject(new Error(message));
+                        }
                         return;
                     }
                     if (response && response.success && response.subtitles) {

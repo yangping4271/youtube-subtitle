@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  isTranslationPublicationForVideo,
   TranslationRunGate,
   type TranslationRunEvent,
 } from '../../src/extension/translation-run-gate.js';
 
 describe('TranslationRunGate', () => {
+  it('拒绝把其他视频的翻译发布到当前页面', () => {
+    expect(isTranslationPublicationForVideo('video-old', 'video-new')).toBe(false);
+    expect(isTranslationPublicationForVideo('video-new', 'video-new')).toBe(true);
+    expect(isTranslationPublicationForVideo(undefined, 'video-new')).toBe(true);
+  });
+
   it('旧 run 的 invalidate 事件不会清理当前 run', () => {
     const gate = new TranslationRunGate();
 

@@ -9,6 +9,7 @@ import { getVideoInfo } from './transcript-core';
 import { acquireYouTubeSubtitles } from './youtube-subtitle-fetch';
 import type { SimpleSubtitleEntry, SubtitleStyleSettings, VideoSubtitleData, ASSParseResult } from '../types';
 import {
+  isTranslationPublicationForVideo,
   TranslationRunGate,
   type TranslationRunEvent,
 } from './translation-run-gate';
@@ -178,6 +179,7 @@ class YouTubeSubtitleOverlay {
           this.loadNewSubtitle(request.subtitleData || []);
           break;
         case 'loadBilingualSubtitles':
+          if (!isTranslationPublicationForVideo(request.videoId, this.getVideoId())) break;
           if (!this.translationRunGate.accepts(request.translationRunId)) break;
           this.loadBilingualSubtitles(
             request.englishSubtitles || [],
@@ -185,6 +187,7 @@ class YouTubeSubtitleOverlay {
           );
           break;
         case 'appendBilingualSubtitles':
+          if (!isTranslationPublicationForVideo(request.videoId, this.getVideoId())) break;
           if (!this.translationRunGate.accepts(request.translationRunId)) break;
           this.appendBilingualSubtitles(
             request.englishSubtitles || [],
@@ -419,6 +422,7 @@ class YouTubeSubtitleOverlay {
     }
 
     if (videoIdChanged || videoElementChanged) {
+      this.currentVideoId = newVideoId;
       this.hideSubtitle();
       this.subtitleData = [];
       this.englishSubtitles = [];
@@ -1052,6 +1056,10 @@ class YouTubeSubtitleOverlay {
         : null;
       const status = statusResponse?.status as { cachedResult?: VideoSubtitleData | null } | undefined;
       const videoSubtitles = status?.cachedResult;
+
+      if (currentVideoId !== this.getVideoId()) {
+        return;
+      }
 
       this.subtitleData = [];
       this.englishSubtitles = [];

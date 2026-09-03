@@ -297,6 +297,7 @@ export class BrowserTranslationCoordinator {
             try {
               await this.publisher.publishPartial(request.tabId, partial, {
                 runId: jobId,
+                videoId: request.videoId,
                 signal: publishSignal,
               });
             } catch {}
@@ -318,6 +319,7 @@ export class BrowserTranslationCoordinator {
 
       await this.publisher.publishFinal(request.tabId, result, {
         runId: jobId,
+        videoId: request.videoId,
         signal: controller.signal,
       });
       if (this.activeRun !== run || controller.signal.aborted) return;
