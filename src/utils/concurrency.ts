@@ -1,5 +1,5 @@
 /** 并发配置的唯一归一化规则。 */
-export const DEFAULT_CONCURRENCY = 3;
+export const DEFAULT_CONCURRENCY = 6;
 
 export function normalizeConcurrency(
   value: unknown,

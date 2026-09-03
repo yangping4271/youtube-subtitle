@@ -9,9 +9,11 @@ import {
   isRemoteApiBaseUrl,
 } from './api-url.js';
 
-export const API_CONFIG_SCHEMA_VERSION = 4;
+export const API_CONFIG_SCHEMA_VERSION = 5;
 export const API_CONFIG_MIGRATION_NOTICE = '请选择 API 供应商并填写兼容的 API 地址和模型。';
 export const MAX_API_CONCURRENCY = 2500;
+const PROVIDER_SELECTION_SCHEMA_VERSION = 4;
+const PREVIOUS_DEFAULT_CONCURRENCY = 3;
 
 export const MODEL_CONCURRENCY_LIMITS: Record<string, number> = {
   'deepseek-v4-flash': MAX_API_CONCURRENCY,
@@ -158,21 +160,36 @@ export interface ApiConfigMigration {
 export function migrateApiConfig(
   apiConfig: Partial<ApiConfig> | null | undefined
 ): ApiConfigMigration {
-  const clearLegacyDefaultModels = (apiConfig?.schemaVersion ?? 0) < API_CONFIG_SCHEMA_VERSION;
+  const schemaVersion = apiConfig?.schemaVersion ?? 0;
+  const clearLegacyDefaultModels = schemaVersion < PROVIDER_SELECTION_SCHEMA_VERSION;
+  const migratePreviousDefaultConcurrency =
+    schemaVersion === PROVIDER_SELECTION_SCHEMA_VERSION;
   const configuredProviders: ApiProviderConfig[] = (Array.isArray(apiConfig?.providers)
     ? apiConfig.providers
       .filter((provider): provider is ApiProviderConfig => Boolean(provider?.id))
       .map(normalizeProvider)
-    : []).map(provider => (
-      clearLegacyDefaultModels && isDefaultApiProviderId(provider.id)
-        ? {
+    : []).map(provider => {
+      if (clearLegacyDefaultModels && isDefaultApiProviderId(provider.id)) {
+        return {
           ...provider,
           llmModel: '',
           threadNum: DEFAULT_API_PROVIDERS.find(defaultProvider => defaultProvider.id === provider.id)?.threadNum
             ?? DEFAULT_CONCURRENCY,
-        }
-        : provider
-    ));
+        };
+      }
+
+      if (
+        migratePreviousDefaultConcurrency &&
+        provider.threadNum === PREVIOUS_DEFAULT_CONCURRENCY
+      ) {
+        return {
+          ...provider,
+          threadNum: DEFAULT_CONCURRENCY,
+        };
+      }
+
+      return provider;
+    });
 
   const supportedProviders = configuredProviders.filter(provider =>
     !provider.openaiBaseUrl || isRemoteApiBaseUrl(provider.openaiBaseUrl)
@@ -201,7 +218,7 @@ export function migrateApiConfig(
     )
   );
 
-  const isLegacyImplicitDefaultSelection = apiConfig?.schemaVersion !== API_CONFIG_SCHEMA_VERSION
+  const isLegacyImplicitDefaultSelection = schemaVersion < PROVIDER_SELECTION_SCHEMA_VERSION
     && apiConfig?.activeProviderId === 'openai'
     && configuredProviders.length === DEFAULT_API_PROVIDERS.length
     && configuredProviders.every(provider => isDefaultApiProviderId(provider.id))

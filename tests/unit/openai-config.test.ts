@@ -67,7 +67,7 @@ describe('OpenAI-compatible config', () => {
       openaiBaseUrl: 'https://api.openai.com',
       llmModel: '',
       openaiApiKey: 'saved-key',
-      threadNum: 3,
+      threadNum: 6,
     });
   });
 
@@ -107,7 +107,7 @@ describe('OpenAI-compatible config', () => {
     expect(() => buildTranslatorConfig(config)).toThrow('翻译模型未配置');
   });
 
-  it('保留当前 schema 内置供应商由用户填写的翻译模型', () => {
+  it('升级 schema 时保留内置供应商由用户填写的模型和自定义并发数', () => {
     const config = normalizeApiConfig({
       schemaVersion: 4,
       activeProviderId: 'openai',
@@ -127,6 +127,32 @@ describe('OpenAI-compatible config', () => {
       threadNum: 8,
     });
     expect(buildTranslatorConfig(config)).toMatchObject({ model: 'gpt-5.6', threadNum: 8 });
+  });
+
+  it('把上一版仍为旧默认值 3 的并发数迁移为 6', () => {
+    const config = normalizeApiConfig({
+      schemaVersion: 4,
+      activeProviderId: 'openai',
+      providers: [{
+        id: 'openai',
+        name: 'OpenAI',
+        providerType: 'openai',
+        openaiBaseUrl: 'https://api.openai.com',
+        openaiApiKey: 'key',
+        llmModel: 'gpt-5.6',
+        threadNum: 3,
+      }],
+    });
+
+    expect(config.schemaVersion).toBe(5);
+    expect(config.providers?.find(provider => provider.id === 'openai')).toMatchObject({
+      llmModel: 'gpt-5.6',
+      threadNum: 6,
+    });
+    expect(buildTranslatorConfig(config)).toMatchObject({
+      model: 'gpt-5.6',
+      threadNum: 6,
+    });
   });
 
   it('拒绝未填写模型名的自定义供应商进入翻译配置', () => {

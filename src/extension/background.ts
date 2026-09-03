@@ -405,13 +405,10 @@ class SubtitleExtensionBackground {
   logSubtitleFetchSource(request: ChromeMessage, sender: chrome.runtime.MessageSender): void {
     const payload = typeof request.data === 'object' && request.data !== null
         ? request.data as {
-          source?: 'caption-tracks' | 'transcript-panel' | 'unavailable';
+          source?: 'transcript-api' | 'transcript-panel' | 'unavailable';
           subtitleCount?: number;
-          strategy?: string;
-          trackLanguageCode?: string;
-          trackKind?: string;
           fallbackReason?: string;
-          captionTrackError?: string;
+          transcriptApiError?: string;
           panelError?: string;
         }
       : {};
@@ -421,11 +418,8 @@ class SubtitleExtensionBackground {
     console.info(formatSubtitleFetchLog({
       source: payload.source || 'unavailable',
       subtitleCount: payload.subtitleCount || 0,
-      strategy: payload.strategy,
-      trackLanguageCode: payload.trackLanguageCode,
-      trackKind: payload.trackKind,
       fallbackReason: payload.fallbackReason,
-      captionTrackError: payload.captionTrackError,
+      transcriptApiError: payload.transcriptApiError,
       panelError: payload.panelError,
     }, videoId, pageUrl));
   }

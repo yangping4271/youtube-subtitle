@@ -5,35 +5,15 @@ import {
   normalizeSubtitleTiming,
 } from '../core/subtitle-acquisition.js';
 import type {
-  ResolvedCaptionTrackText,
   SubtitleAcquisitionReport,
   SubtitleAcquisitionResult,
-  TimedTextDocument,
 } from '../core/subtitle-acquisition.js';
 import type { SimpleSubtitleEntry } from '../types/index.js';
 import { normalizeSubtitleFetchErrorMessage } from './subtitle-fetch-log.js';
 
-export interface CaptionTrackResponseLike {
-  playabilityStatus?: {
-    status?: string;
-    reason?: string;
-  };
-  captions?: {
-    playerCaptionsTracklistRenderer?: {
-      captionTracks?: unknown[];
-    };
-  };
-}
-
-export interface CaptionTrackLike {
-  baseUrl?: string;
-  languageCode?: string;
-  kind?: string;
-}
-
-interface WindowCaptionTrackMessage {
-  type: 'YTSP_PageCaptionTracks' | 'YTSP_WebPlayerResponse';
-  payload: CaptionTrackResponseLike | null;
+interface WindowTranscriptPanelMessage {
+  type: 'YTSP_TranscriptPanelResponse';
+  payload: unknown;
 }
 
 interface QueryElementLike {
@@ -47,6 +27,7 @@ interface QueryElementLike {
   tagName?: string;
   getAttribute?(name: string): string | null;
   querySelector?(selector: string): QueryElementLike | null;
+  closest?(selector: string): QueryElementLike | null;
   getClientRects?(): { length: number };
 }
 
@@ -55,25 +36,10 @@ interface TranscriptQueryRoot {
   querySelectorAll(selector: string): QueryElementLike[] | NodeListOf<Element>;
 }
 
-export interface CaptionTrackResponseClassification {
-  kind: 'ok' | 'login_required' | 'no_captions';
-  message: string | null;
-}
-
 export interface TranscriptPanelState {
   segmentCount: number;
   hasSpinner: boolean;
   hasContinuation?: boolean;
-}
-
-export interface PageCaptionTrackResolutionOptions {
-  requestPageResponse?: () => Promise<CaptionTrackResponseLike | null>;
-  requestTrackText?: (track: CaptionTrackLike) => Promise<string>;
-}
-
-export interface PlayerCaptionTrackResolutionOptions {
-  requestPlayerResponse?: (videoId: string) => Promise<CaptionTrackResponseLike>;
-  requestTrackText?: (track: CaptionTrackLike) => Promise<string>;
 }
 
 const TRANSCRIPT_PANEL_SELECTOR =
@@ -107,185 +73,31 @@ const TRANSCRIPT_START_TIME_ATTRIBUTES = [
   'offset-ms',
 ];
 
-export function createYouTubeRequestInit(init: RequestInit = {}): RequestInit {
-  return {
-    credentials: 'include',
-    ...init,
-  };
-}
-
-export function extractCaptionTracks(response: CaptionTrackResponseLike | null | undefined): CaptionTrackLike[] {
-  return (response?.captions?.playerCaptionsTracklistRenderer?.captionTracks || []) as CaptionTrackLike[];
-}
-
-export function pickPreferredCaptionTrack<T extends CaptionTrackLike>(tracks: T[]): T | undefined {
-  const englishTracks = tracks.filter((track) =>
-    /^en(?:-|$)/i.test(track.languageCode || '')
-  );
-  return englishTracks.find((track) => track.kind !== 'asr') || englishTracks[0];
-}
-
-export function classifyCaptionTrackResponse(
-  response: CaptionTrackResponseLike
-): CaptionTrackResponseClassification {
-  const status = response.playabilityStatus?.status || '';
-  const reason = response.playabilityStatus?.reason || '';
-  const captionTracks = extractCaptionTracks(response);
-
-  if (status === 'LOGIN_REQUIRED') {
-    return {
-      kind: 'login_required',
-      message: 'YouTube 要求先登录以确认不是机器人，请登录 YouTube 后重试。',
-    };
-  }
-
-  if (captionTracks.length === 0) {
-    return {
-      kind: 'no_captions',
-      message: reason || null,
-    };
-  }
-
-  return {
-    kind: 'ok',
-    message: null,
-  };
-}
-
-export function requestPageCaptionTrackResponse(timeoutMs = 1000): Promise<CaptionTrackResponseLike | null> {
-  return requestMainWorldPlayerResponse(
-    'YTSP_RequestCaptionTracks',
-    'YTSP_PageCaptionTracks',
-    undefined,
-    timeoutMs
-  );
-}
-
-export function requestWebPlayerResponse(
-  videoId: string,
+export function requestTranscriptPanelResponse(
   timeoutMs = 5000
-): Promise<CaptionTrackResponseLike | null> {
-  return requestMainWorldPlayerResponse(
-    'YTSP_RequestWebPlayerResponse',
-    'YTSP_WebPlayerResponse',
-    { videoId },
-    timeoutMs
-  );
-}
-
-function requestMainWorldPlayerResponse(
-  requestType: string,
-  responseType: WindowCaptionTrackMessage['type'],
-  detail: unknown,
-  timeoutMs: number
-): Promise<CaptionTrackResponseLike | null> {
+): Promise<unknown | null> {
   return new Promise((resolve) => {
     const timeoutId = window.setTimeout(() => {
       window.removeEventListener('message', onMessage);
       resolve(null);
     }, timeoutMs);
 
-    const onMessage = (event: MessageEvent<WindowCaptionTrackMessage>): void => {
-      if (event.source !== window || event.data?.type !== responseType) {
+    const onMessage = (event: MessageEvent<WindowTranscriptPanelMessage>): void => {
+      if (
+        event.source !== window ||
+        event.data?.type !== 'YTSP_TranscriptPanelResponse'
+      ) {
         return;
       }
 
       window.clearTimeout(timeoutId);
       window.removeEventListener('message', onMessage);
-      resolve((event.data.payload as CaptionTrackResponseLike | null) || null);
+      resolve(event.data.payload || null);
     };
 
     window.addEventListener('message', onMessage);
-    window.dispatchEvent(new CustomEvent(requestType, { detail }));
+    window.dispatchEvent(new CustomEvent('YTSP_RequestTranscriptPanel'));
   });
-}
-
-export async function fetchCaptionTrackText(track: CaptionTrackLike): Promise<string> {
-  if (!track.baseUrl) {
-    throw new Error('字幕轨缺少 baseUrl');
-  }
-
-  const captionUrl = new URL(track.baseUrl);
-  const isYouTubeHost = captionUrl.hostname === 'www.youtube.com' || captionUrl.hostname.endsWith('.youtube.com');
-  if (!isYouTubeHost) {
-    throw new Error(`字幕轨地址不是 YouTube 域名: ${captionUrl.hostname}`);
-  }
-
-  const response = await fetch(track.baseUrl, createYouTubeRequestInit());
-  if (!response.ok) {
-    throw new Error(`字幕轨请求失败: ${response.status}`);
-  }
-
-  const text = await response.text();
-  if (!text.trim()) {
-    const contentType = response.headers.get('content-type') || 'unknown';
-    throw new Error(`字幕轨返回空响应 (content-type: ${contentType})`);
-  }
-
-  return text;
-}
-
-export async function resolvePageCaptionTrackText(
-  options: PageCaptionTrackResolutionOptions = {}
-): Promise<ResolvedCaptionTrackText> {
-  const requestPageResponse = options.requestPageResponse || requestPageCaptionTrackResponse;
-  const requestTrackText = options.requestTrackText || fetchCaptionTrackText;
-  const pagePlayerResponse = await requestPageResponse();
-  const tracks = extractCaptionTracks(pagePlayerResponse);
-  const track = pickPreferredCaptionTrack(tracks);
-  if (!track && tracks.length > 0) {
-    throw new EnglishSubtitleRequiredError();
-  }
-  if (!track?.baseUrl) {
-    throw new Error('页面 player response 未提供字幕轨');
-  }
-
-  return {
-    trackText: await requestTrackText(track),
-    source: 'page-player-response',
-    trackLanguageCode: track.languageCode,
-    trackKind: track.kind,
-  };
-}
-
-export async function resolvePlayerCaptionTrackText(
-  videoId: string,
-  options: PlayerCaptionTrackResolutionOptions = {}
-): Promise<ResolvedCaptionTrackText> {
-  const requestPlayerResponse = options.requestPlayerResponse ||
-    (async (requestedVideoId: string) => {
-      const response = await requestWebPlayerResponse(requestedVideoId);
-      if (!response) {
-        throw new Error('网页 player 接口未返回响应');
-      }
-      return response;
-    });
-  const requestTrackText = options.requestTrackText || fetchCaptionTrackText;
-  const playerResponse = await requestPlayerResponse(videoId);
-  const responseClassification = classifyCaptionTrackResponse(playerResponse);
-  if (responseClassification.kind === 'login_required') {
-    throw new Error(responseClassification.message || '请先登录 YouTube 后重试。');
-  }
-
-  const tracks = extractCaptionTracks(playerResponse);
-  if (tracks.length === 0) {
-    throw new Error(responseClassification.message || 'player 响应未提供字幕轨');
-  }
-
-  const track = pickPreferredCaptionTrack(tracks);
-  if (!track) {
-    throw new EnglishSubtitleRequiredError();
-  }
-  if (!track?.baseUrl) {
-    throw new Error('字幕轨缺少 baseUrl');
-  }
-
-  return {
-    trackText: await requestTrackText(track),
-    source: 'web-player-response',
-    trackLanguageCode: track.languageCode,
-    trackKind: track.kind,
-  };
 }
 
 export function findTranscriptTrigger(root: TranscriptQueryRoot): QueryElementLike | null {
@@ -306,15 +118,42 @@ export function findTranscriptTrigger(root: TranscriptQueryRoot): QueryElementLi
 }
 
 export function getTranscriptPanel(root: ParentNode = document): Element | null {
-  const candidates = Array.from(root.querySelectorAll(TRANSCRIPT_PANEL_SELECTOR));
+  const knownPanels = Array.from(root.querySelectorAll(TRANSCRIPT_PANEL_SELECTOR));
+  const segmentPanels = Array.from(
+    root.querySelectorAll('transcript-segment-view-model')
+  ).flatMap((segment) => {
+    const panel = (segment as QueryElementLike).closest?.(
+      'ytd-engagement-panel-section-list-renderer'
+    );
+    return panel ? [panel] : [];
+  });
+  const candidates = [...knownPanels, ...segmentPanels];
   const visiblePanel = candidates.find((candidate) => isVisibleElement(candidate));
   if (visiblePanel) {
-    return visiblePanel;
+    return visiblePanel as Element;
   }
 
   // 保持对测试桩和旧 DOM 实现的兼容，但仍然拒绝明确隐藏的 panel。
   const candidate = root.querySelector(TRANSCRIPT_PANEL_SELECTOR);
   return isVisibleElement(candidate) ? candidate as Element : null;
+}
+
+function getAnyTranscriptPanel(root: ParentNode = document): Element | null {
+  const knownPanels = Array.from(root.querySelectorAll(TRANSCRIPT_PANEL_SELECTOR));
+  const segmentPanels = [
+    ...Array.from(root.querySelectorAll('transcript-segment-view-model')),
+    ...Array.from(root.querySelectorAll('ytd-transcript-segment-renderer')),
+  ].flatMap((segment) => {
+    const panel = segment.closest('ytd-engagement-panel-section-list-renderer');
+    return panel ? [panel] : [];
+  });
+  const candidates = [...new Set([...knownPanels, ...segmentPanels])];
+
+  return candidates.find((panel) =>
+    panel.querySelector(
+      'transcript-segment-view-model, ytd-transcript-segment-renderer'
+    )
+  ) || candidates[0] || null;
 }
 
 export function getTranscriptPanelState(root: ParentNode = document): TranscriptPanelState {
@@ -327,8 +166,13 @@ export function getTranscriptPanelState(root: ParentNode = document): Transcript
   };
 }
 
-export function getTranscriptSegmentElements(root: ParentNode = document): Element[] {
-  const transcriptPanel = getTranscriptPanel(root);
+export function getTranscriptSegmentElements(
+  root: ParentNode = document,
+  includeHiddenPanel = false
+): Element[] {
+  const transcriptPanel = includeHiddenPanel
+    ? getAnyTranscriptPanel(root)
+    : getTranscriptPanel(root);
   if (!transcriptPanel) {
     return [];
   }
@@ -476,6 +320,56 @@ export function parseTranscriptTimestamp(timestampText: string): number {
   return 0;
 }
 
+export function extractTranscriptPanelResponseSubtitles(
+  response: unknown
+): SimpleSubtitleEntry[] {
+  const segments: Array<{ timestamp: string; text: string }> = [];
+
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== 'object') {
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+
+    const record = value as Record<string, unknown>;
+    const model = record.transcriptSegmentViewModel;
+    if (model && typeof model === 'object') {
+      const segment = model as Record<string, unknown>;
+      if (
+        typeof segment.timestamp === 'string' &&
+        typeof segment.simpleText === 'string'
+      ) {
+        segments.push({
+          timestamp: segment.timestamp,
+          text: segment.simpleText,
+        });
+      }
+    }
+
+    Object.values(record).forEach(visit);
+  };
+
+  visit(response);
+
+  return normalizeSubtitleTiming(segments.map((segment, index) => {
+    const startTime = parseTranscriptTimestamp(segment.timestamp);
+    const next = segments[index + 1];
+    const endTime = next
+      ? parseTranscriptTimestamp(next.timestamp)
+      : startTime + 5;
+
+    return {
+      startTime,
+      endTime,
+      text: segment.text,
+    };
+  }));
+}
+
 export function extractTranscriptSegmentStartTime(segment: QueryElementLike): number | null {
   const timestampElement = getTranscriptTimestampElement(segment);
   const attributeValueMs =
@@ -525,8 +419,10 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function readTranscriptPanelSubtitles(): SimpleSubtitleEntry[] {
-  const segments = getTranscriptSegmentElements(document);
+function readTranscriptPanelSubtitles(
+  includeHiddenPanel = false
+): SimpleSubtitleEntry[] {
+  const segments = getTranscriptSegmentElements(document, includeHiddenPanel);
   const subtitles: SimpleSubtitleEntry[] = [];
 
   segments.forEach((segment, index) => {
@@ -611,6 +507,35 @@ async function acquireTranscriptPanelSubtitles(): Promise<SimpleSubtitleEntry[]>
   throw new Error('转写面板已打开，但字幕内容尚未加载完成，请稍后重试。');
 }
 
+async function acquireTranscriptPanelApiSubtitles(): Promise<SimpleSubtitleEntry[]> {
+  const payload = await requestTranscriptPanelResponse() as {
+    status?: string;
+    response?: unknown;
+  } | null;
+  if (payload?.status === 'english-unavailable') {
+    throw new EnglishSubtitleRequiredError();
+  }
+
+  if (payload?.status === 'dom-loading') {
+    for (let retry = 0; retry < 80; retry += 1) {
+      const subtitles = readTranscriptPanelSubtitles(true);
+      if (subtitles.length > 0) {
+        return subtitles;
+      }
+      await delay(100);
+    }
+  }
+
+  const subtitles = extractTranscriptPanelResponseSubtitles(
+    payload?.status === 'ok' ? payload.response : null
+  );
+  if (subtitles.length === 0) {
+    throw new Error('转写接口未返回可用字幕');
+  }
+
+  return subtitles;
+}
+
 async function reportAcquisition(
   videoId: string,
   report: SubtitleAcquisitionReport
@@ -649,12 +574,7 @@ async function reportAcquisition(
 }
 
 const defaultSubtitleAcquirer = createYouTubeSubtitleAcquirer({
-  captionTrackStrategies: [
-    () => resolvePageCaptionTrackText(),
-    (videoId) => resolvePlayerCaptionTrackText(videoId),
-  ],
-  parseCaptionTrackDocument: (xml): TimedTextDocument =>
-    new DOMParser().parseFromString(xml, 'text/xml'),
+  acquireTranscriptApiSubtitles: acquireTranscriptPanelApiSubtitles,
   acquireTranscriptPanelSubtitles,
   reportAcquisition,
 });

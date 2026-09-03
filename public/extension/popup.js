@@ -72,7 +72,8 @@ class PopupController {
             openaiBaseUrl: overrides.openaiBaseUrl ?? '',
             openaiApiKey: overrides.openaiApiKey ?? '',
             llmModel: overrides.llmModel ?? '',
-            threadNum: overrides.threadNum ?? 3,
+            threadNum: overrides.threadNum ??
+                window.SubtitleConfig.DEFAULT_API_CONFIG.threadNum,
             disableThinking: true
         };
     }
@@ -136,7 +137,8 @@ class PopupController {
         this.apiConfig.openaiBaseUrl = provider.openaiBaseUrl;
         this.apiConfig.openaiApiKey = provider.openaiApiKey;
         this.apiConfig.llmModel = provider.llmModel;
-        this.apiConfig.threadNum = provider.threadNum || 3;
+        this.apiConfig.threadNum = provider.threadNum ||
+            window.SubtitleConfig.DEFAULT_API_CONFIG.threadNum;
         this.apiConfig.disableThinking = true;
     }
 
@@ -820,7 +822,10 @@ class PopupController {
         if (apiKey) apiKey.value = activeProvider?.openaiApiKey || '';
         if (llmModel) llmModel.value = activeProvider?.llmModel || '';
         if (targetLanguage) this.setSelectValue(targetLanguage, this.apiConfig.targetLanguage);
-        if (threadNum) threadNum.value = activeProvider?.threadNum || 3;
+        if (threadNum) {
+            threadNum.value = activeProvider?.threadNum ||
+                window.SubtitleConfig.DEFAULT_API_CONFIG.threadNum;
+        }
         this.updateConcurrencyInputLimit(activeProvider?.llmModel || '');
         this.setApiProviderFieldMutability(activeProvider);
 
@@ -1012,7 +1017,7 @@ class PopupController {
         }
 
         try {
-            await this.requestApiHostPermission(provider.openaiBaseUrl);
+            await this.requestApiHostPermission(provider);
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             Toast.error(`API 权限未授予: ${message}`);
@@ -1041,7 +1046,7 @@ class PopupController {
         }
 
         try {
-            await this.requestApiHostPermission(provider.openaiBaseUrl);
+            await this.requestApiHostPermission(provider);
 
             // 测试现有供应商时同步最新配置
             if (!this.newApiProviderDraft) {
@@ -1088,7 +1093,17 @@ class PopupController {
         }
     }
 
-    requestApiHostPermission(baseUrl) {
+    requestApiHostPermission(providerOrBaseUrl) {
+        if (
+            typeof providerOrBaseUrl === 'object' &&
+            this.isDefaultApiProvider(providerOrBaseUrl)
+        ) {
+            return Promise.resolve();
+        }
+
+        const baseUrl = typeof providerOrBaseUrl === 'string'
+            ? providerOrBaseUrl
+            : providerOrBaseUrl?.openaiBaseUrl;
         const originPattern = window.SubtitleConfig.getApiHostPermissionPattern(baseUrl);
 
         if (!chrome.permissions || typeof chrome.permissions.request !== 'function') {
@@ -1281,7 +1296,7 @@ class PopupController {
             translateBtn.innerHTML = '<span class="btn-text">开始翻译</span>';
             translateBtn.classList.remove('translating');
             translateBtn._cancelBound = false;
-            translateBtn.onclick = () => this.startTranslation();
+            translateBtn.onclick = null;
         }
     }
 
@@ -1333,7 +1348,9 @@ class PopupController {
         }
 
         try {
-            await this.requestApiHostPermission(this.apiConfig.openaiBaseUrl);
+            await this.requestApiHostPermission(
+                this.getActiveApiProvider() || this.apiConfig.openaiBaseUrl
+            );
         } catch (error) {
             const autoLoadStatus = document.getElementById('autoLoadStatus');
             const message = error instanceof Error ? error.message : String(error);

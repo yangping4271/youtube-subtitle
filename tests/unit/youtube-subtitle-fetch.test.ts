@@ -1,45 +1,19 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
-  classifyCaptionTrackResponse,
-  createYouTubeRequestInit,
-  extractCaptionTracks,
+  extractTranscriptPanelResponseSubtitles,
   extractTranscriptSegmentData,
   extractTranscriptSegmentStartTime,
-  fetchCaptionTrackText,
   findTranscriptTrigger,
   getTranscriptPanel,
   getTranscriptSegmentElements,
   isTranscriptReady,
   parseTranscriptTimestamp,
-  pickPreferredCaptionTrack,
-  resolvePlayerCaptionTrackText,
   shouldForceLegacyTranscriptOpen,
   shouldWaitForTranscriptPanel,
 } from '../../src/extension/youtube-subtitle-fetch.js';
 
 describe('youtube subtitle fetch helpers', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('将 YouTube 反机器人登录校验识别为 login_required', () => {
-    const result = classifyCaptionTrackResponse({
-      playabilityStatus: {
-        status: 'LOGIN_REQUIRED',
-        reason: 'Sign in to confirm you’re not a bot',
-      },
-      captions: {
-        playerCaptionsTracklistRenderer: {
-          captionTracks: [],
-        },
-      },
-    });
-
-    expect(result.kind).toBe('login_required');
-    expect(result.message).toContain('登录');
-  });
-
   it('识别新的中文 transcript 入口文案', () => {
     const transcriptButton = {
       textContent: '内容转文字',
@@ -62,45 +36,6 @@ describe('youtube subtitle fetch helpers', () => {
     };
 
     expect(findTranscriptTrigger(root)).toBe(transcriptButton);
-  });
-
-  it('访问 YouTube 接口时显式携带登录态 cookies', () => {
-    expect(createYouTubeRequestInit().credentials).toBe('include');
-  });
-
-  it('从页面 player response 中提取 caption tracks', () => {
-    const tracks = extractCaptionTracks({
-      captions: {
-        playerCaptionsTracklistRenderer: {
-          captionTracks: [{ languageCode: 'en', baseUrl: 'https://www.youtube.com/api/timedtext?v=1' }],
-        },
-      },
-    });
-
-    expect(tracks).toEqual([
-      { languageCode: 'en', baseUrl: 'https://www.youtube.com/api/timedtext?v=1' },
-    ]);
-  });
-
-  it('备用 player 策略使用网页客户端返回的字幕轨', async () => {
-    const result = await resolvePlayerCaptionTrackText('video-id', {
-      requestPlayerResponse: async () => ({
-        captions: {
-          playerCaptionsTracklistRenderer: {
-            captionTracks: [{
-              languageCode: 'en',
-              baseUrl: 'https://www.youtube.com/api/timedtext?v=1',
-            }],
-          },
-        },
-      }),
-      requestTrackText: async () => '<timedtext />',
-    });
-
-    expect(result).toMatchObject({
-      source: 'web-player-response',
-      trackLanguageCode: 'en',
-    });
   });
 
   it('点击新 transcript 入口后不再强开旧 panel', () => {
@@ -166,6 +101,32 @@ describe('youtube subtitle fetch helpers', () => {
     expect(getTranscriptPanel(root as unknown as ParentNode)).toBe(visiblePanel);
   });
 
+  it('识别没有 target-id 但包含字幕节点的新版可见 transcript panel', () => {
+    const modernPanel = {
+      hidden: false,
+      getAttribute() {
+        return null;
+      },
+    };
+    const segment = {
+      closest(selector: string) {
+        return selector === 'ytd-engagement-panel-section-list-renderer'
+          ? modernPanel
+          : null;
+      },
+    };
+    const root = {
+      querySelector() {
+        return null;
+      },
+      querySelectorAll(selector: string) {
+        return selector === 'transcript-segment-view-model' ? [segment] : [];
+      },
+    };
+
+    expect(getTranscriptPanel(root as unknown as ParentNode)).toBe(modernPanel);
+  });
+
   it('没有可见 transcript panel 时不扫描整个 document 的 segment', () => {
     const hiddenPanel = {
       hidden: true,
@@ -187,56 +148,52 @@ describe('youtube subtitle fetch helpers', () => {
     expect(getTranscriptSegmentElements(root as unknown as ParentNode)).toEqual([]);
   });
 
-  it('优先选择人工英文字幕轨而不是 asr', () => {
-    const track = pickPreferredCaptionTrack([
-      { languageCode: 'en', kind: 'asr', baseUrl: 'https://www.youtube.com/api/timedtext?v=1&kind=asr' },
-      { languageCode: 'en', baseUrl: 'https://www.youtube.com/api/timedtext?v=1' },
-    ]);
-
-    expect(track?.kind).toBeUndefined();
-    expect(track?.baseUrl).toContain('timedtext?v=1');
-  });
-
-  it('只选择英文字幕轨并支持地区代码', () => {
-    expect(pickPreferredCaptionTrack([
-      { languageCode: 'zh-CN', baseUrl: 'https://www.youtube.com/zh' },
-      { languageCode: 'ja', baseUrl: 'https://www.youtube.com/ja' },
-    ])).toBeUndefined();
-
-    expect(pickPreferredCaptionTrack([
-      { languageCode: 'en-US', baseUrl: 'https://www.youtube.com/en-US' },
-    ])?.languageCode).toBe('en-US');
-  });
-
-  it('player 只有非英文字幕轨时返回明确错误', async () => {
-    await expect(resolvePlayerCaptionTrackText('video-id', {
-      requestPlayerResponse: async () => ({
-        captions: {
-          playerCaptionsTracklistRenderer: {
-            captionTracks: [{
-              languageCode: 'zh-CN',
-              baseUrl: 'https://www.youtube.com/zh',
-            }],
-          },
-        },
-      }),
-    })).rejects.toThrow('当前视频没有英文字幕，仅支持翻译英文字幕。');
-  });
-
-  it('字幕轨返回空 HTML 时包含 content-type 便于排查', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      text: vi.fn().mockResolvedValue(''),
-      headers: {
-        get(name: string) {
-          return name === 'content-type' ? 'text/html; charset=UTF-8' : null;
-        },
+  it('无 UI 接口加载旧版隐藏 panel 后可以读取 segments', () => {
+    const hiddenSegment = {};
+    const emptyHiddenPanel = {
+      hidden: true,
+      getAttribute: () => null,
+      querySelector() {
+        return null;
       },
-    }));
+      querySelectorAll() {
+        return [];
+      },
+    };
+    const loadedHiddenPanel = {
+      hidden: true,
+      getAttribute: () => null,
+      querySelector(selector: string) {
+        return selector.includes('ytd-transcript-segment-renderer')
+          ? hiddenSegment
+          : null;
+      },
+      querySelectorAll(selector: string) {
+        return selector === 'ytd-transcript-segment-renderer' ? [hiddenSegment] : [];
+      },
+    };
+    const root = {
+      querySelector() {
+        return emptyHiddenPanel;
+      },
+      querySelectorAll(selector: string) {
+        if (selector.includes('engagement-panel-searchable-transcript')) {
+          return [emptyHiddenPanel, loadedHiddenPanel];
+        }
+        if (selector === 'ytd-transcript-segment-renderer') {
+          return [{
+            closest() {
+              return loadedHiddenPanel;
+            },
+          }];
+        }
+        return [];
+      },
+    };
 
-    await expect(fetchCaptionTrackText({
-      baseUrl: 'https://www.youtube.com/api/timedtext?v=1',
-    })).rejects.toThrow('content-type: text/html; charset=UTF-8');
+    expect(getTranscriptSegmentElements(root as unknown as ParentNode, true)).toEqual([
+      hiddenSegment,
+    ]);
   });
 
   it('解析新的 transcript-segment-view-model 节点', () => {
@@ -311,6 +268,42 @@ describe('youtube subtitle fetch helpers', () => {
   it('支持解析带小数秒的 transcript 时间文本', () => {
     expect(parseTranscriptTimestamp('1:02.345')).toBe(62.345);
     expect(parseTranscriptTimestamp('01:02:03.250')).toBe(3723.25);
+  });
+
+  it('从新版 get_panel 响应中读取字幕且不依赖可见面板', () => {
+    const subtitles = extractTranscriptPanelResponseSubtitles({
+      content: {
+        sectionListRenderer: {
+          contents: [
+            {
+              macroMarkersPanelItemViewModel: {
+                item: {
+                  transcriptSegmentViewModel: {
+                    timestamp: '0:05',
+                    simpleText: 'First sentence.',
+                  },
+                },
+              },
+            },
+            {
+              macroMarkersPanelItemViewModel: {
+                item: {
+                  transcriptSegmentViewModel: {
+                    timestamp: '0:08.500',
+                    simpleText: 'Second sentence.',
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(subtitles).toEqual([
+      { startTime: 5, endTime: 8.5, text: 'First sentence.' },
+      { startTime: 8.5, endTime: 13.5, text: 'Second sentence.' },
+    ]);
   });
 
   it('优先使用 transcript 节点中的毫秒属性作为开始时间', () => {

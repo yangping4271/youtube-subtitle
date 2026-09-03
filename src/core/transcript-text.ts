@@ -18,7 +18,7 @@ const NAMED_HTML_ENTITIES: Record<string, string> = {
 };
 
 /**
- * 解码 YouTube timedtext 返回文本中的 HTML 实体（如 &#39;、&amp;）。
+ * 解码 YouTube 字幕文本中的 HTML 实体（如 &#39;、&amp;）。
  * 不依赖 DOM，可在 Node 测试环境直接运行。
  */
 export function decodeHtmlEntities(text: string): string {

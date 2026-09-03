@@ -10,15 +10,15 @@ describe('subtitle fetch log helpers', () => {
     const message = formatSubtitleFetchLog({
       source: 'transcript-panel',
       subtitleCount: 47,
-      fallbackReason: '字幕轨返回空响应',
-      captionTrackError: 'player 响应未提供字幕轨',
+      fallbackReason: '转写接口不可用',
+      transcriptApiError: '转写接口未返回可用字幕',
     }, 'pkSxISewcw8', 'https://www.youtube.com/watch?v=pkSxISewcw8');
 
     expect(message).toContain('source=transcript-panel');
     expect(message).toContain('subtitles=47');
     expect(message).toContain('videoId=pkSxISewcw8');
-    expect(message).toContain('fallbackReason=字幕轨返回空响应');
-    expect(message).toContain('captionTrackError=player 响应未提供字幕轨');
+    expect(message).toContain('fallbackReason=转写接口不可用');
+    expect(message).toContain('transcriptApiError=转写接口未返回可用字幕');
   });
 
   it('清理错误消息中的多余空白', () => {

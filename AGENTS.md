@@ -33,7 +33,7 @@
 - SRV3 词级字幕必须保持原词序和时间，不能信任会改写原文的模型输出。
 - 翻译会话必须保持有序最终结果、并发上限、取消传播、partial publication 和跨 Service Worker 恢复语义。
 - API 配置继续支持 OpenAI、OpenRouter、DeepSeek 和 OpenAI-compatible endpoint；空 API Key 可用于不需要鉴权的兼容服务。
-- 第三方 API 使用运行时 optional host permission。修改权限后同时检查 manifest、popup 授权流程和打包结果。
+- OpenAI、OpenRouter 和 DeepSeek 内置供应商使用固定 host permission；自定义 API 使用运行时 optional host permission。修改权限后同时检查 manifest、popup 授权流程和打包结果。
 
 ## 测试
 
@@ -53,18 +53,19 @@ bun run test:subtitle-fixture
 
 ## Chrome MCP 回归
 
-`.mcp.json` 提供本项目的 `chrome-devtools` server。涉及 popup、manifest、Chrome 消息、Service Worker 或 YouTube DOM 的改动，完成自动化测试后执行真实浏览器回归：
+`.mcp.json` 提供本项目的 `chrome-devtools` server。涉及 popup、manifest、Chrome 消息、Service Worker 或 YouTube DOM 的改动时，先读取项目内 `reuse-chrome-devtools` Skill。真实浏览器属于用户正在使用的环境；当前对话首次连接 Chrome MCP 前必须说明用途并取得一次明确同意。获批后建立并复用单一持久连接，同一对话和既定范围内的后续检查、reload 与回归不重复申请；仅新对话或明显扩展到无关页面、数据或动作时再次确认。未获同意时只完成本地检查，并在交付中注明“未执行真实浏览器回归”，不要调用 Chrome MCP。
 
-1. 读取项目内 `reuse-chrome-devtools` Skill 并遵守连接约束。
-2. 运行 `bun run build:prod`。
-3. 通过 MCP 安装或 reload 绝对路径下的 `dist/extension/`。
-4. 打开真实 YouTube watch 页面并 reload，使最新 content script 生效。
-5. 检查下载和复制按钮各只有一个：
+用户同意后，按以下步骤回归：
+
+1. 运行 `bun run build:prod`。
+2. 通过 MCP 安装或 reload 绝对路径下的 `dist/extension/`。
+3. 打开真实 YouTube watch 页面并 reload，使最新 content script 生效。
+4. 检查下载和复制按钮各只有一个：
    - `#transcript-download-button`
    - `#transcript-copy-button`
-6. 检查 `#youtube-local-subtitle-overlay`、当前视频识别和已有翻译状态。
-7. 打开 popup 的字幕、API、样式三个 tab，检查内置供应商锁定、自定义供应商可编辑及浅色/深色主题。
-8. 检查 popup 和本扩展 Service Worker 的 console。区分扩展错误与 YouTube 页面自身 warning。
+5. 检查 `#youtube-local-subtitle-overlay`、当前视频识别和已有翻译状态。
+6. 打开 popup 的字幕、API、样式三个 tab，检查内置供应商锁定、自定义供应商可编辑及浅色/深色主题。
+7. 检查 popup 和本扩展 Service Worker 的 console。区分扩展错误与 YouTube 页面自身 warning。
 
 MCP 回归应基于刚生成的 production build；不要用旧 zip 或旧 `dist` 推断结果。
 

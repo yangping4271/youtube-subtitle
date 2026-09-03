@@ -13,26 +13,15 @@ export class EnglishSubtitleRequiredError extends Error {
   }
 }
 
-export interface ResolvedCaptionTrackText {
-  trackText: string;
-  source: 'page-player-response' | 'web-player-response' | 'youtubei-player';
-  fallbackReason?: string;
-  trackLanguageCode?: string;
-  trackKind?: string;
-}
-
 export interface SubtitleAcquisitionDiagnostics {
-  strategy?: ResolvedCaptionTrackText['source'];
-  trackLanguageCode?: string;
-  trackKind?: string;
-  fallbackReason?: string;
-  captionTrackError?: string;
+  transcriptApiError?: string;
   panelError?: string;
+  fallbackReason?: string;
 }
 
 export interface SubtitleAcquisitionResult {
   subtitles: SimpleSubtitleEntry[];
-  source: 'caption-tracks' | 'transcript-panel';
+  source: 'transcript-api' | 'transcript-panel';
   diagnostics: SubtitleAcquisitionDiagnostics;
 }
 
@@ -52,22 +41,8 @@ export class SubtitleAcquisitionError extends Error {
   }
 }
 
-interface TimedTextElement {
-  textContent?: string | null;
-  getAttribute(name: string): string | null;
-  querySelectorAll(selector: string): ArrayLike<TimedTextElement>;
-}
-
-export interface TimedTextDocument {
-  querySelector(selector: string): TimedTextElement | null;
-  querySelectorAll(selector: string): ArrayLike<TimedTextElement>;
-}
-
 export interface SubtitleAcquisitionDependencies {
-  captionTrackStrategies: Array<
-    (videoId: string) => Promise<ResolvedCaptionTrackText>
-  >;
-  parseCaptionTrackDocument: (xml: string) => TimedTextDocument;
+  acquireTranscriptApiSubtitles: () => Promise<SimpleSubtitleEntry[]>;
   acquireTranscriptPanelSubtitles: () => Promise<SimpleSubtitleEntry[]>;
   reportAcquisition: (
     videoId: string,
@@ -108,8 +83,7 @@ export function normalizeSubtitleTiming(
     .sort((a, b) => a.startTime - b.startTime);
 
   // YouTube 有时会在同一 panel 中同时保留可见节点和隐藏副本。
-  // 相同开始时间和文本代表同一条字幕；合并时保留较晚的结束时间，
-  // 避免重复节点把下一条字幕的开始时间误当成当前字幕的结束时间。
+  // 相同开始时间和文本代表同一条字幕；合并时保留较晚的结束时间。
   const deduplicated: SimpleSubtitleEntry[] = [];
   const indexByKey = new Map<string, number>();
   sorted.forEach((subtitle) => {
@@ -137,8 +111,6 @@ export function normalizeSubtitleTiming(
       : next && next.startTime > subtitle.startTime
         ? next.startTime
         : subtitle.startTime + 5;
-    // SRV3 paragraph 的 d 包含字幕留屏时间，最后一个词可能因此延伸到
-    // 下一段已经开始之后。采集层不允许一条词级字幕越过下一条的开始点。
     const endTime = next && next.startTime > subtitle.startTime
       ? Math.min(sourceEndTime, next.startTime)
       : sourceEndTime;
@@ -150,215 +122,80 @@ export function normalizeSubtitleTiming(
   });
 }
 
-function parseSrv3SpanSubtitles(doc: TimedTextDocument): SimpleSubtitleEntry[] {
-  const subtitles: SimpleSubtitleEntry[] = [];
-  Array.from(doc.querySelectorAll('p')).forEach((paragraph) => {
-    const paragraphStartMs = Number(paragraph.getAttribute('t'));
-    if (Number.isNaN(paragraphStartMs)) {
-      return;
-    }
-
-    const paragraphDurationMs = Number(paragraph.getAttribute('d'));
-    const paragraphEndMs = Number.isNaN(paragraphDurationMs)
-      ? null
-      : paragraphStartMs + paragraphDurationMs;
-    const spans = Array.from(paragraph.querySelectorAll('s'));
-    if (spans.length === 0) {
-      return;
-    }
-
-    const offsets = spans.map((span) => {
-      const offset = Number(span.getAttribute('t'));
-      return Number.isNaN(offset) ? null : offset;
-    });
-    if (!offsets.some((offset) => offset !== null)) {
-      return;
-    }
-
-    spans.forEach((span, index) => {
-      const text = span.textContent || '';
-      if (!text.trim()) {
-        return;
-      }
-
-      const relativeStartMs = offsets[index] ?? (index === 0 ? 0 : offsets[index - 1] ?? 0);
-      const nextOffset = offsets.slice(index + 1).find((offset) => offset !== null) ?? null;
-      const startMs = paragraphStartMs + relativeStartMs;
-      const endMs = nextOffset !== null
-        ? paragraphStartMs + nextOffset
-        : paragraphEndMs ?? startMs;
-
-      subtitles.push({
-        startTime: startMs / 1000,
-        endTime: endMs / 1000,
-        text,
-      });
-    });
-  });
-
-  return subtitles;
-}
-
-function parseLegacyTimedTextSubtitles(doc: TimedTextDocument): SimpleSubtitleEntry[] {
-  const subtitles: SimpleSubtitleEntry[] = [];
-  Array.from(doc.querySelectorAll('text')).forEach((segment) => {
-    const start = Number(segment.getAttribute('start'));
-    if (Number.isNaN(start)) {
-      return;
-    }
-
-    const duration = Number(segment.getAttribute('dur'));
-    const text = segment.textContent || '';
-    if (!text.trim()) {
-      return;
-    }
-
-    subtitles.push({
-      startTime: start,
-      endTime: Number.isNaN(duration) ? start : start + duration,
-      text,
-    });
-  });
-
-  return subtitles;
-}
-
-function parseSrv3ParagraphSubtitles(doc: TimedTextDocument): SimpleSubtitleEntry[] {
-  const subtitles: SimpleSubtitleEntry[] = [];
-  Array.from(doc.querySelectorAll('p')).forEach((paragraph) => {
-    const startMs = Number(paragraph.getAttribute('t'));
-    if (Number.isNaN(startMs)) {
-      return;
-    }
-
-    const durationMs = Number(paragraph.getAttribute('d'));
-    const spanText = Array.from(paragraph.querySelectorAll('s'))
-      .map((span) => span.textContent || '')
-      .join('');
-    const text = spanText || paragraph.textContent || '';
-    if (!text.trim()) {
-      return;
-    }
-
-    subtitles.push({
-      startTime: startMs / 1000,
-      endTime: Number.isNaN(durationMs)
-        ? startMs / 1000
-        : (startMs + durationMs) / 1000,
-      text,
-    });
-  });
-
-  return subtitles;
-}
-
-function parseTimedTextDocument(doc: TimedTextDocument): SimpleSubtitleEntry[] {
-  if (doc.querySelector('parsererror')) {
-    throw new Error('字幕 XML 解析失败');
-  }
-
-  const srv3Subtitles = parseSrv3SpanSubtitles(doc);
-  const paragraphSubtitles = srv3Subtitles.length > 0
-    ? []
-    : parseSrv3ParagraphSubtitles(doc);
-  return normalizeSubtitleTiming(
-    srv3Subtitles.length > 0
-      ? srv3Subtitles
-      : paragraphSubtitles.length > 0
-        ? paragraphSubtitles
-        : parseLegacyTimedTextSubtitles(doc)
-  );
-}
-
 export function createYouTubeSubtitleAcquirer(
   dependencies: SubtitleAcquisitionDependencies
 ): YouTubeSubtitleAcquirer {
-  const reportBestEffort = async (
+  const reportBestEffort = (
     videoId: string,
     report: SubtitleAcquisitionReport
-  ): Promise<void> => {
+  ): void => {
     try {
-      await dependencies.reportAcquisition(videoId, report);
+      void Promise.resolve(dependencies.reportAcquisition(videoId, report)).catch(() => {});
     } catch {
       // Diagnostics must never turn successful subtitle acquisition into a failure.
     }
   };
 
+  const buildResult = (
+    subtitles: SimpleSubtitleEntry[],
+    source: SubtitleAcquisitionResult['source'],
+    diagnostics: SubtitleAcquisitionDiagnostics
+  ): SubtitleAcquisitionResult => ({
+    subtitles: normalizeSubtitleTiming(subtitles),
+    source,
+    diagnostics,
+  });
+
   return {
     async acquire(videoId: string): Promise<SubtitleAcquisitionResult> {
-      const captionTrackErrors: string[] = [];
-      let englishTrackUnavailable = false;
+      let transcriptApiError: string;
 
-      for (const acquireCaptionTrack of dependencies.captionTrackStrategies) {
-        try {
-          const resolution = await acquireCaptionTrack(videoId);
-          const document = dependencies.parseCaptionTrackDocument(resolution.trackText);
-          const subtitles = parseTimedTextDocument(document);
-          if (subtitles.length === 0) {
-            throw new Error('字幕轨未返回可用字幕');
-          }
-
-          const fallbackReason = [
-            ...captionTrackErrors,
-            resolution.fallbackReason,
-          ].filter((reason): reason is string => Boolean(reason)).join('; ');
-          const result: SubtitleAcquisitionResult = {
-            subtitles,
-            source: 'caption-tracks',
-            diagnostics: {
-              strategy: resolution.source,
-              ...(resolution.trackLanguageCode
-                ? { trackLanguageCode: resolution.trackLanguageCode }
-                : {}),
-              ...(resolution.trackKind ? { trackKind: resolution.trackKind } : {}),
-              ...(fallbackReason ? { fallbackReason } : {}),
-            },
-          };
-          void reportBestEffort(videoId, {
-            source: result.source,
-            subtitleCount: result.subtitles.length,
-            diagnostics: result.diagnostics,
-          });
-          return result;
-        } catch (error) {
-          if (error instanceof EnglishSubtitleRequiredError) {
-            englishTrackUnavailable = true;
-          }
-          captionTrackErrors.push(extractErrorMessage(error));
-        }
-      }
-
-      const captionTrackError = captionTrackErrors.join('; ') || '字幕轨不可用';
-      if (englishTrackUnavailable) {
-        const diagnostics = { captionTrackError };
-        void reportBestEffort(videoId, {
-          source: 'unavailable',
-          subtitleCount: 0,
-          diagnostics,
-        });
-        throw new SubtitleAcquisitionError(
-          ENGLISH_SUBTITLE_REQUIRED_MESSAGE,
-          diagnostics
+      try {
+        const result = buildResult(
+          await dependencies.acquireTranscriptApiSubtitles(),
+          'transcript-api',
+          {}
         );
+        if (result.subtitles.length === 0) {
+          throw new Error('转写接口未返回可用字幕');
+        }
+
+        reportBestEffort(videoId, {
+          source: result.source,
+          subtitleCount: result.subtitles.length,
+          diagnostics: result.diagnostics,
+        });
+        return result;
+      } catch (error) {
+        transcriptApiError = extractErrorMessage(error);
+        if (error instanceof EnglishSubtitleRequiredError) {
+          const diagnostics = { transcriptApiError };
+          reportBestEffort(videoId, {
+            source: 'unavailable',
+            subtitleCount: 0,
+            diagnostics,
+          });
+          throw new SubtitleAcquisitionError(
+            ENGLISH_SUBTITLE_REQUIRED_MESSAGE,
+            diagnostics
+          );
+        }
       }
 
       try {
-        const subtitles = normalizeSubtitleTiming(
-          await dependencies.acquireTranscriptPanelSubtitles()
+        const result = buildResult(
+          await dependencies.acquireTranscriptPanelSubtitles(),
+          'transcript-panel',
+          {
+            transcriptApiError,
+            fallbackReason: transcriptApiError,
+          }
         );
-        if (subtitles.length === 0) {
+        if (result.subtitles.length === 0) {
           throw new Error('转写面板未返回可用字幕');
         }
 
-        const result: SubtitleAcquisitionResult = {
-          subtitles,
-          source: 'transcript-panel',
-          diagnostics: {
-            captionTrackError,
-            fallbackReason: captionTrackError,
-          },
-        };
-        void reportBestEffort(videoId, {
+        reportBestEffort(videoId, {
           source: result.source,
           subtitleCount: result.subtitles.length,
           diagnostics: result.diagnostics,
@@ -367,16 +204,14 @@ export function createYouTubeSubtitleAcquirer(
       } catch (panelError) {
         const panelErrorMessage = extractErrorMessage(panelError);
         const diagnostics = {
-          captionTrackError,
+          transcriptApiError,
           panelError: panelErrorMessage,
         };
-
-        void reportBestEffort(videoId, {
+        reportBestEffort(videoId, {
           source: 'unavailable',
           subtitleCount: 0,
           diagnostics,
         });
-
         throw new SubtitleAcquisitionError(panelErrorMessage, diagnostics);
       }
     },

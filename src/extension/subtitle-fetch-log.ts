@@ -1,13 +1,10 @@
-export type SubtitleFetchSource = 'caption-tracks' | 'transcript-panel' | 'unavailable';
+export type SubtitleFetchSource = 'transcript-api' | 'transcript-panel' | 'unavailable';
 
 export interface SubtitleFetchLogPayload {
   source: SubtitleFetchSource;
   subtitleCount: number;
-  strategy?: string;
-  trackLanguageCode?: string;
-  trackKind?: string;
   fallbackReason?: string;
-  captionTrackError?: string;
+  transcriptApiError?: string;
   panelError?: string;
 }
 
@@ -31,20 +28,8 @@ export function formatSubtitleFetchLog(
     parts.push(`fallbackReason=${payload.fallbackReason}`);
   }
 
-  if (payload.strategy) {
-    parts.push(`strategy=${payload.strategy}`);
-  }
-
-  if (payload.trackLanguageCode) {
-    parts.push(`trackLanguageCode=${payload.trackLanguageCode}`);
-  }
-
-  if (payload.trackKind) {
-    parts.push(`trackKind=${payload.trackKind}`);
-  }
-
-  if (payload.captionTrackError) {
-    parts.push(`captionTrackError=${payload.captionTrackError}`);
+  if (payload.transcriptApiError) {
+    parts.push(`transcriptApiError=${payload.transcriptApiError}`);
   }
 
   if (payload.panelError) {

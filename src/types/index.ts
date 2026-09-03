@@ -57,7 +57,7 @@ export interface ApiProviderConfig {
   openaiBaseUrl: string;
   openaiApiKey: string;
   llmModel: string;
-  threadNum?: number;  // 并发数，默认 3
+  threadNum?: number;  // 并发数，默认 6
   /** @deprecated 保留用于读取旧配置；翻译请求会优先尝试关闭思考模式。 */
   disableThinking?: boolean;
 }
@@ -72,7 +72,7 @@ export interface ApiConfig extends Partial<ApiProviderConfig> {
   openaiApiKey: string;
   llmModel: string;
   targetLanguage: string;
-  threadNum?: number;  // 并发数，默认 3
+  threadNum?: number;  // 并发数，默认 6
 }
 
 /** 翻译器配置 */
