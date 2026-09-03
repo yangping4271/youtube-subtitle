@@ -526,6 +526,12 @@ async function acquireTranscriptPanelSubtitles(): Promise<SimpleSubtitleEntry[]>
 
   const subtitles = readTranscriptPanelSubtitles();
   if (subtitles.length > 0) {
+    const videoId = new URLSearchParams(window.location.search).get('v');
+    if (videoId) {
+      window.dispatchEvent(new CustomEvent('YTSP_MarkTranscriptPanel', {
+        detail: { videoId },
+      }));
+    }
     return subtitles;
   }
 

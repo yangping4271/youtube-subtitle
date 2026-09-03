@@ -210,6 +210,21 @@ function extractLegacyTranscriptSegments(
   });
 }
 
+function getMarkedLegacyTranscriptSegments(videoId: string): Element[] {
+  const panel = document.querySelector(
+    `ytd-engagement-panel-section-list-renderer[data-ytsp-video-id="${videoId}"]`
+  );
+  return panel
+    ? Array.from(panel.querySelectorAll('ytd-transcript-segment-renderer'))
+    : [];
+}
+
+function markLegacyTranscriptPanel(segments: Element[], videoId: string): void {
+  segments[0]
+    ?.closest('ytd-engagement-panel-section-list-renderer')
+    ?.setAttribute('data-ytsp-video-id', videoId);
+}
+
 window.addEventListener('YTSP_OpenTranscript', () => {
   const engagementPanel = document.querySelector(
     'ytd-engagement-panel-section-list-renderer[target-id="PAmodern_transcript_view"], ' +
@@ -223,6 +238,24 @@ window.addEventListener('YTSP_OpenTranscript', () => {
 
 window.addEventListener('YTSP_StartTranslation', () => {
   window.postMessage({ type: 'YTSP_StartTranslation' }, '*');
+});
+
+window.addEventListener('YTSP_MarkTranscriptPanel', (event) => {
+  const videoId = (
+    event as CustomEvent<{ videoId?: unknown }>
+  ).detail?.videoId;
+  if (typeof videoId !== 'string') {
+    return;
+  }
+
+  const panels = Array.from(document.querySelectorAll(
+    'ytd-engagement-panel-section-list-renderer'
+  ));
+  const panel = panels.find((candidate) =>
+    candidate.getAttribute('visibility') === 'ENGAGEMENT_PANEL_VISIBILITY_EXPANDED' &&
+    candidate.querySelector('ytd-transcript-segment-renderer')
+  );
+  panel?.setAttribute('data-ytsp-video-id', videoId);
 });
 
 window.addEventListener('YTSP_RequestTranscriptPanel', async (event) => {
@@ -277,6 +310,23 @@ window.addEventListener('YTSP_RequestTranscriptPanel', async (event) => {
   const clientVersion = pageWindow.ytcfg?.get?.('INNERTUBE_CLIENT_VERSION');
 
   if (!request && legacyRequest) {
+    if (typeof requestedVideoId === 'string') {
+      const cachedSegments = getMarkedLegacyTranscriptSegments(requestedVideoId);
+      if (cachedSegments.length > 0) {
+        window.postMessage({
+          type: 'YTSP_TranscriptPanelResponse',
+          payload: {
+            status: 'ok',
+            response: {
+              legacyDomSegments: extractLegacyTranscriptSegments(cachedSegments),
+            },
+            videoId: requestedVideoId,
+          },
+        }, '*');
+        return;
+      }
+    }
+
     const app = document.querySelector('ytd-app') as YouTubeAppElement | null;
     if (typeof app?.resolveCommand === 'function') {
       try {
@@ -306,6 +356,9 @@ window.addEventListener('YTSP_RequestTranscriptPanel', async (event) => {
         );
         app.resolveCommand(currentRequest);
         const freshSegments = await waitForLegacyTranscriptRefresh(previousSegments);
+        if (freshSegments.length > 0 && typeof requestedVideoId === 'string') {
+          markLegacyTranscriptPanel(freshSegments, requestedVideoId);
+        }
         window.postMessage({
           type: 'YTSP_TranscriptPanelResponse',
           payload: {
